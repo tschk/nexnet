@@ -3,7 +3,9 @@
 Open-source peer-to-peer social chat network with blockchain-backed identity,
 transferable usernames, local-first history, and privacy-routed discovery.
 
-> **Status:** initial architecture specification. No production network yet.
+> **Status:** TypeScript monorepo with 77 passing tests. Crypto, protocol,
+> storage, client, workers, and TUI scaffolded and working. Chain `.in`
+> app not yet implemented.
 
 Nettle should feel like a modern mix of Usenet, IRC, peer-to-peer messaging,
 and social discovery — without a central message store.

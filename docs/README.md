@@ -16,6 +16,7 @@ Canon for product, protocol, and implementation direction.
 
 - [Identity](identity.md) — wallet root, usernames, passkeys, devices
 - [Chain](chain.md) — on-chain vs off-chain, treasury, token purpose
+- [Consensus](consensus.md) — NettleHotstuff (chained HotStuff, AD-9)
 
 ## Messaging and crypto
 

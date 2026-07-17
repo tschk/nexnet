@@ -60,6 +60,8 @@ Plus supporting crates listed in the root README.
 - Host/networking/validator process: may combine `.in` runtime with thin
   Rust (or native) networking until `.in` surface covers it
 - Single-node deterministic executor first; multi-validator consensus later
+- **AD-9:** multi-validator = chained HotStuff three-chain (NettleHotstuff);
+  see [consensus.md](consensus.md)
 
 Not using Substrate / Cosmos SDK / foreign L1 as the product chain.
 

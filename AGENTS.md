@@ -35,7 +35,8 @@ started.
   (`../inauguration`); clients only via `nettle-chain-client`
 - **AD-2:** chain app `.in` only; node/relay/messaging/crypto/CLI = Rust
 - **AD-3:** monorepo — `chain/` (`.in`) next to `crates/`
-- Chain runtime isolated; single-node executor OK until consensus
+- **AD-9:** chained HotStuff three-chain commit; see `docs/consensus.md`
+- Chain runtime isolated; single-node executor OK until multi-validator
 
 ## Doc map
 

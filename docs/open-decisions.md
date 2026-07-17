@@ -5,8 +5,8 @@ implementation.
 
 | ID | Decision | Notes |
 |---|---|---|
-| OD-01 | ~~Production blockchain platform~~ **LOCKED AD-1** | **Own chain**; app logic in inauguration `.in` (`../inauguration`). Not Substrate/Cosmos product. Consensus algorithm still open (OD-01b). |
-| OD-01b | Consensus algorithm | e.g. Tendermint-style BFT, HotStuff-like, custom PoS — pick before multi-validator |
+| OD-01 | ~~Production blockchain platform~~ **LOCKED AD-1** | **Own chain**; app logic in inauguration `.in` (`../inauguration`). Not Substrate/Cosmos product. |
+| OD-01b | ~~Consensus algorithm~~ **LOCKED AD-9** | **Chained HotStuff**, three-chain commit; see [consensus.md](consensus.md) |
 | OD-01c | ~~Chain packaging~~ **LOCKED AD-3** | **Same monorepo** — `chain/` (`.in` app) next to `crates/` |
 | OD-01d | ~~Language split~~ **LOCKED AD-2** | **Chain app `.in` only**; node/relay/messaging/crypto/CLI = Rust for now |
 | OD-02 | Exact token supply and emissions | Deferred past MVP |

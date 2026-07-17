@@ -90,6 +90,16 @@ flowchart LR
   SM --> InLang[inauguration .in sources]
 ```
 
+### Consensus (AD-9)
+
+**Locked:** chained **HotStuff** with **three-chain commit** (NettleHotstuff).
+
+- partially synchronous BFT, `n = 3f + 1`, quorum `> 2/3` power
+- deterministic finality; epochs; Ed25519 votes first (BLS QCs later)
+- same execution interface for single-validator and multi-validator modes
+
+Full design: [consensus.md](consensus.md).
+
 ### Why own chain + inauguration
 
 - scarce state surface is small (usernames, identity roots, relays, treasury)
@@ -97,5 +107,5 @@ flowchart LR
 - same org owns language toolchain and network
 - independent chain implementers still possible via open specs + ISC
 
-See [open-decisions.md](open-decisions.md) for consensus algorithm, emissions,
-and validator selection.
+See [open-decisions.md](open-decisions.md) for emissions and remaining validator
+economics.

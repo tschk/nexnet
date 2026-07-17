@@ -91,7 +91,9 @@ exact location, read state, conversation metadata.
 
 **Locked:** Nettle’s own chain. State transition logic in **inauguration**
 `.in` (`../inauguration`). Clients use `chain-client` only — no direct
-dependency on consensus internals. See [chain.md](chain.md).
+dependency on consensus internals. Multi-validator: chained HotStuff
+three-chain commit ([consensus.md](consensus.md), AD-9). See
+[chain.md](chain.md).
 
 ## Connection modes
 

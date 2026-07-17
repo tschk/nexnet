@@ -16,3 +16,4 @@ Cargo.lock
 !.env.example
 /deployments/local/
 /tmp/
+node_modules/

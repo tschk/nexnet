@@ -1,0 +1,12 @@
+{
+  "name": "@nettle/protocol",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "test": "bun test", "build": "tsc" },
+  "dependencies": {
+    "@nettle/types": "workspace:*",
+    "@nettle/crypto": "workspace:*",
+    "cbor2": "^1.7.0"
+  }
+}

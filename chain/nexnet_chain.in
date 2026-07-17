@@ -1,0 +1,95 @@
+// Nexnet chain app — pure transition rules (AD-1, AD-10, AD-23)
+// Error codes: 0 = ok; non-zero = reject.
+// Self-check in main(); executor returns 0 on pass.
+
+const MIN_ACCOUNT_AGE_MS = 604800000
+const INACTIVITY_RELEASE_MS = 7776000000
+const MIN_USERNAME_LEN = 2
+const MAX_USERNAME_LEN = 32
+
+// register-username checks (AD-10 + anti-squat)
+fn can_register_username(account_age_ms: Int, owns_username: Int, name_taken: Int, owner_inactive_ms: Int, name_len: Int) -> Int {
+  if name_len < MIN_USERNAME_LEN {
+    return 1;
+  }
+  if name_len > MAX_USERNAME_LEN {
+    return 2;
+  }
+  if owns_username != 0 {
+    return 3;
+  }
+  if account_age_ms < MIN_ACCOUNT_AGE_MS {
+    return 4;
+  }
+  if name_taken != 0 {
+    if owner_inactive_ms < INACTIVITY_RELEASE_MS {
+      return 5;
+    }
+  }
+  return 0;
+}
+
+fn can_transfer_username() -> Int {
+  return 10;
+}
+
+fn can_set_group_creator(existing_creator: Int, caller_is_creator: Int) -> Int {
+  if existing_creator == 0 {
+    return 0;
+  }
+  if caller_is_creator != 0 {
+    return 0;
+  }
+  return 11;
+}
+
+fn can_register_relay(key_len: Int) -> Int {
+  if key_len <= 0 {
+    return 12;
+  }
+  return 0;
+}
+
+fn can_bind_identity_root(already_bound: Int) -> Int {
+  if already_bound != 0 {
+    return 13;
+  }
+  return 0;
+}
+
+fn main() -> Int {
+  if can_register_username(604800000, 0, 0, 0, 5) != 0 {
+    return 100;
+  }
+  if can_register_username(1000, 0, 0, 0, 5) != 4 {
+    return 101;
+  }
+  if can_register_username(604800000, 1, 0, 0, 5) != 3 {
+    return 102;
+  }
+  if can_register_username(604800000, 0, 1, 1000, 5) != 5 {
+    return 103;
+  }
+  if can_register_username(604800000, 0, 1, 7776000000, 5) != 0 {
+    return 104;
+  }
+  if can_register_username(604800000, 0, 0, 0, 1) != 1 {
+    return 105;
+  }
+  if can_transfer_username() != 10 {
+    return 106;
+  }
+  if can_set_group_creator(0, 0) != 0 {
+    return 107;
+  }
+  if can_set_group_creator(1, 0) != 11 {
+    return 108;
+  }
+  if can_register_relay(0) != 12 {
+    return 109;
+  }
+  if can_bind_identity_root(1) != 13 {
+    return 110;
+  }
+  return 0;
+}

@@ -26,7 +26,7 @@ grep -r "nettle" --include='*.ts' --include='*.tsx' --include='*.json' --include
 
 Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nettle→Nexnet, NETTLE→NEXNET, @nettle/→@nexnet/).
 
-## Current state (169 tests passing)
+## Current state (181 tests passing)
 
 | Package | What | Status |
 |---|---|---|
@@ -95,13 +95,11 @@ Not full MLS. Random epoch secrets + X25519 wrap to members. Membership rotate �
 
 `packages/client/src/__tests__/integration.test.ts`: encrypted DM, group epoch crypto, attachments, room cooldown+votekick.
 
-### 5. Chain .in state machine
+### 5. Chain .in state machine — ✅ transition rules
 
-The chain application logic in inauguration (.in) at ../inauguration:
-- Username registration/lookup
-- Identity root records
-- Validator set management
-- This is a separate project but the chain-client interface exists
+`chain/nexnet_chain.in` pure checks (AD-10, anti-squat, transfer off, AD-22/23).
+`in execute chain/nexnet_chain.in` → Int(0). TS mirror tests in `chain-rules.test.ts`.
+Full state maps deferred until inauguration has map primitives; DevChainClient remains dev executor.
 
 ## Running tests
 
@@ -111,7 +109,7 @@ bun install
 bun test --workspace
 ```
 
-Expected: 169+ tests passing.
+Expected: 181+ tests passing.
 
 ## Key files
 

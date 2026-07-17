@@ -1,0 +1,123 @@
+---
+interface Props {
+  text: string;
+  as?: keyof HTMLElementTagNameMap;
+  class?: string;
+  delay?: number;
+  speed?: number;
+  once?: boolean;
+}
+
+const {
+  text,
+  as: Tag = "span",
+  class: className = "",
+  delay = 0,
+  speed = 28,
+  once = true,
+} = Astro.props;
+---
+
+<Tag
+  class:list={["scramble", className]}
+  data-scramble
+  data-text={text}
+  data-delay={String(delay)}
+  data-speed={String(speed)}
+  data-once={once ? "1" : "0"}
+  aria-label={text}
+>
+  <span class="scramble__vis" aria-hidden="true">{text}</span>
+</Tag>
+
+<style>
+  .scramble {
+    display: inline;
+    white-space: pre-wrap;
+  }
+  .scramble__vis {
+    font-variant-ligatures: none;
+  }
+</style>
+
+<script>
+  const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*<>/\\|_";
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function scrambleEl(el: HTMLElement) {
+    const target = el.dataset.text ?? "";
+    const speed = Number(el.dataset.speed || 28);
+    const delay = Number(el.dataset.delay || 0);
+    const vis = el.querySelector(".scramble__vis") as HTMLElement | null;
+    if (!vis) return;
+
+    if (prefersReducedMotion()) {
+      vis.textContent = target;
+      return;
+    }
+
+    let frame = 0;
+    const total = Math.max(target.length * 2, 12);
+    let started = false;
+
+    const run = () => {
+      if (!started) {
+        started = true;
+        const start = performance.now() + delay;
+        const tick = (now: number) => {
+          if (now < start) {
+            requestAnimationFrame(tick);
+            return;
+          }
+          frame++;
+          const progress = Math.min(1, frame / total);
+          const revealed = Math.floor(progress * target.length);
+          let out = "";
+          for (let i = 0; i < target.length; i++) {
+            if (target[i] === " " || target[i] === "\n") {
+              out += target[i];
+              continue;
+            }
+            if (i < revealed) out += target[i];
+            else out += CHARS[(Math.random() * CHARS.length) | 0];
+          }
+          vis.textContent = out;
+          if (progress < 1) {
+            setTimeout(() => requestAnimationFrame(tick), speed);
+          } else {
+            vis.textContent = target;
+            el.dataset.done = "1";
+          }
+        };
+        requestAnimationFrame(tick);
+      }
+    };
+
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              run();
+              if (el.dataset.once === "1") io.disconnect();
+            }
+          }
+        },
+        { threshold: 0.35 }
+      );
+      io.observe(el);
+    } else {
+      run();
+    }
+  }
+
+  function boot() {
+    document.querySelectorAll<HTMLElement>("[data-scramble]").forEach(scrambleEl);
+  }
+
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

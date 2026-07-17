@@ -1,0 +1,363 @@
+---
+import Base from "../layouts/Base.astro";
+import Scramble from "../components/Scramble.astro";
+import Terminal from "../components/Terminal.astro";
+
+const features = [
+  {
+    cmd: "identity",
+    blurb: "Wallet-rooted usernames. Passkey on open. Device certs until process death.",
+  },
+  {
+    cmd: "dm",
+    blurb: "Double Ratchet + X3DH. Forward secrecy. Relays never hold private bodies.",
+  },
+  {
+    cmd: "groups",
+    blurb: "MLS (RFC 9420) for private groups. Epoch rotation on membership change.",
+  },
+  {
+    cmd: "rooms",
+    blurb: "Public ownerless chatrooms. Signed plaintext. Cooldown + votekick.",
+  },
+  {
+    cmd: "transport",
+    blurb: "WebRTC direct when possible. Relay for signalling and fallback only.",
+  },
+  {
+    cmd: "local",
+    blurb: "History on your devices. Sender-held offline. No central message store.",
+  },
+];
+
+const endpoints = [
+  { host: "nexnet.tsc.hk", role: "relay" },
+  { host: "presence.nexnet.tsc.hk", role: "presence" },
+  { host: "discovery.nexnet.tsc.hk", role: "discovery" },
+];
+---
+
+<Base>
+  <section class="hero wrap">
+    <p class="hero__line muted">
+      <span class="dim">01</span> open source · p2p · e2ee
+    </p>
+    <h1 class="hero__title">
+      <Scramble text="nexnet" as="span" class="hero__name" delay={80} speed={22} />
+    </h1>
+    <p class="hero__tag">
+      <Scramble
+        text="peer-to-peer social chat with cryptographic identity"
+        as="span"
+        delay={420}
+        speed={18}
+      />
+    </p>
+    <p class="hero__desc muted">
+      Blockchain-backed usernames. Local-first private history. Public rooms.
+      Privacy-routed discovery. No telemetry. ISC license.
+    </p>
+    <div class="hero__actions">
+      <a class="btn" href="https://github.com/tschk/nexnet">view source</a>
+      <a class="btn btn--ghost" href="#status">live endpoints</a>
+    </div>
+  </section>
+
+  <section class="section wrap" id="features">
+    <header class="section__head">
+      <p class="dim">02 / features</p>
+      <h2>
+        <Scramble text="what ships" delay={0} speed={24} />
+      </h2>
+    </header>
+
+    <div class="grid">
+      {
+        features.map((f, i) => (
+          <article class="card">
+            <p class="card__cmd">
+              <span class="dim">$</span>{" "}
+              <Scramble text={f.cmd} delay={i * 60} speed={26} />
+            </p>
+            <p class="card__body muted">{f.blurb}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="section wrap" id="stack">
+    <header class="section__head">
+      <p class="dim">03 / stack</p>
+      <h2>
+        <Scramble text="protocol surface" delay={0} speed={24} />
+      </h2>
+    </header>
+
+    <Terminal title="nexnet@protocol:~/stack">
+      <pre class="log" aria-label="stack listing">
+        <code
+          >{`primitives
+  signatures     Ed25519
+  key agreement  X25519
+  aead           XChaCha20-Poly1305
+  hash           BLAKE3-256 (derive_key)
+  dm             Double Ratchet + X3DH
+  groups         MLS / ts-mls (RFC 9420)
+  wire           CBOR CDE
+
+runtime
+  client/tui     TypeScript · Bun
+  relay/presence Cloudflare Workers
+  transport      WebRTC (werift / browser)
+  chain app      inauguration .in
+
+non-negotiables
+  · relays never store private message bodies
+  · chain holds scarce public state only
+  · messages immutable (no edit / unsend)
+  · delivered receipts only — no read receipts
+  · no invented cryptography`}</code
+        >
+      </pre>
+    </Terminal>
+  </section>
+
+  <section class="section wrap" id="status">
+    <header class="section__head">
+      <p class="dim">04 / status</p>
+      <h2>
+        <Scramble text="live network" delay={0} speed={24} />
+      </h2>
+    </header>
+
+    <Terminal title="curl -s nexnet.tsc.hk">
+      <div class="status">
+        <p>
+          <span class="dim">$</span> cat /etc/hosts | grep nexnet
+        </p>
+        <ul class="status__list">
+          {
+            endpoints.map((e) => (
+              <li>
+                <span class="status__role">{e.role.padEnd(10, " ")}</span>
+                <a href={`https://${e.host}`}>{e.host}</a>
+              </li>
+            ))
+          }
+        </ul>
+        <hr class="rule" />
+        <p class="muted status__note">
+          Workers on Cloudflare. Presence · relay · discovery.
+          Private chat stays on devices.
+        </p>
+        <p class="dim">
+          exit code 0
+          <span class="cursor" aria-hidden="true">█</span>
+        </p>
+      </div>
+    </Terminal>
+  </section>
+
+  <section class="section wrap section--end">
+    <Terminal title="nexnet@invite:~">
+      <p>
+        <span class="dim">$</span>{" "}
+        <Scramble text="join the network" delay={100} speed={30} />
+      </p>
+      <p class="muted">
+        Clone the monorepo. Run the TUI. Point clients at the live workers —
+        or host your own relay.
+      </p>
+      <pre class="log log--cmd"><code>{`git clone https://github.com/tschk/nexnet
+cd nexnet && bun install
+bun test`}</code></pre>
+      <p>
+        <a class="btn" href="https://github.com/tschk/nexnet">github.com/tschk/nexnet</a>
+      </p>
+    </Terminal>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    padding: clamp(3rem, 10vh, 6rem) 0 clamp(2rem, 6vh, 4rem);
+  }
+
+  .hero__line {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: lowercase;
+    margin: 0 0 1.25rem;
+  }
+
+  .hero__title {
+    margin: 0;
+    font-size: clamp(3rem, 12vw, 6.5rem);
+    line-height: 0.95;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    text-transform: lowercase;
+  }
+
+  .hero__tag {
+    margin: 1.25rem 0 0;
+    max-width: 36rem;
+    font-size: clamp(1rem, 2.4vw, 1.2rem);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .hero__desc {
+    margin: 1.25rem 0 0;
+    max-width: 34rem;
+  }
+
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  .btn {
+    display: inline-block;
+    border: 1px solid var(--fg);
+    padding: 0.6rem 1rem;
+    text-decoration: none;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+    font-size: 12px;
+  }
+
+  .btn:hover {
+    background: var(--fg);
+    color: var(--bg);
+  }
+
+  .btn--ghost {
+    border-color: var(--dim);
+    color: var(--muted);
+  }
+
+  .btn--ghost:hover {
+    border-color: var(--fg);
+    color: var(--bg);
+  }
+
+  .section {
+    padding: 3rem 0;
+  }
+
+  .section--end {
+    padding-bottom: 1rem;
+  }
+
+  .section__head {
+    margin-bottom: 1.5rem;
+  }
+
+  .section__head h2 {
+    margin: 0.35rem 0 0;
+    font-size: clamp(1.4rem, 3vw, 1.85rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+  }
+
+  .section__head p {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .card {
+    background: #050505;
+    padding: 1.15rem 1.1rem 1.25rem;
+  }
+
+  .card__cmd {
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .card__body {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .log {
+    margin: 0;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--muted);
+    white-space: pre;
+  }
+
+  .log code {
+    font-family: inherit;
+  }
+
+  .log--cmd {
+    margin: 1rem 0 1.25rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line);
+    color: var(--fg);
+  }
+
+  .status p {
+    margin: 0 0 0.75rem;
+  }
+
+  .status__list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .status__list a {
+    text-decoration: none;
+  }
+
+  .status__role {
+    display: inline-block;
+    min-width: 7rem;
+    color: var(--dim);
+    white-space: pre;
+  }
+
+  .status__note {
+    margin: 1rem 0;
+    max-width: 36rem;
+  }
+
+  .cursor {
+    display: inline-block;
+    margin-left: 0.15rem;
+    animation: blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor {
+      animation: none;
+    }
+  }
+</style>

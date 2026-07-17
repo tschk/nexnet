@@ -1,0 +1,148 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "nexnet",
+  description = "Open-source peer-to-peer social chat. Blockchain identity. Local-first history. E2EE.",
+} = Astro.props;
+const fullTitle = title === "nexnet" ? "nexnet — p2p social chat" : `${title} · nexnet`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>{fullTitle}</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">skip to content</a>
+    <header class="top">
+      <div class="wrap top__inner">
+        <a class="brand" href="/">
+          <span class="brand__prompt" aria-hidden="true">$</span>
+          <span>nexnet</span>
+        </a>
+        <nav class="nav" aria-label="primary">
+          <a href="#features">features</a>
+          <a href="#stack">stack</a>
+          <a href="#status">status</a>
+          <a href="https://github.com/tschk/nexnet" rel="noopener noreferrer">github</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot__inner">
+        <p class="muted">
+          <span class="dim">//</span> isc license · no telemetry · open protocol
+        </p>
+        <p class="dim">nexnet.tsc.hk</p>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  .skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: var(--fg);
+    color: var(--bg);
+    padding: 0.5rem 0.75rem;
+    z-index: 100;
+  }
+  .skip:focus {
+    left: var(--pad);
+    top: 0.5rem;
+  }
+
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(8px);
+  }
+
+  .top__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 3.25rem;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-transform: lowercase;
+  }
+
+  .brand:hover {
+    background: transparent;
+    color: var(--fg);
+  }
+
+  .brand__prompt {
+    color: var(--muted);
+  }
+
+  .nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+
+  .nav a {
+    text-decoration: none;
+    color: var(--muted);
+    padding: 0.15rem 0.2rem;
+  }
+
+  .nav a:hover {
+    color: var(--bg);
+  }
+
+  .foot {
+    border-top: 1px solid var(--line);
+    margin-top: 4rem;
+    padding: 1.5rem 0 2.5rem;
+  }
+
+  .foot__inner {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 12px;
+  }
+</style>

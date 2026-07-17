@@ -1,5 +1,5 @@
 /**
- * NettleEvent signing and verification
+ * NexnetEvent signing and verification
  *
  * Signing preimage: all event fields EXCEPT signature.
  * ID preimage: all fields EXCEPT signature AND eventId.
@@ -8,27 +8,27 @@
  * signature = sign(sk, cde(signingPreimage))
  */
 import type {
-  NettleEvent,
-  NettleEventPreimage,
-  NettleEventIdPreimage,
+  NexnetEvent,
+  NexnetEventPreimage,
+  NexnetEventIdPreimage,
   EventId,
   Signature,
   PublicKey,
-} from "@nettle/types";
+} from "@nexnet/types";
 import {
   DOMAIN_EVENT_ID,
   MAX_PAYLOAD_BYTES,
   MAX_PARENT_IDS,
   MAX_EVENT_TYPE_LEN,
-} from "@nettle/types";
-import { deriveId } from "@nettle/crypto";
-import { sign, verify } from "@nettle/crypto";
+} from "@nexnet/types";
+import { deriveId } from "@nexnet/crypto";
+import { sign, verify } from "@nexnet/crypto";
 import { cdeEncode } from "./cde.js";
 
 /** Build the ID preimage (everything except signature and eventId). */
 function toIdPreimage(
-  event: Omit<NettleEvent, "eventId" | "signature">
-): NettleEventIdPreimage {
+  event: Omit<NexnetEvent, "eventId" | "signature">
+): NexnetEventIdPreimage {
   return {
     protocolVersion: event.protocolVersion,
     eventType: event.eventType,
@@ -42,7 +42,7 @@ function toIdPreimage(
 }
 
 /** Build the signing preimage (everything except signature). */
-function toSigningPreimage(event: NettleEvent): NettleEventPreimage {
+function toSigningPreimage(event: NexnetEvent): NexnetEventPreimage {
   return {
     protocolVersion: event.protocolVersion,
     eventType: event.eventType,
@@ -57,7 +57,7 @@ function toSigningPreimage(event: NettleEvent): NettleEventPreimage {
 }
 
 /** Validate event size limits. */
-export function validateEventLimits(event: NettleEvent): void {
+export function validateEventLimits(event: NexnetEvent): void {
   if (event.payload.length > MAX_PAYLOAD_BYTES) {
     throw new Error(
       `Payload ${event.payload.length} exceeds max ${MAX_PAYLOAD_BYTES}`
@@ -75,17 +75,17 @@ export function validateEventLimits(event: NettleEvent): void {
   }
 }
 
-/** Sign an event: compute eventId then sign. Returns complete NettleEvent. */
+/** Sign an event: compute eventId then sign. Returns complete NexnetEvent. */
 export function signEvent(
-  preimage: Omit<NettleEvent, "eventId" | "signature">,
+  preimage: Omit<NexnetEvent, "eventId" | "signature">,
   secretKey: Uint8Array
-): NettleEvent {
+): NexnetEvent {
   // Compute eventId from id preimage (no signature, no eventId)
   const idBytes = cdeEncode(toIdPreimage(preimage));
   const eventId = deriveId(DOMAIN_EVENT_ID, idBytes) as EventId;
 
   // Build full event (without signature) for signing
-  const event: NettleEvent = {
+  const event: NexnetEvent = {
     ...preimage,
     eventId,
     signature: new Uint8Array(64) as Signature, // placeholder
@@ -100,7 +100,7 @@ export function signEvent(
 
 /** Verify an event's signature against a public key. */
 export function verifyEvent(
-  event: NettleEvent,
+  event: NexnetEvent,
   publicKey: PublicKey
 ): boolean {
   const signBytes = cdeEncode(toSigningPreimage(event));

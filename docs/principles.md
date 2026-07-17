@@ -50,7 +50,7 @@ Not in the initial release:
 
 ## Open protocol
 
-The Nettle protocol, client, node, relay, blockchain, and associated schemas
+The Nexnet protocol, client, node, relay, blockchain, and associated schemas
 must be open source.
 
 Independent implementations should be possible.

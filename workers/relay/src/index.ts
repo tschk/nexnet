@@ -1,5 +1,5 @@
 /**
- * @nettle/worker-relay — WebRTC signalling + room gossip
+ * @nexnet/worker-relay — WebRTC signalling + room gossip
  *
  * Durable Object: RelaySession
  * - Holds WebSocket connections per identity

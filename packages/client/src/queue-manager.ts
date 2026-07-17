@@ -1,5 +1,5 @@
 /**
- * @nettle/client — QueueManager
+ * @nexnet/client — QueueManager
  *
  * Wraps OutboundQueue with retry logic.
  * - 30-min poll interval (PRESENCE_POLL_INTERVAL_MS)
@@ -7,9 +7,9 @@
  * - Bounded exponential backoff on failure
  */
 
-import { PRESENCE_POLL_INTERVAL_MS } from "@nettle/types";
-import type { OutboundQueueLike, OutboundQueueItem } from "@nettle/types";
-import type { NettleClient } from "./client.js";
+import { PRESENCE_POLL_INTERVAL_MS } from "@nexnet/types";
+import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
+import type { NexnetClient } from "./client.js";
 
 const MAX_ATTEMPTS = 10;
 const BASE_BACKOFF_MS = 30_000;
@@ -23,7 +23,7 @@ export class QueueManager {
     this.queue = queue;
   }
 
-  start(client: NettleClient): void {
+  start(client: NexnetClient): void {
     this.pollTimer = setInterval(() => {
       this.processQueue(client);
     }, PRESENCE_POLL_INTERVAL_MS);
@@ -47,7 +47,7 @@ export class QueueManager {
     this.queue.enqueue(item);
   }
 
-  processQueue(client: NettleClient): void {
+  processQueue(client: NexnetClient): void {
     if (!client.online) return;
 
     const pending = this.queue.pending();

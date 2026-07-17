@@ -1,5 +1,5 @@
 /**
- * @nettle/client — Encrypted attachment transfer
+ * @nexnet/client — Encrypted attachment transfer
  *
  * AD-20: direct only, no relay storage.
  * Chunks sent via relay forwarding to recipient.
@@ -12,12 +12,12 @@ import type {
   IdentityId,
   MessagePayload,
   MessageId,
-} from "@nettle/types";
+} from "@nexnet/types";
 import {
   DOMAIN_ATTACHMENT_ID,
   PROTOCOL_VERSION,
-} from "@nettle/types";
-import type { NettleClient } from "./client.js";
+} from "@nexnet/types";
+import type { NexnetClient } from "./client.js";
 import { sendDirectMessage } from "./dm.js";
 
 /** Default chunk size: 64 KB */
@@ -80,7 +80,7 @@ export function prepareAttachment(
  * Send an attachment offer via DM, then transfer the blob in chunks.
  */
 export async function sendAttachment(
-  client: NettleClient,
+  client: NexnetClient,
   recipientId: IdentityId,
   file: Uint8Array,
   filename: string,
@@ -132,7 +132,7 @@ export async function sendAttachment(
  * Transfer encrypted blob in chunks.
  */
 async function transferBlob(
-  client: NettleClient,
+  client: NexnetClient,
   recipientHex: string,
   transfer: AttachmentTransfer,
   chunkSize: number

@@ -2,7 +2,7 @@
  * Ed25519 signing operations
  */
 import { ed25519 } from "@noble/curves/ed25519";
-import type { Signature, PublicKey } from "@nettle/types";
+import type { Signature, PublicKey } from "@nexnet/types";
 
 export function generateSigningKeyPair(): {
   secretKey: Uint8Array;

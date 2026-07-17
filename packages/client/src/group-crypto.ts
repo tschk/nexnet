@@ -1,15 +1,15 @@
 /**
- * @nettle/client — Group message encryption
+ * @nexnet/client — Group message encryption
  *
  * Uses HKDF-derived shared key per group + epoch.
  * Not full MLS — simplified v1 with epoch tracking.
  * Members removed at epoch N can't decrypt messages at epoch N+1.
  */
 
-import type { CryptoProvider, GroupId } from "@nettle/types";
+import type { CryptoProvider, GroupId } from "@nexnet/types";
 
-const GROUP_KEY_DOMAIN = "nettle group key v1";
-const GROUP_EPOCH_DOMAIN = "nettle group epoch v1";
+const GROUP_KEY_DOMAIN = "nexnet group key v1";
+const GROUP_EPOCH_DOMAIN = "nexnet group epoch v1";
 
 export interface EncryptedGroupPayload {
   ciphertext: Uint8Array;

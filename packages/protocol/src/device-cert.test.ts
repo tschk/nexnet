@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { issueDeviceCert, verifyDeviceCert } from "./device-cert.js";
-import { generateSigningKeyPair } from "@nettle/crypto";
+import { generateSigningKeyPair } from "@nexnet/crypto";
 
 describe("DeviceCertificate", () => {
   const root = generateSigningKeyPair();

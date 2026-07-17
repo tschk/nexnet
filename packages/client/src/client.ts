@@ -1,5 +1,5 @@
 /**
- * @nettle/client — NettleClient main class
+ * @nexnet/client — NexnetClient main class
  *
  * Dependency-injected crypto/codec. WebSocket connection to relay.
  * Event emitter for incoming messages.
@@ -11,7 +11,7 @@ import type {
   DeviceId,
   CryptoProvider,
   CborCdeCodec,
-} from "@nettle/types";
+} from "@nexnet/types";
 
 export type EventType =
   | "dm"
@@ -29,7 +29,7 @@ export type EventType =
 
 export type EventHandler = (data: unknown) => void;
 
-export interface NettleClientConfig {
+export interface NexnetClientConfig {
   identityId: IdentityId;
   deviceId: DeviceId;
   crypto: CryptoProvider;
@@ -47,7 +47,7 @@ export interface NettleClientConfig {
 
 // ponytail: single-class client, no abstraction layers. Upgrade if state grows.
 
-export class NettleClient {
+export class NexnetClient {
   readonly identityId: IdentityId;
   readonly deviceId: DeviceId;
   readonly crypto: CryptoProvider;
@@ -69,7 +69,7 @@ export class NettleClient {
   private readonly _identityHex: string;
   private readonly _deviceHex: string;
 
-  constructor(config: NettleClientConfig) {
+  constructor(config: NexnetClientConfig) {
     this.identityId = config.identityId;
     this.deviceId = config.deviceId;
     this.crypto = config.crypto;

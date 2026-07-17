@@ -1,4 +1,4 @@
-name = "nettle-presence"
+name = "nexnet-presence"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 

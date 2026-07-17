@@ -3,8 +3,8 @@
 **Locked:** HotStuff-family — conservative **chained HotStuff** with
 **three-chain commit** for the first multi-validator version.
 
-Working name: **NettleHotstuff**. Safety core stays recognisably standard
-HotStuff; customisation is staking, epochs, mempool, and Nettle state only.
+Working name: **NexnetHotstuff**. Safety core stays recognisably standard
+HotStuff; customisation is staking, epochs, mempool, and Nexnet state only.
 
 Single-validator / local executor mode uses the **same** block and execution
 interfaces.
@@ -111,7 +111,7 @@ flowchart LR
 
 Two-chain / async fallback only after the base protocol is tested.
 
-## Nettle customisation (safe surface)
+## Nexnet customisation (safe surface)
 
 ### Proof of stake
 
@@ -273,10 +273,10 @@ Clients must not need to trust a relay or RPC server for ownership proofs.
 
 ```mermaid
 flowchart TB
-  Client[nettle-chain-client] --> API[Chain API]
+  Client[nexnet-chain-client] --> API[Chain API]
   API --> Exec[Block / tx execution interface]
   Exec --> SM[State machine .in]
-  HS[NettleHotstuff consensus] --> Exec
+  HS[NexnetHotstuff consensus] --> Exec
   Single[Single-validator mode] --> Exec
 ```
 

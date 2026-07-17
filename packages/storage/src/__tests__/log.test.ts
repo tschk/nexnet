@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { EventLog } from "../log.js";
-import type { CryptoProvider } from "@nettle/types";
+import type { CryptoProvider } from "@nexnet/types";
 
 function createMockCrypto(): CryptoProvider {
   return {
@@ -156,7 +156,7 @@ describe("EventLog", () => {
 
   test("temp file persistence", () => {
     const crypto = createMockCrypto();
-    const path = `/tmp/nettle-test-${Date.now()}.db`;
+    const path = `/tmp/nexnet-test-${Date.now()}.db`;
 
     const log1 = EventLog.open(path, KEY, crypto);
     log1.append(makeEventId(1), new Uint8Array([42]));

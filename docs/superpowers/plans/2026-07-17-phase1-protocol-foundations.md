@@ -4,7 +4,7 @@
 
 **Goal:** Ship deterministic protocol types, CDE-CBOR encode/sign/verify, BLAKE3 domain-separated IDs, device certificates, encrypted local event log, and checked-in test vectors — no network yet.
 
-**Architecture:** Tiny Rust workspace. `nettle-types` holds pure data. `nettle-crypto` wraps Ed25519 / X25519 / XChaCha20-Poly1305 / BLAKE3 / HKDF. `nettle-protocol` owns CDE encode, event envelopes, and verification. `nettle-storage` is an encrypted SQLite append-only log. CDDL schemas and byte fixtures live under `schemas/` and `test-vectors/`.
+**Architecture:** Tiny Rust workspace. `nexnet-types` holds pure data. `nexnet-crypto` wraps Ed25519 / X25519 / XChaCha20-Poly1305 / BLAKE3 / HKDF. `nexnet-protocol` owns CDE encode, event envelopes, and verification. `nexnet-storage` is an encrypted SQLite append-only log. CDDL schemas and byte fixtures live under `schemas/` and `test-vectors/`.
 
 **Tech Stack:** Rust 2021, Cargo workspace, `ed25519-dalek`, `x25519-dalek`, `chacha20poly1305`, `blake3`, `hkdf`/`sha2`, `minicbor` (or equivalent CDE-capable CBOR), `rusqlite` + SQLCipher-compatible or app-level XChaCha seal of pages, `serde` only if it does not break CDE — prefer explicit minicbor encode.
 
@@ -25,24 +25,24 @@
 
 ```text
 Cargo.toml                          # workspace
-crates/nettle-types/Cargo.toml
-crates/nettle-types/src/lib.rs
-crates/nettle-crypto/Cargo.toml
-crates/nettle-crypto/src/lib.rs
-crates/nettle-crypto/src/sign.rs
-crates/nettle-crypto/src/aead.rs
-crates/nettle-crypto/src/hash.rs
-crates/nettle-crypto/src/kdf.rs
-crates/nettle-protocol/Cargo.toml
-crates/nettle-protocol/src/lib.rs
-crates/nettle-protocol/src/cde.rs
-crates/nettle-protocol/src/event.rs
-crates/nettle-protocol/src/device_cert.rs
-crates/nettle-protocol/src/ids.rs
-crates/nettle-storage/Cargo.toml
-crates/nettle-storage/src/lib.rs
-crates/nettle-storage/src/log.rs
-schemas/nettle_event.cddl
+crates/nexnet-types/Cargo.toml
+crates/nexnet-types/src/lib.rs
+crates/nexnet-crypto/Cargo.toml
+crates/nexnet-crypto/src/lib.rs
+crates/nexnet-crypto/src/sign.rs
+crates/nexnet-crypto/src/aead.rs
+crates/nexnet-crypto/src/hash.rs
+crates/nexnet-crypto/src/kdf.rs
+crates/nexnet-protocol/Cargo.toml
+crates/nexnet-protocol/src/lib.rs
+crates/nexnet-protocol/src/cde.rs
+crates/nexnet-protocol/src/event.rs
+crates/nexnet-protocol/src/device_cert.rs
+crates/nexnet-protocol/src/ids.rs
+crates/nexnet-storage/Cargo.toml
+crates/nexnet-storage/src/lib.rs
+crates/nexnet-storage/src/log.rs
+schemas/nexnet_event.cddl
 schemas/device_certificate.cddl
 test-vectors/README.md
 test-vectors/events/minimal_event.json   # diagnostic only
@@ -56,14 +56,14 @@ test-vectors/sign/ed25519_known.json
 
 **Files:**
 - Create: `Cargo.toml`
-- Create: `crates/nettle-types/Cargo.toml`
-- Create: `crates/nettle-types/src/lib.rs`
-- Create: `crates/nettle-crypto/Cargo.toml`
-- Create: `crates/nettle-crypto/src/lib.rs`
-- Create: `crates/nettle-protocol/Cargo.toml`
-- Create: `crates/nettle-protocol/src/lib.rs`
-- Create: `crates/nettle-storage/Cargo.toml`
-- Create: `crates/nettle-storage/src/lib.rs`
+- Create: `crates/nexnet-types/Cargo.toml`
+- Create: `crates/nexnet-types/src/lib.rs`
+- Create: `crates/nexnet-crypto/Cargo.toml`
+- Create: `crates/nexnet-crypto/src/lib.rs`
+- Create: `crates/nexnet-protocol/Cargo.toml`
+- Create: `crates/nexnet-protocol/src/lib.rs`
+- Create: `crates/nexnet-storage/Cargo.toml`
+- Create: `crates/nexnet-storage/src/lib.rs`
 - Modify: `.gitignore` (ensure `/target/` present)
 
 **Interfaces:**
@@ -75,26 +75,26 @@ test-vectors/sign/ed25519_known.json
 [workspace]
 resolver = "2"
 members = [
-    "crates/nettle-types",
-    "crates/nettle-crypto",
-    "crates/nettle-protocol",
-    "crates/nettle-storage",
+    "crates/nexnet-types",
+    "crates/nexnet-crypto",
+    "crates/nexnet-protocol",
+    "crates/nexnet-storage",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "ISC"
-repository = "https://github.com/tschk/nettle"
+repository = "https://github.com/tschk/nexnet"
 ```
 
 - [ ] **Step 2: Create four crate manifests + `lib.rs` with `#![forbid(unsafe_code)]` and a trivial test**
 
-Each `crates/nettle-*/Cargo.toml`:
+Each `crates/nexnet-*/Cargo.toml`:
 
 ```toml
 [package]
-name = "nettle-types" # change per crate
+name = "nexnet-types" # change per crate
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -132,15 +132,15 @@ git commit -m "chore: scaffold Rust workspace for protocol crates"
 
 ---
 
-### Task 2: `nettle-crypto` — BLAKE3 domain separation + Ed25519
+### Task 2: `nexnet-crypto` — BLAKE3 domain separation + Ed25519
 
 **Files:**
-- Create: `crates/nettle-crypto/src/hash.rs`
-- Create: `crates/nettle-crypto/src/sign.rs`
-- Create: `crates/nettle-crypto/src/aead.rs`
-- Create: `crates/nettle-crypto/src/kdf.rs`
-- Modify: `crates/nettle-crypto/src/lib.rs`
-- Modify: `crates/nettle-crypto/Cargo.toml`
+- Create: `crates/nexnet-crypto/src/hash.rs`
+- Create: `crates/nexnet-crypto/src/sign.rs`
+- Create: `crates/nexnet-crypto/src/aead.rs`
+- Create: `crates/nexnet-crypto/src/kdf.rs`
+- Modify: `crates/nexnet-crypto/src/lib.rs`
+- Modify: `crates/nexnet-crypto/Cargo.toml`
 - Create: `test-vectors/sign/ed25519_known.json`
 
 **Interfaces:**
@@ -174,10 +174,10 @@ In `hash.rs` tests:
 ```rust
 #[test]
 fn derive_id_domain_separation() {
-    let a = derive_id("nettle event id v1", b"hello");
-    let b = derive_id("nettle room id v1", b"hello");
+    let a = derive_id("nexnet event id v1", b"hello");
+    let b = derive_id("nexnet room id v1", b"hello");
     assert_ne!(a, b);
-    assert_eq!(a, derive_id("nettle event id v1", b"hello"));
+    assert_eq!(a, derive_id("nexnet event id v1", b"hello"));
 }
 ```
 
@@ -197,9 +197,9 @@ pub fn derive_id(context: &str, data: &[u8]) -> [u8; 32] {
 Contexts (fixed strings):
 
 ```text
-"nettle event id v1"
-"nettle room id v1"
-"nettle attachment id v1"
+"nexnet event id v1"
+"nexnet room id v1"
+"nexnet attachment id v1"
 ```
 
 - [ ] **Step 4: Implement Ed25519 sign/verify + unit test roundtrip**
@@ -208,7 +208,7 @@ Contexts (fixed strings):
 #[test]
 fn sign_verify_roundtrip() {
     let sk = SigningKey::generate();
-    let msg = b"nettle-test";
+    let msg = b"nexnet-test";
     let sig = sign(&sk, msg);
     assert!(verify(&sk.verifying_key(), msg, &sig).is_ok());
     assert!(verify(&sk.verifying_key(), b"tampered", &sig).is_err());
@@ -230,14 +230,14 @@ fn aead_roundtrip() {
 
 - [ ] **Step 6: Run tests**
 
-Run: `cargo test -p nettle-crypto`
+Run: `cargo test -p nexnet-crypto`
 
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/nettle-crypto test-vectors
+git add crates/nexnet-crypto test-vectors
 git commit -m "feat(crypto): blake3 derive_id, ed25519, xchacha aead"
 ```
 
@@ -246,9 +246,9 @@ git commit -m "feat(crypto): blake3 derive_id, ed25519, xchacha aead"
 ### Task 3: CDE encode helper
 
 **Files:**
-- Create: `crates/nettle-protocol/src/cde.rs`
-- Modify: `crates/nettle-protocol/Cargo.toml`
-- Modify: `crates/nettle-protocol/src/lib.rs`
+- Create: `crates/nexnet-protocol/src/cde.rs`
+- Modify: `crates/nexnet-protocol/Cargo.toml`
+- Modify: `crates/nexnet-protocol/src/lib.rs`
 
 **Interfaces:**
 - Consumes: none from storage
@@ -281,14 +281,14 @@ Rules (document in module rustdoc):
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p nettle-protocol cde`
+Run: `cargo test -p nexnet-protocol cde`
 
 Expected: PASS
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/nettle-protocol
+git add crates/nexnet-protocol
 git commit -m "feat(protocol): deterministic CDE CBOR encoder subset"
 ```
 
@@ -297,12 +297,12 @@ git commit -m "feat(protocol): deterministic CDE CBOR encoder subset"
 ### Task 4: Identity IDs, event IDs, core event type
 
 **Files:**
-- Create: `crates/nettle-types/src/ids.rs`
-- Create: `crates/nettle-types/src/event.rs`
-- Modify: `crates/nettle-types/src/lib.rs`
-- Create: `crates/nettle-protocol/src/ids.rs`
-- Create: `crates/nettle-protocol/src/event.rs`
-- Create: `schemas/nettle_event.cddl`
+- Create: `crates/nexnet-types/src/ids.rs`
+- Create: `crates/nexnet-types/src/event.rs`
+- Modify: `crates/nexnet-types/src/lib.rs`
+- Create: `crates/nexnet-protocol/src/ids.rs`
+- Create: `crates/nexnet-protocol/src/event.rs`
+- Create: `schemas/nexnet_event.cddl`
 
 **Interfaces:**
 - Produces types:
@@ -313,7 +313,7 @@ pub struct DeviceId(pub [u8; 32]);
 pub struct EventId(pub [u8; 32]);
 pub struct ConversationId(pub [u8; 32]);
 
-pub struct NettleEvent {
+pub struct NexnetEvent {
     pub protocol_version: u16,
     pub event_type: String, // or enum for known types
     pub event_id: EventId,
@@ -327,15 +327,15 @@ pub struct NettleEvent {
 }
 ```
 
-- `event_id = derive_id("nettle event id v1", cde_bytes_without_signature_and_without_event_id)`  
+- `event_id = derive_id("nexnet event id v1", cde_bytes_without_signature_and_without_event_id)`  
   (document exact preimage fields — lock in code comments + test-vectors README)
 
 - [ ] **Step 1: Write CDDL**
 
-`schemas/nettle_event.cddl`:
+`schemas/nexnet_event.cddl`:
 
 ```cddl
-nettle_event = {
+nexnet_event = {
   protocol_version: uint,
   event_type: tstr,
   event_id: bstr .size 32,
@@ -357,7 +357,7 @@ fn sign_and_verify_event() {
     let sk = SigningKey::generate();
     let mut ev = sample_event_unsigned(&sk);
     let body = encode_signed_preimage(&ev);
-    ev.event_id = EventId(derive_id("nettle event id v1", &body));
+    ev.event_id = EventId(derive_id("nexnet event id v1", &body));
     let body2 = encode_signed_preimage(&ev); // include event_id if in signed set — LOCK ONE RULE
     ev.signature = sign(&sk, &body2);
     assert!(verify_event(&ev, &sk.verifying_key()).is_ok());
@@ -372,7 +372,7 @@ fn sign_and_verify_event() {
 signature = Ed25519.Sign(device_sk, CDE({
   all event fields EXCEPT signature
 }))
-event_id = BLAKE3-derive_key("nettle event id v1", CDE({
+event_id = BLAKE3-derive_key("nexnet event id v1", CDE({
   all fields EXCEPT signature AND event_id
 }))
 ```
@@ -401,9 +401,9 @@ event_type max: 64 bytes
 - [ ] **Step 5: Run tests + commit**
 
 ```bash
-cargo test -p nettle-protocol -p nettle-types
+cargo test -p nexnet-protocol -p nexnet-types
 git add crates schemas
-git commit -m "feat(protocol): nettle_event CDE encode sign verify"
+git commit -m "feat(protocol): nexnet_event CDE encode sign verify"
 ```
 
 ---
@@ -411,7 +411,7 @@ git commit -m "feat(protocol): nettle_event CDE encode sign verify"
 ### Task 5: Device certificates
 
 **Files:**
-- Create: `crates/nettle-protocol/src/device_cert.rs`
+- Create: `crates/nexnet-protocol/src/device_cert.rs`
 - Create: `schemas/device_certificate.cddl`
 
 **Interfaces:**
@@ -454,9 +454,9 @@ git commit -am "feat(protocol): device certificate issue and verify"
 ### Task 6: Encrypted append-only storage
 
 **Files:**
-- Create: `crates/nettle-storage/src/log.rs`
-- Modify: `crates/nettle-storage/Cargo.toml`
-- Modify: `crates/nettle-storage/src/lib.rs`
+- Create: `crates/nexnet-storage/src/log.rs`
+- Modify: `crates/nexnet-storage/Cargo.toml`
+- Modify: `crates/nexnet-storage/src/lib.rs`
 
 **Interfaces:**
 
@@ -501,7 +501,7 @@ fn decrypt_fails_on_bitflip() {
 
 Dependencies: `rusqlite`, `tempfile` (dev).
 
-- [ ] **Step 3: `cargo test -p nettle-storage` PASS + commit**
+- [ ] **Step 3: `cargo test -p nexnet-storage` PASS + commit**
 
 ```bash
 git commit -am "feat(storage): encrypted append-only event log"
@@ -515,7 +515,7 @@ git commit -am "feat(storage): encrypted append-only event log"
 - Create: `test-vectors/README.md`
 - Create: `test-vectors/events/minimal_event.hex`
 - Create: `test-vectors/events/minimal_event.meta.json`
-- Create: `crates/nettle-protocol/tests/vectors.rs`
+- Create: `crates/nexnet-protocol/tests/vectors.rs`
 
 **Interfaces:**
 - CI-style test reads hex file and asserts encode/sign/verify match
@@ -552,7 +552,7 @@ fn vector_minimal_event_matches() {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add test-vectors crates/nettle-protocol/tests
+git add test-vectors crates/nexnet-protocol/tests
 git commit -m "test: add CDE event fixtures and vector tests"
 ```
 

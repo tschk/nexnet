@@ -1,5 +1,5 @@
 {
-  "name": "nettle",
+  "name": "nexnet",
   "private": true,
   "workspaces": ["packages/*", "workers/*"]
 }

@@ -1,5 +1,5 @@
 /**
- * @nettle/protocol — protocol operations
+ * @nexnet/protocol — protocol operations
  */
 export { cdeEncode, cdeDecode } from "./cde.js";
 export { signEvent, verifyEvent, validateEventLimits } from "./event.js";

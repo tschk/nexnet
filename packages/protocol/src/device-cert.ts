@@ -4,8 +4,8 @@
  * A root identity issues a certificate binding a device's signing
  * and encryption public keys to a time window and capability set.
  */
-import type { DeviceCertificate, IdentityId, PublicKey, Signature } from "@nettle/types";
-import { sign, verify } from "@nettle/crypto";
+import type { DeviceCertificate, IdentityId, PublicKey, Signature } from "@nexnet/types";
+import { sign, verify } from "@nexnet/crypto";
 import { cdeEncode } from "./cde.js";
 
 /** Fields to sign in a device certificate (everything except rootSignature). */

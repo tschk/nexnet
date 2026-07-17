@@ -5,7 +5,7 @@ Versioned canonical event format.
 ## Base event
 
 ```text
-nettle_event {
+nexnet_event {
   protocol_version
   event_type
   event_id

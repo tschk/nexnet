@@ -1,12 +1,12 @@
 /**
- * Client adapter — real @nettle/crypto and @nettle/client.
+ * Client adapter — real @nexnet/crypto and @nexnet/client.
  * Ed25519 keypairs, XChaCha20-Poly1305 encryption, WebSocket relay.
  */
 
-import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nettle/crypto";
-import { NettleClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId, onDirectMessage } from "@nettle/client";
-import { cdeEncode, cdeDecode } from "@nettle/protocol";
-import type { CborCdeCodec } from "@nettle/types";
+import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nexnet/crypto";
+import { NexnetClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId, onDirectMessage } from "@nexnet/client";
+import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import type { CborCdeCodec } from "@nexnet/types";
 
 import {
   identity,
@@ -27,13 +27,13 @@ const codec: CborCdeCodec = { encode: cdeEncode, decode: cdeDecode };
 
 // ── Client singleton ────────────────────────────────────────────────
 
-let client: NettleClient | null = null;
+let client: NexnetClient | null = null;
 
 // ── Public API ──────────────────────────────────────────────────────
 
 export function generateIdentity(): LocalIdentity {
   const kp = generateSigningKeyPair();
-  const identityId = deriveId("nettle identity v1", kp.publicKey);
+  const identityId = deriveId("nexnet identity v1", kp.publicKey);
   const identityIdHex = hexEncode(identityId);
 
   const id: LocalIdentity = {
@@ -52,11 +52,11 @@ export async function connectDev(relayUrl: string): Promise<void> {
 
   setConnStatus("connecting");
 
-  const identityId = deriveId("nettle identity v1", id.publicKey);
+  const identityId = deriveId("nexnet identity v1", id.publicKey);
   // ponytail: reuse publicKey as deviceId for single-device v1
   const deviceId = id.publicKey.slice(0, 32);
 
-  client = new NettleClient({
+  client = new NexnetClient({
     identityId,
     deviceId,
     crypto: cryptoProvider,
@@ -117,7 +117,7 @@ export async function connectDev(relayUrl: string): Promise<void> {
     });
   }
 
-  // Handle inbound DMs (real decryption via @nettle/client)
+  // Handle inbound DMs (real decryption via @nexnet/client)
   onDirectMessage(client, (envelope, payload) => {
     const authorHex = hexEncode(envelope.senderIdentityId);
     const msg: ChatMessage = {

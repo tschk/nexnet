@@ -10,8 +10,8 @@ Deterministic ID from canonical name (AD-8):
 
 ```text
 room_id = blake3_derive_key(
-  "nettle room id v1",
-  normalized_room_descriptor  // e.g. nettle://chat/software.rust
+  "nexnet room id v1",
+  normalized_room_descriptor  // e.g. nexnet://chat/software.rust
 )
 // 32-byte BLAKE3-256 output
 ```

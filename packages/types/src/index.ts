@@ -1,7 +1,7 @@
 /**
- * @nettle/types — protocol type definitions
+ * @nexnet/types — protocol type definitions
  *
- * This is the single source of truth for all Nettle protocol types.
+ * This is the single source of truth for all Nexnet protocol types.
  * No implementation. Pure types, interfaces, and constants.
  *
  * AD decisions referenced inline (see docs/open-decisions.md).
@@ -40,10 +40,10 @@ export const SIGNATURE_LEN = 64;
 export const PUBLIC_KEY_LEN = 32;
 
 // Domain separation contexts for BLAKE3 derive_key (AD-8)
-export const DOMAIN_EVENT_ID = "nettle event id v1";
-export const DOMAIN_ROOM_ID = "nettle room id v1";
-export const DOMAIN_ATTACHMENT_ID = "nettle attachment id v1";
-export const DOMAIN_GROUP_ID = "nettle group id v1";
+export const DOMAIN_EVENT_ID = "nexnet event id v1";
+export const DOMAIN_ROOM_ID = "nexnet room id v1";
+export const DOMAIN_ATTACHMENT_ID = "nexnet attachment id v1";
+export const DOMAIN_GROUP_ID = "nexnet group id v1";
 
 // Size limits (initial)
 export const MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KiB
@@ -74,7 +74,7 @@ export type KnownEventType =
   | "test.ping";
 
 /** Canonical signed event (AD-4b: CDE-encoded for signatures) */
-export interface NettleEvent {
+export interface NexnetEvent {
   protocolVersion: number;
   eventType: string;
   eventId: EventId;
@@ -88,7 +88,7 @@ export interface NettleEvent {
 }
 
 /** Preimage fields for signing (everything except signature) */
-export interface NettleEventPreimage {
+export interface NexnetEventPreimage {
   protocolVersion: number;
   eventType: string;
   eventId: EventId;
@@ -101,7 +101,7 @@ export interface NettleEventPreimage {
 }
 
 /** Preimage for ID derivation (everything except signature AND eventId) */
-export interface NettleEventIdPreimage {
+export interface NexnetEventIdPreimage {
   protocolVersion: number;
   eventType: string;
   authorIdentityId: IdentityId;

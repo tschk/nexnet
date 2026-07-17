@@ -1,4 +1,4 @@
-name = "nettle-relay"
+name = "nexnet-relay"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 

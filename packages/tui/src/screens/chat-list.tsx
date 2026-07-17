@@ -45,7 +45,7 @@ export function ChatListScreen() {
         paddingRight={1}
       >
         <text>
-          <text fg={theme.accent} bold>Nettle</text>
+          <text fg={theme.accent} bold>Nexnet</text>
           <text fg={theme.textDim}> — chat list</text>
         </text>
         <text fg={theme.textDim}>n new · Enter open</text>

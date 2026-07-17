@@ -1,5 +1,5 @@
 {
-  "name": "@nettle/relay-standalone",
+  "name": "@nexnet/relay-standalone",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
@@ -8,6 +8,6 @@
     "dev": "bun --watch src/index.ts"
   },
   "dependencies": {
-    "@nettle/types": "workspace:*"
+    "@nexnet/types": "workspace:*"
   }
 }

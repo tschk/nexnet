@@ -3,88 +3,88 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "nettle",
+      "name": "nexnet",
     },
     "packages/client": {
-      "name": "@nettle/client",
+      "name": "@nexnet/client",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/crypto": "workspace:*",
-        "@nettle/protocol": "workspace:*",
-        "@nettle/types": "workspace:*",
+        "@nexnet/crypto": "workspace:*",
+        "@nexnet/protocol": "workspace:*",
+        "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
         "bun-types": "latest",
       },
     },
     "packages/crypto": {
-      "name": "@nettle/crypto",
+      "name": "@nexnet/crypto",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
         "@noble/ciphers": "^1.2.0",
         "@noble/curves": "^1.8.0",
         "@noble/hashes": "^1.7.0",
       },
     },
     "packages/protocol": {
-      "name": "@nettle/protocol",
+      "name": "@nexnet/protocol",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/crypto": "workspace:*",
-        "@nettle/types": "workspace:*",
+        "@nexnet/crypto": "workspace:*",
+        "@nexnet/types": "workspace:*",
         "cbor2": "^1.7.0",
       },
     },
     "packages/relay-standalone": {
-      "name": "@nettle/relay-standalone",
+      "name": "@nexnet/relay-standalone",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
       },
     },
     "packages/storage": {
-      "name": "@nettle/storage",
+      "name": "@nexnet/storage",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
         "bun-types": "latest",
       },
     },
     "packages/tui": {
-      "name": "@nettle/tui",
+      "name": "@nexnet/tui",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/client": "workspace:*",
-        "@nettle/crypto": "workspace:*",
-        "@nettle/protocol": "workspace:*",
-        "@nettle/types": "workspace:*",
+        "@nexnet/client": "workspace:*",
+        "@nexnet/crypto": "workspace:*",
+        "@nexnet/protocol": "workspace:*",
+        "@nexnet/types": "workspace:*",
         "@opentui/core": "latest",
         "@opentui/solid": "latest",
         "solid-js": "^1",
       },
     },
     "packages/types": {
-      "name": "@nettle/types",
+      "name": "@nexnet/types",
       "version": "0.0.1",
     },
     "workers/discovery": {
-      "name": "@nettle/worker-discovery",
+      "name": "@nexnet/worker-discovery",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
         "wrangler": "^3",
       },
     },
     "workers/presence": {
-      "name": "@nettle/worker-presence",
+      "name": "@nexnet/worker-presence",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
         "@noble/curves": "^1.8.0",
       },
       "devDependencies": {
@@ -92,10 +92,10 @@
       },
     },
     "workers/relay": {
-      "name": "@nettle/worker-relay",
+      "name": "@nexnet/worker-relay",
       "version": "0.0.1",
       "dependencies": {
-        "@nettle/types": "workspace:*",
+        "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
         "wrangler": "^3",
@@ -275,25 +275,25 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@nettle/client": ["@nettle/client@workspace:packages/client"],
+    "@nexnet/client": ["@nexnet/client@workspace:packages/client"],
 
-    "@nettle/crypto": ["@nettle/crypto@workspace:packages/crypto"],
+    "@nexnet/crypto": ["@nexnet/crypto@workspace:packages/crypto"],
 
-    "@nettle/protocol": ["@nettle/protocol@workspace:packages/protocol"],
+    "@nexnet/protocol": ["@nexnet/protocol@workspace:packages/protocol"],
 
-    "@nettle/relay-standalone": ["@nettle/relay-standalone@workspace:packages/relay-standalone"],
+    "@nexnet/relay-standalone": ["@nexnet/relay-standalone@workspace:packages/relay-standalone"],
 
-    "@nettle/storage": ["@nettle/storage@workspace:packages/storage"],
+    "@nexnet/storage": ["@nexnet/storage@workspace:packages/storage"],
 
-    "@nettle/tui": ["@nettle/tui@workspace:packages/tui"],
+    "@nexnet/tui": ["@nexnet/tui@workspace:packages/tui"],
 
-    "@nettle/types": ["@nettle/types@workspace:packages/types"],
+    "@nexnet/types": ["@nexnet/types@workspace:packages/types"],
 
-    "@nettle/worker-discovery": ["@nettle/worker-discovery@workspace:workers/discovery"],
+    "@nexnet/worker-discovery": ["@nexnet/worker-discovery@workspace:workers/discovery"],
 
-    "@nettle/worker-presence": ["@nettle/worker-presence@workspace:workers/presence"],
+    "@nexnet/worker-presence": ["@nexnet/worker-presence@workspace:workers/presence"],
 
-    "@nettle/worker-relay": ["@nettle/worker-relay@workspace:workers/relay"],
+    "@nexnet/worker-relay": ["@nexnet/worker-relay@workspace:workers/relay"],
 
     "@noble/ciphers": ["@noble/ciphers@1.3.0", "", {}, "sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw=="],
 

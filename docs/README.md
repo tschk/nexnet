@@ -1,4 +1,4 @@
-# Nettle documentation
+# Nexnet documentation
 
 Canon for product, protocol, and implementation direction.
 
@@ -18,7 +18,7 @@ Canon for product, protocol, and implementation direction.
 - [Identity](identity.md) — wallet root, usernames, passkeys, devices, recovery
 - [Profiles](profiles.md) — bio (no avatar) AD-24
 - [Chain](chain.md) — on-chain vs off-chain, treasury, token purpose
-- [Consensus](consensus.md) — NettleHotstuff (chained HotStuff, AD-9)
+- [Consensus](consensus.md) — NexnetHotstuff (chained HotStuff, AD-9)
 
 ## Messaging and crypto
 

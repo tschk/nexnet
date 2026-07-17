@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { QueueManager } from "../queue-manager.js";
-import type { OutboundQueueLike, OutboundQueueItem } from "@nettle/types";
+import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
 
 function createMockQueue(): OutboundQueueLike & { _items: OutboundQueueItem[] } {
   const _items: OutboundQueueItem[] = [];

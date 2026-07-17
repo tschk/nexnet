@@ -36,31 +36,31 @@ Initial target:
 ## Planned crates
 
 ```text
-nettle-core / nettle-node
-nettle-protocol
-nettle-crypto
-nettle-storage
-nettle-transport
-nettle-discovery
-nettle-chain-client
-nettle-chain-runtime
-nettle-relay
-nettle-cli
+nexnet-core / nexnet-node
+nexnet-protocol
+nexnet-crypto
+nexnet-storage
+nexnet-transport
+nexnet-discovery
+nexnet-chain-client
+nexnet-chain-runtime
+nexnet-relay
+nexnet-cli
 ```
 
 Plus supporting crates listed in the root README.
 
 ## Blockchain
 
-**Locked:** purpose-built Nettle chain.
+**Locked:** purpose-built Nexnet chain.
 
 - Application state machine and chain logic: **inauguration** `.in`
   (sibling repo `../inauguration`, Core IR → native/JIT)
-- Client boundary: Rust `nettle-chain-client` (or equivalent) over stable API
+- Client boundary: Rust `nexnet-chain-client` (or equivalent) over stable API
 - Host/networking/validator process: may combine `.in` runtime with thin
   Rust (or native) networking until `.in` surface covers it
 - Single-node deterministic executor first; multi-validator consensus later
-- **AD-9:** multi-validator = chained HotStuff three-chain (NettleHotstuff);
+- **AD-9:** multi-validator = chained HotStuff three-chain (NexnetHotstuff);
   see [consensus.md](consensus.md)
 
 Not using Substrate / Cosmos SDK / foreign L1 as the product chain.
@@ -78,7 +78,7 @@ Chain app and consensus logic stay in **inauguration `.in`**.
 | Username / identity / treasury / relay-registry transitions | inauguration `.in` |
 | Client, relay, presence, discovery, TUI, node | **TypeScript (Bun)** |
 | Cloudflare services | TypeScript (Workers) |
-| Chain client API | TypeScript (`@nettle/chain-client`) |
+| Chain client API | TypeScript (`@nexnet/chain-client`) |
 
 Expand `.in` into validator host later when networking/stdlib ready. Do not
 migrate client services back to Rust in the first wave.
@@ -88,14 +88,14 @@ migrate client services back to Rust in the first wave.
 **Locked: monorepo.**
 
 ```text
-nettle/
+nexnet/
   crates/          # Rust workspace
   chain/           # inauguration .in chain app + tests/vectors
   docs/
   test-vectors/
 ```
 
-No separate `nettle-chain` repo and no chain sources inside inauguration.
+No separate `nexnet-chain` repo and no chain sources inside inauguration.
 
 ## Non-negotiables
 

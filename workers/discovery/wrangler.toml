@@ -1,4 +1,4 @@
-name = "nettle-discovery"
+name = "nexnet-discovery"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 

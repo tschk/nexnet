@@ -1,5 +1,5 @@
-export { NettleClient } from "./client.js";
-export type { NettleClientConfig, EventType, EventHandler } from "./client.js";
+export { NexnetClient } from "./client.js";
+export type { NexnetClientConfig, EventType, EventHandler } from "./client.js";
 
 export {
   sendDirectMessage,

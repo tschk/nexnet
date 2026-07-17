@@ -1,4 +1,4 @@
-# Nettle
+# Nexnet
 
 Open-source peer-to-peer social chat network with blockchain-backed identity,
 transferable usernames, local-first history, and privacy-routed discovery.
@@ -7,7 +7,7 @@ transferable usernames, local-first history, and privacy-routed discovery.
 > storage, client, workers, and TUI scaffolded and working. Chain `.in`
 > app not yet implemented.
 
-Nettle should feel like a modern mix of Usenet, IRC, peer-to-peer messaging,
+Nexnet should feel like a modern mix of Usenet, IRC, peer-to-peer messaging,
 and social discovery — without a central message store.
 
 ## What users get
@@ -38,8 +38,8 @@ and social discovery — without a central message store.
 ```mermaid
 flowchart TB
   subgraph Clients
-    CLI[nettle-cli]
-    Core[nettle-node / core]
+    CLI[nexnet-cli]
+    Core[nexnet-node / core]
   end
 
   subgraph Transport
@@ -75,7 +75,7 @@ Full system map: [`docs/architecture.md`](docs/architecture.md)
 
 ## One-sentence definition
 
-Nettle is an open-source, wallet-identified, peer-to-peer social chat network
+Nexnet is an open-source, wallet-identified, peer-to-peer social chat network
 with transferable blockchain usernames, local-only history, sender-held
 offline messages, public ownerless chatrooms, private encrypted conversations,
 and privacy-routed stranger discovery.
@@ -83,17 +83,17 @@ and privacy-routed stranger discovery.
 ## Repository layout (planned)
 
 ```text
-nettle/
+nexnet/
   package.json            # Bun workspace
   tsconfig.json
   packages/               # TypeScript packages
-    types/                # @nettle/types — protocol types
-    crypto/               # @nettle/crypto — noble crypto wrappers
-    protocol/             # @nettle/protocol — CBOR CDE, event signing
-    storage/              # @nettle/storage — encrypted local DB
-    client/               # @nettle/client — messaging, rooms, groups
-    tui/                  # @nettle/tui — OpenTUI + SolidJS terminal client
-    chain-client/         # @nettle/chain-client — chain API
+    types/                # @nexnet/types — protocol types
+    crypto/               # @nexnet/crypto — noble crypto wrappers
+    protocol/             # @nexnet/protocol — CBOR CDE, event signing
+    storage/              # @nexnet/storage — encrypted local DB
+    client/               # @nexnet/client — messaging, rooms, groups
+    tui/                  # @nexnet/tui — OpenTUI + SolidJS terminal client
+    chain-client/         # @nexnet/chain-client — chain API
   workers/                # Cloudflare Workers
     relay/                # signalling, room gossip
     presence/             # presence leases

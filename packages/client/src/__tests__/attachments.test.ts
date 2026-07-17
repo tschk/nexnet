@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { cryptoProvider } from "@nettle/crypto";
-import { cdeEncode, cdeDecode } from "@nettle/protocol";
+import { cryptoProvider } from "@nexnet/crypto";
+import { cdeEncode, cdeDecode } from "@nexnet/protocol";
 import {
   prepareAttachment,
   AttachmentReceiver,

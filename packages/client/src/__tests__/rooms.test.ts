@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { deriveRoomId } from "../rooms.js";
-import type { CryptoProvider } from "@nettle/types";
+import type { CryptoProvider } from "@nexnet/types";
 
 function createMockCrypto(): CryptoProvider {
   return {

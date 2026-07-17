@@ -1,13 +1,13 @@
 {
-  "name": "@nettle/client",
+  "name": "@nexnet/client",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
   "scripts": { "test": "bun test", "build": "tsc" },
   "dependencies": {
-    "@nettle/types": "workspace:*",
-    "@nettle/crypto": "workspace:*",
-    "@nettle/protocol": "workspace:*"
+    "@nexnet/types": "workspace:*",
+    "@nexnet/crypto": "workspace:*",
+    "@nexnet/protocol": "workspace:*"
   },
   "devDependencies": {
     "bun-types": "latest"

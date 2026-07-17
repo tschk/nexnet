@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { signEvent, verifyEvent, validateEventLimits } from "./event.js";
-import { generateSigningKeyPair } from "@nettle/crypto";
-import type { NettleEvent, Signature } from "@nettle/types";
-import { MAX_PAYLOAD_BYTES, MAX_PARENT_IDS, MAX_EVENT_TYPE_LEN } from "@nettle/types";
+import { generateSigningKeyPair } from "@nexnet/crypto";
+import type { NexnetEvent, Signature } from "@nexnet/types";
+import { MAX_PAYLOAD_BYTES, MAX_PARENT_IDS, MAX_EVENT_TYPE_LEN } from "@nexnet/types";
 
-describe("NettleEvent signing", () => {
+describe("NexnetEvent signing", () => {
   const { secretKey, publicKey } = generateSigningKeyPair();
 
   const basePreimage = {
@@ -53,7 +53,7 @@ describe("NettleEvent signing", () => {
 });
 
 describe("validateEventLimits", () => {
-  const okEvent: NettleEvent = {
+  const okEvent: NexnetEvent = {
     protocolVersion: 1,
     eventType: "room.message",
     eventId: new Uint8Array(32),

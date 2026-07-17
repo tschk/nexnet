@@ -1,5 +1,5 @@
 /**
- * @nettle/client — Public chatrooms
+ * @nexnet/client — Public chatrooms
  *
  * Room ID = deriveId(DOMAIN_ROOM_ID, normalizedRoomName).
  * Messages are signed plaintext published via relay.
@@ -7,9 +7,9 @@
  * Moderation: per-user cooldown, votekick, automod spam filter.
  */
 
-import type { RoomId, NettleEvent } from "@nettle/types";
-import { DOMAIN_ROOM_ID, PROTOCOL_VERSION } from "@nettle/types";
-import type { NettleClient } from "./client.js";
+import type { RoomId, NexnetEvent } from "@nexnet/types";
+import { DOMAIN_ROOM_ID, PROTOCOL_VERSION } from "@nexnet/types";
+import type { NexnetClient } from "./client.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ const SPAM_DUPLICATE_THRESHOLD = 3;
 // ── Room ID ──────────────────────────────────────────────────────────
 
 export function deriveRoomId(
-  crypto: NettleClient["crypto"],
+  crypto: NexnetClient["crypto"],
   roomName: string
 ): RoomId {
   const normalized = roomName.trim().toLowerCase();
@@ -248,7 +248,7 @@ export function isBanned(roomIdHex: string, userHex: string): boolean {
 // ── Room operations ──────────────────────────────────────────────────
 
 export async function joinRoom(
-  client: NettleClient,
+  client: NexnetClient,
   roomName: string
 ): Promise<RoomId> {
   const roomId = deriveRoomId(client.crypto, roomName);
@@ -260,7 +260,7 @@ export async function joinRoom(
 }
 
 export async function leaveRoom(
-  client: NettleClient,
+  client: NexnetClient,
   roomId: RoomId
 ): Promise<void> {
   const roomIdHex = Buffer.from(roomId).toString("hex");
@@ -272,7 +272,7 @@ export async function leaveRoom(
  * Returns { sent, reason } if blocked by moderation.
  */
 export async function sendRoomMessage(
-  client: NettleClient,
+  client: NexnetClient,
   roomId: RoomId,
   text: string
 ): Promise<{ sent: boolean; reason?: string }> {
@@ -324,9 +324,9 @@ export async function sendRoomMessage(
 }
 
 export function onRoomMessage(
-  client: NettleClient,
+  client: NexnetClient,
   roomId: RoomId,
-  callback: (event: NettleEvent) => void
+  callback: (event: NexnetEvent) => void
 ): void {
   const roomIdHex = Buffer.from(roomId).toString("hex");
 
@@ -335,7 +335,7 @@ export function onRoomMessage(
     if (msg.room_id === roomIdHex && msg.event?.event) {
       try {
         const bytes = new Uint8Array(msg.event.event);
-        const event = client.codec.decode<NettleEvent>(bytes);
+        const event = client.codec.decode<NexnetEvent>(bytes);
         callback(event);
       } catch {
         // malformed — ignore

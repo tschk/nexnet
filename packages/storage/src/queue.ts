@@ -1,5 +1,5 @@
 /**
- * @nettle/storage — Outbound message queue
+ * @nexnet/storage — Outbound message queue
  *
  * SQLite-backed queue for messages waiting to be delivered.
  * Supports retry with attempt tracking and exponential backoff hints.
@@ -14,9 +14,9 @@ import type {
   OutboundQueueItem,
   OutboundQueueLike,
   DeliveryState,
-} from "@nettle/types";
+} from "@nexnet/types";
 
-export type { DeliveryState, OutboundQueueItem } from "@nettle/types";
+export type { DeliveryState, OutboundQueueItem } from "@nexnet/types";
 
 export class OutboundQueue implements OutboundQueueLike {
   private db: Database;

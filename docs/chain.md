@@ -74,13 +74,13 @@ Consensus is a **separate module**.
 
 ### Locked decision (AD-1)
 
-Nettle runs a **purpose-built chain**, not a third-party L1/L2 product.
+Nexnet runs a **purpose-built chain**, not a third-party L1/L2 product.
 
 Chain application logic and (as language surface matures) runtime pieces are
 written in **inauguration** (`.in` / Core IR) from the sibling project
 [`inauguration`](https://github.com/tschk/inauguration) at `../inauguration`.
 
-Messaging still talks only through `nettle-chain-client`. Chat work must not
+Messaging still talks only through `nexnet-chain-client`. Chat work must not
 block on full consensus maturity — a local single-node / deterministic
 executor of the same state machine is valid until multi-validator consensus
 lands.
@@ -97,7 +97,7 @@ flowchart LR
 
 ### Consensus (AD-9)
 
-**Locked:** chained **HotStuff** with **three-chain commit** (NettleHotstuff).
+**Locked:** chained **HotStuff** with **three-chain commit** (NexnetHotstuff).
 
 - partially synchronous BFT, `n = 3f + 1`, quorum `> 2/3` power
 - deterministic finality; epochs; Ed25519 votes first (BLS QCs later)

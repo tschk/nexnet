@@ -1,5 +1,5 @@
 /**
- * @nettle/storage — Encrypted append-only event log
+ * @nexnet/storage — Encrypted append-only event log
  *
  * Per-row AEAD: nonce = blake3(key || event_id)[0:24].
  * Deterministic — same key+event_id always produces same nonce.
@@ -9,7 +9,7 @@
  */
 
 import { Database } from "bun:sqlite";
-import type { CryptoProvider, EventId, ConversationId } from "@nettle/types";
+import type { CryptoProvider, EventId, ConversationId } from "@nexnet/types";
 
 export class EventLog {
   private db: Database;
@@ -57,7 +57,7 @@ export class EventLog {
     const data = new Uint8Array(this.key.length + eventId.length);
     data.set(this.key, 0);
     data.set(eventId, this.key.length);
-    const hash = this.crypto.deriveId("nettle event nonce v1", data);
+    const hash = this.crypto.deriveId("nexnet event nonce v1", data);
     return hash.slice(0, 24);
   }
 

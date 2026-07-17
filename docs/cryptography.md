@@ -81,7 +81,7 @@ AES-GCM not required. Do not dual-stack without a real interop need.
 
 ## Hashing (AD-8)
 
-**Locked: BLAKE3-256** for all internal Nettle hashes.
+**Locked: BLAKE3-256** for all internal Nexnet hashes.
 
 ```text
 mandatory hash: BLAKE3-256
@@ -96,17 +96,17 @@ Use BLAKE3 **derive_key** mode with fixed context strings — not ad-hoc string
 concatenation as the primary API:
 
 ```text
-blake3_derive_key("nettle event id v1", encoded_event)
-blake3_derive_key("nettle room id v1", room_descriptor)
-blake3_derive_key("nettle attachment id v1", encrypted_blob)
+blake3_derive_key("nexnet event id v1", encoded_event)
+blake3_derive_key("nexnet room id v1", room_descriptor)
+blake3_derive_key("nexnet attachment id v1", encrypted_blob)
 ```
 
 Equivalent conceptual form (if derive_key unavailable in a test harness):
 
 ```text
-event_id      = BLAKE3("nettle/event/v1" || cde_bytes)
-room_id       = BLAKE3("nettle/room/v1" || normalized_room_descriptor)
-attachment_id = BLAKE3("nettle/attachment/v1" || encrypted_blob)
+event_id      = BLAKE3("nexnet/event/v1" || cde_bytes)
+room_id       = BLAKE3("nexnet/room/v1" || normalized_room_descriptor)
+attachment_id = BLAKE3("nexnet/attachment/v1" || encrypted_blob)
 ```
 
 Production code should prefer **derive_key**.

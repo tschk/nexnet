@@ -121,7 +121,7 @@ selection, private random-match transport.
 
 ```mermaid
 gantt
-  title Nettle implementation phases
+  title Nexnet implementation phases
   dateFormat X
   axisFormat %s
   section Core

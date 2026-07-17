@@ -1,5 +1,5 @@
 /**
- * @nettle/worker-presence — presence lease management
+ * @nexnet/worker-presence — presence lease management
  *
  * Durable Object: PresenceTracker
  * - Stores presence leases per identity
@@ -10,7 +10,7 @@
  * AD: no read receipts / last-seen in v1 — only online/offline status.
  */
 
-import { PRESENCE_LEASE_TTL_MS } from "@nettle/types";
+import { PRESENCE_LEASE_TTL_MS } from "@nexnet/types";
 import { ed25519 } from "@noble/curves/ed25519";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ export class PresenceTracker {
         const pk = hexToBytes(lease.publicKey);
         const sig = hexToBytes(lease.signature);
         const msg = new TextEncoder().encode(
-          `nettle presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`
+          `nexnet presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`
         );
         if (!ed25519.verify(sig, msg, pk)) {
           return jsonResponse({ error: "invalid lease signature" }, 403);

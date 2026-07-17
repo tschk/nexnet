@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { cryptoProvider } from "@nettle/crypto";
+import { cryptoProvider } from "@nexnet/crypto";
 import {
   deriveGroupKey,
   deriveEpoch,
@@ -10,7 +10,7 @@ import {
 describe("Group encryption", () => {
   const crypto = cryptoProvider;
   const groupId = crypto.deriveId(
-    "nettle group id v1",
+    "nexnet group id v1",
     new TextEncoder().encode("test-group")
   );
 
@@ -33,7 +33,7 @@ describe("Group encryption", () => {
 
   test("different groups produce different keys", () => {
     const groupId2 = crypto.deriveId(
-      "nettle group id v1",
+      "nexnet group id v1",
       new TextEncoder().encode("other-group")
     );
     const key1 = deriveGroupKey(crypto, groupId, 0);

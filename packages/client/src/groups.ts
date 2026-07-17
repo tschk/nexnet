@@ -1,16 +1,16 @@
 /**
- * @nettle/client — Private groups (AD-23: on-chain creator)
+ * @nexnet/client — Private groups (AD-23: on-chain creator)
  *
  * Group ID = deriveId(DOMAIN_GROUP_ID, creatorIdentity || name).
  * Group events are signed and relayed.
  */
 
-import type { GroupId, IdentityId } from "@nettle/types";
-import { DOMAIN_GROUP_ID, PROTOCOL_VERSION } from "@nettle/types";
-import type { NettleClient } from "./client.js";
+import type { GroupId, IdentityId } from "@nexnet/types";
+import { DOMAIN_GROUP_ID, PROTOCOL_VERSION } from "@nexnet/types";
+import type { NexnetClient } from "./client.js";
 
 export async function createGroup(
-  client: NettleClient,
+  client: NexnetClient,
   name: string,
   members: IdentityId[]
 ): Promise<GroupId> {
@@ -29,7 +29,7 @@ export async function createGroup(
 }
 
 export async function addMember(
-  client: NettleClient,
+  client: NexnetClient,
   groupId: GroupId,
   identityId: IdentityId
 ): Promise<void> {
@@ -42,7 +42,7 @@ export async function addMember(
 }
 
 export async function removeMember(
-  client: NettleClient,
+  client: NexnetClient,
   groupId: GroupId,
   identityId: IdentityId
 ): Promise<void> {
@@ -55,7 +55,7 @@ export async function removeMember(
 }
 
 export async function sendGroupMessage(
-  client: NettleClient,
+  client: NexnetClient,
   groupId: GroupId,
   text: string
 ): Promise<void> {
@@ -69,7 +69,7 @@ export async function sendGroupMessage(
 }
 
 export function onGroupMessage(
-  client: NettleClient,
+  client: NexnetClient,
   groupId: GroupId,
   callback: (data: { text: string; senderId: IdentityId }) => void
 ): void {

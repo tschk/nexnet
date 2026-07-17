@@ -1,11 +1,11 @@
 # Privacy boundaries
 
-## What Nettle cannot guarantee
+## What Nexnet cannot guarantee
 
 - that recipients delete messages they already received
 - that a relay did not retain network metadata
 
-## What Nettle can guarantee when implemented correctly
+## What Nexnet can guarantee when implemented correctly
 
 - message authenticity
 - message integrity

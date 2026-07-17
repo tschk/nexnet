@@ -42,7 +42,7 @@ Stable identity is a cryptographic identity identifier.
 
 ```text
 username: @max
-identity_id: nettle1abc...
+identity_id: nexnet1abc...
 wallet_address: ntl1xyz...
 ```
 
@@ -63,7 +63,7 @@ perceived authorship of history:
 
 ```text
 @max
-nettle1abc...
+nexnet1abc...
 ```
 
 ## Username reservation semantics

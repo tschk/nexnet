@@ -1,10 +1,10 @@
 /**
- * @nettle/crypto — cryptographic primitives
+ * @nexnet/crypto — cryptographic primitives
  *
  * Re-exports all modules and provides a default CryptoProvider
- * implementing the interface from @nettle/types.
+ * implementing the interface from @nexnet/types.
  */
-import type { CryptoProvider } from "@nettle/types";
+import type { CryptoProvider } from "@nexnet/types";
 
 export { deriveId } from "./hash.js";
 export { generateSigningKeyPair, sign, verify } from "./ed25519.js";

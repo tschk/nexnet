@@ -1,5 +1,5 @@
 /**
- * @nettle/client — Direct messaging
+ * @nexnet/client — Direct messaging
  *
  * Flow: create MessagePayload → CDE encode → encrypt → build MessageEnvelope → sign → send/queue
  */
@@ -10,24 +10,24 @@ import type {
   ConversationId,
   MessagePayload,
   MessageEnvelope,
-  NettleEvent,
-} from "@nettle/types";
+  NexnetEvent,
+} from "@nexnet/types";
 import {
   DOMAIN_EVENT_ID,
   PROTOCOL_VERSION,
-} from "@nettle/types";
-import type { NettleClient } from "./client.js";
-import type { OutboundQueueLike } from "@nettle/types";
+} from "@nexnet/types";
+import type { NexnetClient } from "./client.js";
+import type { OutboundQueueLike } from "@nexnet/types";
 
-const DOMAIN_CONVERSATION_ID = "nettle conversation id v1";
-const DOMAIN_CONVERSATION_KEY = "nettle dm conversation key v1";
+const DOMAIN_CONVERSATION_ID = "nexnet conversation id v1";
+const DOMAIN_CONVERSATION_KEY = "nexnet dm conversation key v1";
 
 /**
  * Derive 32-byte XChaCha key from conversation_id via HKDF.
  * Both sides produce the same key (conversation_id is symmetric).
  */
 export function deriveConversationKey(
-  crypto: NettleClient["crypto"],
+  crypto: NexnetClient["crypto"],
   conversationId: ConversationId
 ): Uint8Array {
   return crypto.hkdf(
@@ -39,7 +39,7 @@ export function deriveConversationKey(
 }
 
 export function deriveConversationId(
-  crypto: NettleClient["crypto"],
+  crypto: NexnetClient["crypto"],
   a: IdentityId,
   b: IdentityId
 ): ConversationId {
@@ -51,7 +51,7 @@ export function deriveConversationId(
 }
 
 export async function sendDirectMessage(
-  client: NettleClient,
+  client: NexnetClient,
   recipientId: IdentityId,
   text: string,
   queue?: OutboundQueueLike
@@ -152,7 +152,7 @@ export async function sendDirectMessage(
  *   or unresolvable signatures are silently dropped.
  */
 export function onDirectMessage(
-  client: NettleClient,
+  client: NexnetClient,
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
   getSenderPublicKey?: (identityId: IdentityId) => Uint8Array | undefined
 ): void {

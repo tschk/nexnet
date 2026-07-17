@@ -1,5 +1,5 @@
 /**
- * @nettle/worker-discovery — profiles + random matching
+ * @nexnet/worker-discovery — profiles + random matching
  *
  * Durable Object: DiscoveryIndex
  * - Stores discovery profiles (interests, languages, bio)
@@ -13,7 +13,7 @@
 import {
   DEFAULT_REPUTATION_THRESHOLD,
   DEFAULT_REPUTATION_WEIGHTS,
-} from "@nettle/types";
+} from "@nexnet/types";
 
 // ── Types ────────────────────────────────────────────────────────────
 

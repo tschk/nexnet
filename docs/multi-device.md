@@ -1,6 +1,6 @@
 # Multi-device
 
-A Nettle account may run on multiple devices.
+A Nexnet account may run on multiple devices.
 
 ## Login
 
@@ -62,6 +62,6 @@ and merged through deterministic event ordering.
 
 ## No cloud backup by default
 
-Nettle does not provide central message backup by default.
+Nexnet does not provide central message backup by default.
 
 Users keep at least one device copy or transfer history before losing a device.

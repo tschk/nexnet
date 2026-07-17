@@ -1,11 +1,11 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { NettleClient } from "../client.js";
+import { NexnetClient } from "../client.js";
 import type {
   CryptoProvider,
   CborCdeCodec,
   IdentityId,
   DeviceId,
-} from "@nettle/types";
+} from "@nexnet/types";
 
 // ── Mock crypto/codec ────────────────────────────────────────────────
 
@@ -114,21 +114,21 @@ class MockWebSocket {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function createTestClient(overrides?: Partial<ConstructorParameters<typeof NettleClient>[0]>): {
-  client: NettleClient;
+function createTestClient(overrides?: Partial<ConstructorParameters<typeof NexnetClient>[0]>): {
+  client: NexnetClient;
   identityId: IdentityId;
   deviceId: DeviceId;
 } {
   const identityId = new Uint8Array(32).fill(0xaa);
   const deviceId = new Uint8Array(32).fill(0xbb);
 
-  const client = new NettleClient({
+  const client = new NexnetClient({
     identityId,
     deviceId,
     crypto: createMockCrypto(),
     codec: createMockCodec(),
     relayUrl: "https://relay.example.com",
-    storagePath: "/tmp/nettle-test",
+    storagePath: "/tmp/nexnet-test",
     signingSecretKey: new Uint8Array(64).fill(0xcc),
     maxReconnectAttempts: 3,
     reconnectBaseMs: 10,
@@ -141,7 +141,7 @@ function createTestClient(overrides?: Partial<ConstructorParameters<typeof Nettl
 
 // ── Tests ────────────────────────────────────────────────────────────
 
-describe("NettleClient WebSocket", () => {
+describe("NexnetClient WebSocket", () => {
   let origWebSocket: typeof globalThis.WebSocket;
 
   beforeEach(() => {
@@ -490,7 +490,7 @@ describe("NettleClient WebSocket", () => {
   });
 });
 
-describe("NettleClient two-instance DM flow", () => {
+describe("NexnetClient two-instance DM flow", () => {
   let origWebSocket: typeof globalThis.WebSocket;
 
   beforeEach(() => {
@@ -533,23 +533,23 @@ describe("NettleClient two-instance DM flow", () => {
     const identityA = new Uint8Array(32).fill(0xaa);
     const identityB = new Uint8Array(32).fill(0xbb);
 
-    const clientA = new NettleClient({
+    const clientA = new NexnetClient({
       identityId: identityA,
       deviceId: new Uint8Array(32).fill(0x01),
       crypto: createMockCrypto(),
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
-      storagePath: "/tmp/nettle-a",
+      storagePath: "/tmp/nexnet-a",
       signingSecretKey: new Uint8Array(64).fill(0xcc),
     });
 
-    const clientB = new NettleClient({
+    const clientB = new NexnetClient({
       identityId: identityB,
       deviceId: new Uint8Array(32).fill(0x02),
       crypto: createMockCrypto(),
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
-      storagePath: "/tmp/nettle-b",
+      storagePath: "/tmp/nexnet-b",
       signingSecretKey: new Uint8Array(64).fill(0xdd),
     });
 

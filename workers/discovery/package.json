@@ -1,9 +1,9 @@
 {
-  "name": "@nettle/worker-discovery",
+  "name": "@nexnet/worker-discovery",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
   "scripts": { "test": "bun test", "dev": "wrangler dev", "deploy": "wrangler deploy" },
-  "dependencies": { "@nettle/types": "workspace:*" },
+  "dependencies": { "@nexnet/types": "workspace:*" },
   "devDependencies": { "wrangler": "^3" }
 }

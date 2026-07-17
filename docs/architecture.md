@@ -1,6 +1,6 @@
 # Architecture
 
-Nettle has five major layers. Messaging code must not depend on a specific
+Nexnet has five major layers. Messaging code must not depend on a specific
 consensus implementation; the chain sits behind a client interface.
 
 ## Layers
@@ -89,7 +89,7 @@ Globally shared scarce or authoritative state only:
 **Never:** private messages, attachments, presence history, contact graphs,
 exact location, read state, conversation metadata.
 
-**Locked:** Nettle’s own chain. State transition logic in **inauguration**
+**Locked:** Nexnet’s own chain. State transition logic in **inauguration**
 `.in` (`../inauguration`). Clients use `chain-client` only — no direct
 dependency on consensus internals. Multi-validator: chained HotStuff
 three-chain commit ([consensus.md](consensus.md), AD-9). See
@@ -174,38 +174,38 @@ be online for delivery.
 
 ```mermaid
 flowchart TB
-  CLI[nettle-cli] --> Node[nettle-node]
-  Node --> Msg[nettle-messaging]
-  Node --> Rooms[nettle-rooms]
-  Node --> Groups[nettle-groups]
-  Node --> Disc[nettle-discovery]
-  Node --> Pres[nettle-presence]
-  Node --> Att[nettle-attachments]
-  Node --> Route[nettle-routing]
-  Node --> ChainC[nettle-chain-client]
+  CLI[nexnet-cli] --> Node[nexnet-node]
+  Node --> Msg[nexnet-messaging]
+  Node --> Rooms[nexnet-rooms]
+  Node --> Groups[nexnet-groups]
+  Node --> Disc[nexnet-discovery]
+  Node --> Pres[nexnet-presence]
+  Node --> Att[nexnet-attachments]
+  Node --> Route[nexnet-routing]
+  Node --> ChainC[nexnet-chain-client]
 
-  Msg --> Proto[nettle-protocol]
-  Msg --> Crypto[nettle-crypto]
-  Msg --> Store[nettle-storage]
-  Msg --> Transport[nettle-transport]
+  Msg --> Proto[nexnet-protocol]
+  Msg --> Crypto[nexnet-crypto]
+  Msg --> Store[nexnet-storage]
+  Msg --> Transport[nexnet-transport]
   Groups --> Crypto
   Rooms --> Proto
   Disc --> Proto
   Pres --> Proto
-  Identity[nettle-identity] --> Proto
+  Identity[nexnet-identity] --> Proto
   Identity --> Crypto
   ChainC --> Identity
-  ChainR[nettle-chain-runtime] --> Identity
-  Relay[nettle-relay] --> Transport
+  ChainR[nexnet-chain-runtime] --> Identity
+  Relay[nexnet-relay] --> Transport
   Relay --> Pres
   Relay --> Rooms
-  Types[nettle-types] --> Proto
+  Types[nexnet-types] --> Proto
 ```
 
 Rule: **chain-runtime is isolated**. Messaging depends on `chain-client`
 interfaces only.
 
-**AD-2:** `nettle-chain-runtime` (and `chain/` `.in` sources) hold state
+**AD-2:** `nexnet-chain-runtime` (and `chain/` `.in` sources) hold state
 transitions in inauguration. All other crates above are Rust for now.
 
 ## Trust sketch

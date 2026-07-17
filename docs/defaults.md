@@ -44,9 +44,9 @@ validator selection: stake rank + power cap; min 4; target 7–21 (AD-14)
 source code: fully open source
 user payment: none required
 license: ISC
-chain: purpose-built Nettle chain
+chain: purpose-built Nexnet chain
 chain app language: inauguration (.in)
-chain client boundary: nettle-chain-client
+chain client boundary: nexnet-chain-client
 language split: chain app .in; client/relay/node/TUI TypeScript (Bun + CF Workers)
 repo packaging: monorepo (packages/ + workers/ + chain/)
 consensus: chained HotStuff three-chain commit (AD-9)

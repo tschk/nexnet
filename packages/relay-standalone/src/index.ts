@@ -1,5 +1,5 @@
 /**
- * @nettle/relay-standalone — Self-hosted Nettle relay server
+ * @nexnet/relay-standalone — Self-hosted Nexnet relay server
  *
  * Runs on any machine with Bun. No Cloudflare dependency.
  * Handles: WebSocket signalling, room gossip, presence proxy.
@@ -253,7 +253,7 @@ const server = Bun.serve<ClientInfo>({
       }));
 
       return Response.json({
-        name: "nettle-relay-standalone",
+        name: "nexnet-relay-standalone",
         version: "0.0.1",
         clients: clientList,
         roomCount: roomSubscriptions.size(),
@@ -314,6 +314,6 @@ const server = Bun.serve<ClientInfo>({
   },
 });
 
-log(`Nettle relay listening on ws://localhost:${PORT}/ws`);
+log(`Nexnet relay listening on ws://localhost:${PORT}/ws`);
 log(`Health: http://localhost:${PORT}/health`);
 log(`Status: http://localhost:${PORT}/`);

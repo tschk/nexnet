@@ -6,7 +6,7 @@ describe("xchacha20-poly1305", () => {
   const key = randomBytes(32);
   const nonce = randomBytes(24);
   const aad = new TextEncoder().encode("metadata");
-  const plaintext = new TextEncoder().encode("hello nettle");
+  const plaintext = new TextEncoder().encode("hello nexnet");
 
   test("roundtrip: encrypt then decrypt succeeds", () => {
     const ct = encrypt(key, nonce, aad, plaintext);

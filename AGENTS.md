@@ -1,10 +1,10 @@
-# Nettle — agent notes
+# Nexnet — agent notes
 
 All responses must be in English.
 
 ## Position
 
-Nettle is an open-source peer-to-peer social chat network with
+Nexnet is an open-source peer-to-peer social chat network with
 blockchain-backed identity and transferable usernames. Local-first private
 history. Sender-held offline messages. Public ownerless rooms. E2EE private
 chat. Privacy-routed stranger discovery.
@@ -41,7 +41,7 @@ started.
 - BLAKE3-256 with derive_key domain separation (AD-8)
 - Double Ratchet for DMs (TBD lib)
 - **Own chain** — application logic in inauguration `.in`
-  (`../inauguration`); clients only via `nettle-chain-client`
+  (`../inauguration`); clients only via `nexnet-chain-client`
 - **AD-2:** chain app `.in` only; client/relay/node/TUI = **TypeScript** (Bun + Cloudflare Workers)
 - **AD-3:** monorepo — `chain/` (`.in`) next to `packages/` + `workers/`
 - **AD-9:** chained HotStuff three-chain commit; see `docs/consensus.md`

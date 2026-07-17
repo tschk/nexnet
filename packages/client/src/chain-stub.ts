@@ -1,5 +1,5 @@
 /**
- * @nettle/client — DevChainClient
+ * @nexnet/client — DevChainClient
  *
  * In-memory chain stub for development.
  * AD-10: max 1 username per wallet, no transfer, anti-squat.
@@ -11,7 +11,7 @@ import type {
   UsernameRecord,
   WalletAddress,
   IdentityId,
-} from "@nettle/types";
+} from "@nexnet/types";
 
 /** Minimum account age before registering a username (7 days) */
 const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000;

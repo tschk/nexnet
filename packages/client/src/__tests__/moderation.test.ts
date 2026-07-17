@@ -25,7 +25,7 @@ describe("Room moderation", () => {
 
   test("deriveRoomId is deterministic", async () => {
     const { deriveRoomId } = await import("../rooms.js");
-    const crypto = (await import("@nettle/crypto")).cryptoProvider;
+    const crypto = (await import("@nexnet/crypto")).cryptoProvider;
 
     const id1 = deriveRoomId(crypto, "general");
     const id2 = deriveRoomId(crypto, "general");
@@ -34,7 +34,7 @@ describe("Room moderation", () => {
 
   test("deriveRoomId is case-insensitive", async () => {
     const { deriveRoomId } = await import("../rooms.js");
-    const crypto = (await import("@nettle/crypto")).cryptoProvider;
+    const crypto = (await import("@nexnet/crypto")).cryptoProvider;
 
     const id1 = deriveRoomId(crypto, "General");
     const id2 = deriveRoomId(crypto, "general");

@@ -24,7 +24,8 @@ implementation.
 | OD-14 | Group ownership on-chain | Optional |
 | OD-15 | Public profile bios/avatars | May omit in first release |
 | OD-16 | Presence visibility controls | Global exact first; finer later |
-| OD-17 | Canonical encoding choice | CBOR recommended default |
+| OD-17 | ~~Canonical encoding~~ **LOCKED AD-4** | **H2: CBOR wire + CDDL schemas**; debug JSON tooling only |
+| OD-17b | CBOR deterministic profile | CDE (RFC 8949) vs dCBOR — must lock before test vectors |
 | OD-18 | AEAD choice | XChaCha20-Poly1305 vs AES-GCM |
 
 Update this table when a decision locks; link to the issue or ADR.

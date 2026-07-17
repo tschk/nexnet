@@ -28,12 +28,22 @@ nettle_event {
 - maximum field sizes
 - signature over canonical representation
 
-## Candidate encodings
+## Encoding (AD-4)
 
-- **CBOR** (strong default for first implementation)
-- MessagePack with canonicalisation rules
-- Protocol Buffers with strict deterministic serialisation
-- custom schema from a formal IDL
+**Locked: H2 — CBOR wire + CDDL schemas.**
+
+| Layer | Choice |
+|---|---|
+| Wire bytes | CBOR |
+| Determinism | Single locked profile (AD-4b: CDE vs dCBOR — still open) |
+| Human/schema | CDDL describing event shapes |
+| Debug tooling | Optional CBOR → diagnostic JSON (not a second protocol) |
+| Attachment bodies | Opaque encrypted blobs — not CBOR structure |
+
+Rejected for the signed path: Protobuf (non-canonical encodings), dual
+MessagePack+CBOR hybrid, FlatBuffers for events.
+
+Signatures cover canonical CBOR of the event excluding the signature field.
 
 ## Rules
 

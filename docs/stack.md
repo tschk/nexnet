@@ -11,7 +11,8 @@ Coding agents may adjust, but this is the strong default.
 - WebRTC for browser and NAT traversal compatibility
 - rustls
 - sqlcipher-compatible SQLite or encrypted SQLite layer
-- CBOR via serde
+- **CBOR wire** (deterministic profile TBD) + **CDDL** schemas (AD-4)
+- Rust CBOR: prefer maintained crate (`minicbor` / `ciborium` family); avoid unmaintained `serde_cbor`
 
 ## Cryptography
 

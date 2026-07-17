@@ -25,7 +25,7 @@ started.
 ## Stack direction
 
 - Rust workspace monorepo for node/relay/cli (default)
-- Tokio, QUIC/WebRTC transports, CBOR, encrypted SQLite
+- Tokio, QUIC/WebRTC transports, CBOR+CDDL (AD-4), encrypted SQLite
 - Ed25519 / X25519 / HKDF / XChaCha20-Poly1305 or AES-GCM
 - Double Ratchet for DMs; OpenMLS for groups
 - **Own chain** — application logic in inauguration `.in`

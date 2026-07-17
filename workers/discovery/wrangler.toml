@@ -1,0 +1,10 @@
+name = "nettle-discovery"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[[durable_objects.bindings]]
+name = "DISCOVERY"
+class_name = "DiscoveryIndex"
+
+[[migrations]]
+new_classes = ["DiscoveryIndex"]

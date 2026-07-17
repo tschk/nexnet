@@ -8,12 +8,12 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 |---|---|---|
 | OD-01 | Chain platform | **AD-1** own chain; app in inauguration `.in` |
 | OD-01b | Consensus | **AD-9** chained HotStuff three-chain — [consensus.md](consensus.md) |
-| OD-01c | Packaging | **AD-3** monorepo `chain/` + `crates/` |
-| OD-01d | Language split | **AD-2** chain app `.in`; rest Rust |
+| OD-01c | Packaging | **AD-3** monorepo `chain/` + `packages/` + `workers/` |
+| OD-01d | Language split | **AD-2** chain app `.in`; client, relay, presence, discovery, and TUI in TypeScript/Bun |
 | OD-02 | Token supply / emissions | **AD-13** deferred past MVP — no numbers until needed |
 | OD-03 | Validator selection | **AD-14** stake-ranked active set + power cap; min 4; early target 7–21 ([consensus.md](consensus.md)) |
 | OD-04 | Automatic relay incentives | **AD-15** grants only v1 — no bandwidth mining |
-| OD-05 | Username anti-spam | **AD-10** max 1 owned per wallet; free create/transfer; rate limits |
+| OD-05 | Username anti-spam | **AD-10** max 1 owned per wallet; free creation with rate limits; transfers disabled |
 | OD-06 | Passkey ↔ wallet recovery | **AD-16** wallet root ultimate; registered passkey may re-auth devices |
 | OD-07 | Device session policy | **AD-6** passkey every interactive open; cert until process death |
 | OD-08 | Multi-device DM fanout | **AD-7** online devices only; history via P2P sync |

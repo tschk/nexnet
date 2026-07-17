@@ -5,12 +5,11 @@ All responses must be in English.
 ## Position
 
 Nexnet is an open-source peer-to-peer social chat network with
-blockchain-backed identity and transferable usernames. Local-first private
+blockchain-backed identity and scarce usernames. Local-first private
 history. Sender-held offline messages. Public ownerless rooms. E2EE private
 chat. Privacy-routed stranger discovery.
 
-**Status:** architecture specification and documentation. Implementation not
-started.
+**Status:** TypeScript/Bun foundation implemented; end-to-end MVP remains.
 
 ## Non-negotiables
 
@@ -21,7 +20,7 @@ started.
 - Delivered receipts only; no read receipts / last-seen / typing in v1
 - Passkey on every interactive app open; device cert until process death (AD-6)
 - DM fanout only to online devices; history via P2P device sync (AD-7)
-- Max 1 username owned per wallet; free transfer/create with rate limits (AD-10)
+- Max 1 username owned per wallet; free creation with rate limits; transfers disabled (AD-10)
 - Presence lease TTL 90s (AD-11); global presence visibility (AD-12)
 - Recovery: wallet ultimate; passkey re-auths devices (AD-16)
 - Room retention default 24h inactivity, relay-overridable (AD-17)

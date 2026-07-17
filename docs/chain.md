@@ -8,7 +8,6 @@ It must **not** contain private chat content.
 
 ```text
 username -> owner wallet
-username ownership history
 wallet -> identity root
 wallet -> at most one owned username (AD-10)
 wallet -> authorised passkey commitments
@@ -24,8 +23,7 @@ State transition logic for these records is the chain app — implemented in
 chain API.
 
 **AD-10:** `register_username` fails if the identity already owns a username.
-`transfer_username` moves ownership; the sender may register again only after
-they own zero, still rate-limited.
+Transfers are disabled to prevent squatting and flipping.
 
 ## Off-chain (must stay off)
 

@@ -55,13 +55,13 @@ retry, backoff, ACK processing.
 ## Phase 5: Chain identity and usernames
 
 Build: development chain, username registration, identity roots, resolution,
-transfer, ownership history.
+and inactivity release.
 
 **Accept:**
 
 - globally unique usernames in chain state
 - conflicting registration rejected
-- transfers update current owner
+- each wallet can own at most one username
 - historical signatures stay tied to identity ID
 
 ## Phase 6: Public chatrooms

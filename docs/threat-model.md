@@ -9,7 +9,6 @@
 - malicious relays
 - metadata collection (partial mitigations)
 - username impersonation
-- username transfer confusion
 - compromised devices (bounded by certificate lifetime)
 - Sybil accounts (matching / rate limits)
 - random-match spam
@@ -51,14 +50,13 @@ It must not be able to:
 
 - decrypt private messages
 - forge valid user messages
-- transfer usernames
 - impersonate authorised devices
 
 ```mermaid
 flowchart TB
   Adv[Malicious relay] -->|cannot| Plain[read private plaintext]
   Adv -->|cannot| Forge[forge signed user messages]
-  Adv -->|cannot| Steal[transfer usernames]
+  Adv -->|cannot| Steal[reassign usernames]
   Adv -->|can| Meta[log metadata on its hop]
   Adv -->|can| Drop[drop or delay traffic]
 ```
@@ -82,8 +80,3 @@ All network input must have:
 - signature verification before expensive work where possible
 - attachment size validation
 - decompression limits
-
-## Username transfer confusion
-
-Clients must bind historical messages to `identity_id`, not the current
-username label, and display enough context to prevent rewrite of authorship.

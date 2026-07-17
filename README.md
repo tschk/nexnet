@@ -1,7 +1,7 @@
 # Nexnet
 
 Open-source peer-to-peer social chat network with blockchain-backed identity,
-transferable usernames, local-first history, and privacy-routed discovery.
+scarce usernames, local-first history, and privacy-routed discovery.
 
 > **Status:** TypeScript monorepo with 77 passing tests. Crypto, protocol,
 > storage, client, workers, and TUI scaffolded and working. Chain `.in`
@@ -12,7 +12,7 @@ and social discovery — without a central message store.
 
 ## What users get
 
-- Globally unique, transferable usernames rooted in wallet identity
+- Globally unique usernames rooted in wallet identity
 - Public ownerless chatrooms
 - Private end-to-end encrypted DMs and group chats
 - Sender-held offline messages (no relay mailbox for private content)
@@ -76,11 +76,11 @@ Full system map: [`docs/architecture.md`](docs/architecture.md)
 ## One-sentence definition
 
 Nexnet is an open-source, wallet-identified, peer-to-peer social chat network
-with transferable blockchain usernames, local-only history, sender-held
+with blockchain usernames, local-only history, sender-held
 offline messages, public ownerless chatrooms, private encrypted conversations,
 and privacy-routed stranger discovery.
 
-## Repository layout (planned)
+## Repository layout
 
 ```text
 nexnet/
@@ -93,7 +93,7 @@ nexnet/
     storage/              # @nexnet/storage — encrypted local DB
     client/               # @nexnet/client — messaging, rooms, groups
     tui/                  # @nexnet/tui — OpenTUI + SolidJS terminal client
-    chain-client/         # @nexnet/chain-client — chain API
+    client/chain-stub.ts  # development chain adapter
   workers/                # Cloudflare Workers
     relay/                # signalling, room gossip
     presence/             # presence leases
@@ -151,7 +151,10 @@ Details: [`docs/mvp.md`](docs/mvp.md) · phases: [`docs/phases.md`](docs/phases.
 
 ## Status
 
-Specification and documentation only. Implementation has not started.
+The TypeScript/Bun foundation is implemented: protocol types, reviewed crypto
+wrappers, CDE event signing, local encrypted storage, client flows, Workers,
+and a TUI all have tests. The chain application currently contains pure `.in`
+transition rules; its stateful executor and the end-to-end MVP remain to ship.
 
 ## License
 
@@ -159,5 +162,5 @@ Specification and documentation only. Implementation has not started.
 
 ## Contributing
 
-Protocol and reference code will be developed in the open. Until crates land,
-design discussion belongs in issues against the docs in `docs/`.
+Protocol and reference code are developed in the open. Design changes belong
+in issues against the docs in `docs/`.

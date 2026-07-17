@@ -7,8 +7,6 @@ Interfaces are separated so implementations can evolve independently.
 ```text
 register_username
 resolve_username
-transfer_username
-get_username_history
 get_identity_root
 publish_relay_record
 list_relays

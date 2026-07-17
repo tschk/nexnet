@@ -7,7 +7,6 @@ First usable MVP includes:
 - local development chain
 - free first-come-first-served usernames
 - username resolution
-- username transfer transaction
 - device certificates
 - exact online presence
 - direct peer signalling

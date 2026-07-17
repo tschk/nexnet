@@ -4,51 +4,43 @@ Coding agents may adjust, but this is the strong default.
 
 ## Core
 
-- Rust
-- Tokio
-- Quinn for QUIC
-- libp2p where useful
-- WebRTC for browser and NAT traversal compatibility
-- rustls
-- sqlcipher-compatible SQLite or encrypted SQLite layer
+- TypeScript with Bun workspaces
+- Cloudflare Workers and Durable Objects for relay, presence, and discovery
+- OpenTUI + SolidJS for the reference TUI
+- `bun:sqlite` with application-layer encryption for local storage
+- `werift` for native WebRTC paths
 - **CBOR wire** with **CDE** determinism (AD-4b) + **CDDL** schemas (AD-4)
-- Rust CBOR: prefer maintained crate with CDE-capable encode (`minicbor` / `ciborium` family or equivalent); avoid unmaintained `serde_cbor`
+- `cbor2` for CDE encoding
 - Test vectors must be CDE byte-identical across implementations
 
 ## Cryptography
 
-- ed25519-dalek
-- x25519-dalek
-- blake3 (BLAKE3-256 + derive_key — AD-8)
-- chacha20poly1305 (XChaCha20-Poly1305 — AD-5)
-- hkdf
-- established Double Ratchet implementation
-- OpenMLS
+- `@noble/curves`, `@noble/ciphers`, and `@noble/hashes`
+- `ts-mls` for MLS
+- X3DH and Double Ratchet implementations backed by reviewed primitives
 
 ## Client
 
 Initial target:
 
-- desktop CLI or TUI reference client
-- daemonised networking core
+- desktop TUI reference client
+- Bun client/networking core
 - later GUI clients
 
-## Planned crates
+## Packages
 
 ```text
-nexnet-core / nexnet-node
-nexnet-protocol
-nexnet-crypto
-nexnet-storage
-nexnet-transport
-nexnet-discovery
-nexnet-chain-client
-nexnet-chain-runtime
-nexnet-relay
-nexnet-cli
+@nexnet/types
+@nexnet/crypto
+@nexnet/protocol
+@nexnet/storage
+@nexnet/client
+@nexnet/tui
+@nexnet/relay-standalone
+workers/relay
+workers/presence
+workers/discovery
 ```
-
-Plus supporting crates listed in the root README.
 
 ## Blockchain
 
@@ -56,9 +48,9 @@ Plus supporting crates listed in the root README.
 
 - Application state machine and chain logic: **inauguration** `.in`
   (sibling repo `../inauguration`, Core IR → native/JIT)
-- Client boundary: Rust `nexnet-chain-client` (or equivalent) over stable API
+- Client boundary: TypeScript chain-client interface over a stable API
 - Host/networking/validator process: may combine `.in` runtime with thin
-  Rust (or native) networking until `.in` surface covers it
+  TypeScript/Bun (or native) networking until `.in` surface covers it
 - Single-node deterministic executor first; multi-validator consensus later
 - **AD-9:** multi-validator = chained HotStuff three-chain (NexnetHotstuff);
   see [consensus.md](consensus.md)
@@ -67,21 +59,21 @@ Not using Substrate / Cosmos SDK / foreign L1 as the product chain.
 
 Chain remains isolated behind a clean interface.
 
-## Language split (AD-2 → TS override)
+## Language split (AD-2)
 
-**Locked originally:** chain app `.in` only; rest Rust.  
-**Override:** TypeScript for client / relay / presence / discovery / TUI / node.  
-Chain app and consensus logic stay in **inauguration `.in`**.
+Chain application and consensus logic stay in **inauguration `.in`**.
+Client, relay, presence, discovery, TUI, node, and chain-client use
+TypeScript/Bun.
 
 | Component | Language |
 |---|---|
 | Username / identity / treasury / relay-registry transitions | inauguration `.in` |
 | Client, relay, presence, discovery, TUI, node | **TypeScript (Bun)** |
 | Cloudflare services | TypeScript (Workers) |
-| Chain client API | TypeScript (`@nexnet/chain-client`) |
+| Chain client API | TypeScript chain-client interface |
 
-Expand `.in` into validator host later when networking/stdlib ready. Do not
-migrate client services back to Rust in the first wave.
+Expand `.in` into the validator host later when its networking and standard
+library surface is ready.
 
 ## Repo packaging (AD-3)
 
@@ -89,7 +81,8 @@ migrate client services back to Rust in the first wave.
 
 ```text
 nexnet/
-  crates/          # Rust workspace
+  packages/        # TypeScript/Bun workspace packages
+  workers/         # Cloudflare Workers
   chain/           # inauguration .in chain app + tests/vectors
   docs/
   test-vectors/

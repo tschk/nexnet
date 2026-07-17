@@ -2,14 +2,15 @@
 
 Canon for product, protocol, and implementation direction.
 
-**Status:** initial architecture specification.
+**Status:** active architecture and implementation documentation. The
+TypeScript/Bun foundation is in the repository; the end-to-end MVP is not yet
+complete.
 
 ## Start here
 
 1. [Architecture](architecture.md) — system layers and flows
 2. [Principles](principles.md) — non-negotiables
 3. [MVP](mvp.md) + [Phases](phases.md) — what ships first
-4. [Phase 1 plan](superpowers/plans/2026-07-17-phase1-protocol-foundations.md) — implementation tasks
 4. [Defaults](defaults.md) — product defaults
 5. [Open decisions](open-decisions.md) — intentionally unresolved
 
@@ -50,7 +51,7 @@ Canon for product, protocol, and implementation direction.
 
 ## Build
 
-- [Stack](stack.md) — recommended libraries and crates
+- [Stack](stack.md) — recommended libraries and runtimes
 - [Agent notes](agent-notes.md) — constraints for coding agents
 
 ## Doc map

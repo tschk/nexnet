@@ -10,7 +10,6 @@ The wallet is final authority over:
 - account identity
 - passkey registration
 - device authorisation
-- username transfers
 - account recovery
 
 Accounts are not recoverable without the wallet or credentials the wallet
@@ -21,8 +20,8 @@ explicitly authorised.
 - **Wallet / root key** is ultimate recovery authority.
 - A **passkey registered by the wallet** may re-authenticate devices and
   renew certificates without exporting the root key every time.
-- Passkey alone cannot transfer usernames or change root authority unless the
-  wallet previously authorised that capability.
+- Passkey alone cannot change root authority unless the wallet previously
+  authorised that capability.
 - Lost wallet without backup = lost account control.
 
 ## Username vs identity
@@ -32,8 +31,7 @@ Usernames are:
 - globally unique
 - first come, first served
 - free to register at the application layer
-- transferable via blockchain transactions
-- permanently recorded in ownership history
+- non-transferable after registration
 - **not** the user's cryptographic identity
 
 A username is a mutable label owned by a wallet.
@@ -55,26 +53,13 @@ flowchart LR
   D -->|signs| M[Messages]
 ```
 
-Old messages stay tied to the **signing identity**, even if the username
-later transfers.
-
-Clients should display enough context that transferred names cannot rewrite
-perceived authorship of history:
-
-```text
-@max
-nexnet1abc...
-```
+Messages remain tied to the signing identity rather than the username label.
 
 ## Username reservation semantics
 
 - one active owner at a time **per username**
 - **AD-10:** each wallet / identity_id may **own at most one username at a time**
-- ownership transferable repeatedly
-- after transfer, previous owner holds zero usernames and **may create** another
-  (subject to rate limits) — still only one held at once
-- ownership history immutable
-- previous owners retain no control after transfer
+- transfers disabled to prevent squatting and flipping
 - historical messages preserve signing identity
 - operators cannot silently reassign names
 - prohibited / reserved names defined at genesis or transparent governance
@@ -86,7 +71,7 @@ nexnet1abc...
 max owned per identity: 1
 create: free, FCFS, unique
 create rate: limited (see consensus / chain params; e.g. 1 create / 24h)
-transfer: allowed; moves the single ownership slot
+transfer: disabled
 hardware binding: none
 ```
 

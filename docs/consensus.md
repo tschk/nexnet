@@ -190,7 +190,7 @@ timeout {
 
 Chain workload is small (not chat content):
 
-- username registration and transfer
+- username registration and inactivity release
 - identity key changes
 - passkey / device authorisation records
 - validator and staking operations
@@ -224,8 +224,7 @@ username ownership: max 1 per identity (AD-10)
 username registration: fails if identity already owns one;
                        also rate-limited (e.g. one create / 24 hours)
 identity updates: limited per epoch
-transfers: sequence-number protected; limited per block/account;
-           frees ownership slot for sender
+username transfers: disabled
 general: PoW stamp or renewable account allowance (optional later)
 ```
 
@@ -281,7 +280,7 @@ flowchart TB
 ```
 
 - State machine in inauguration `.in` (AD-1/2)
-- Consensus host may be Rust initially (AD-2)
+- Consensus host may be TypeScript/Bun initially (AD-2)
 - Messaging never depends on consensus internals
 
 ## Future extensions

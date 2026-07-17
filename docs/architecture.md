@@ -80,7 +80,7 @@ chain API access, health publication.
 
 Globally shared scarce or authoritative state only:
 
-- username registration, ownership, transfer, history
+- username registration and ownership
 - identity root records
 - authorised credential commitments
 - protocol treasury, validators, relay registry
@@ -170,43 +170,27 @@ sequenceDiagram
 Undelivered private messages stay on the **sender device**. The sender must
 be online for delivery.
 
-## Crate boundaries (planned)
+## Package boundaries
 
 ```mermaid
 flowchart TB
-  CLI[nexnet-cli] --> Node[nexnet-node]
-  Node --> Msg[nexnet-messaging]
-  Node --> Rooms[nexnet-rooms]
-  Node --> Groups[nexnet-groups]
-  Node --> Disc[nexnet-discovery]
-  Node --> Pres[nexnet-presence]
-  Node --> Att[nexnet-attachments]
-  Node --> Route[nexnet-routing]
-  Node --> ChainC[nexnet-chain-client]
-
-  Msg --> Proto[nexnet-protocol]
-  Msg --> Crypto[nexnet-crypto]
-  Msg --> Store[nexnet-storage]
-  Msg --> Transport[nexnet-transport]
-  Groups --> Crypto
-  Rooms --> Proto
-  Disc --> Proto
-  Pres --> Proto
-  Identity[nexnet-identity] --> Proto
-  Identity --> Crypto
-  ChainC --> Identity
-  ChainR[nexnet-chain-runtime] --> Identity
-  Relay[nexnet-relay] --> Transport
-  Relay --> Pres
-  Relay --> Rooms
-  Types[nexnet-types] --> Proto
+  TUI[@nexnet/tui] --> Client[@nexnet/client]
+  Client --> Proto[@nexnet/protocol]
+  Client --> Crypto[@nexnet/crypto]
+  Client --> Store[@nexnet/storage]
+  Client --> Types[@nexnet/types]
+  Client --> ChainC[chain-client interface]
+  Relay[worker-relay] --> Types
+  Presence[worker-presence] --> Types
+  Discovery[worker-discovery] --> Types
+  ChainC --> Chain[chain/ .in]
 ```
 
 Rule: **chain-runtime is isolated**. Messaging depends on `chain-client`
 interfaces only.
 
-**AD-2:** `nexnet-chain-runtime` (and `chain/` `.in` sources) hold state
-transitions in inauguration. All other crates above are Rust for now.
+**AD-2:** `chain/` holds state transitions in inauguration `.in`. Client,
+relay, presence, discovery, TUI, and chain-client code use TypeScript/Bun.
 
 ## Trust sketch
 

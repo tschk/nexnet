@@ -13,8 +13,10 @@ import type {
   MessagePayload,
   MessageEnvelope,
   OutboundQueueLike,
+  DeviceCertificate,
 } from "@nexnet/types";
 import { DOMAIN_EVENT_ID, PROTOCOL_VERSION } from "@nexnet/types";
+import { verifyDeviceCert } from "@nexnet/protocol";
 import type { NexnetClient } from "./client.js";
 import {
   getOrCreateRecvSession,
@@ -45,6 +47,32 @@ const X3DH_PREFIX_LEN = 1 + 32 + 32 + 4; // ver || IKa || EKa || otp_id
 
 export interface SendDirectMessageOptions {
   directOnly?: boolean;
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function senderCertificate(client: NexnetClient): DeviceCertificate {
+  const cert = client.deviceCertificate;
+  if (
+    !cert ||
+    !client.rootPublicKey ||
+    !client.deviceSigningPublicKey ||
+    !client.deviceSigningSecretKey
+  ) {
+    throw new Error("A root-authorized device certificate is required");
+  }
+  if (
+    !sameBytes(cert.accountId, client.identityId) ||
+    !sameBytes(cert.deviceId, client.deviceId) ||
+    !sameBytes(cert.deviceSigningPublicKey, client.deviceSigningPublicKey) ||
+    !verifyDeviceCert(cert, client.rootPublicKey)
+  ) {
+    throw new Error("Invalid device certificate");
+  }
+  return cert;
 }
 
 /**
@@ -116,6 +144,7 @@ export async function sendDirectMessage(
   queue?: OutboundQueueLike,
   options: SendDirectMessageOptions = {}
 ): Promise<MessageId> {
+  const certificate = senderCertificate(client);
   const conversationId = deriveConversationId(
     client.crypto,
     client.identityId,
@@ -194,13 +223,14 @@ export async function sendDirectMessage(
     senderIdentityId: client.identityId,
     senderDeviceId: client.deviceId,
     recipientIdentityId: recipientId,
+    senderCertificate: certificate,
     senderSequence: now,
     parentIds: [],
     createdAt: now,
     ciphertext,
   });
   const signature = client.crypto.sign(
-    client.signingSecretKey,
+    client.deviceSigningSecretKey!,
     envelopePreimage
   );
 
@@ -211,6 +241,7 @@ export async function sendDirectMessage(
     senderIdentityId: client.identityId,
     senderDeviceId: client.deviceId,
     recipientIdentityId: recipientId,
+    senderCertificate: certificate,
     senderSequence: now,
     parentIds: [],
     createdAt: now,
@@ -258,7 +289,7 @@ export async function sendDirectMessage(
 export function onDirectMessage(
   client: NexnetClient,
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
-  getSenderPublicKey?: (identityId: IdentityId) => Uint8Array | undefined
+  getSenderRootPublicKey?: (identityId: IdentityId) => Uint8Array | undefined
 ): void {
   client.on("dm", (data) => {
     const msg = data as { envelope: number[] };
@@ -275,15 +306,29 @@ export function onDirectMessage(
         senderIdentityId: envelope.senderIdentityId,
         senderDeviceId: envelope.senderDeviceId,
         recipientIdentityId: envelope.recipientIdentityId,
+        senderCertificate: envelope.senderCertificate,
         senderSequence: envelope.senderSequence,
         parentIds: envelope.parentIds,
         createdAt: envelope.createdAt,
         ciphertext: envelope.ciphertext,
       });
 
-      const senderPk = getSenderPublicKey?.(envelope.senderIdentityId);
-      if (!senderPk) return;
-      if (!client.crypto.verify(senderPk, preimage, envelope.signature)) {
+      const rootPk = getSenderRootPublicKey?.(envelope.senderIdentityId);
+      const cert = envelope.senderCertificate;
+      if (
+        !rootPk ||
+        !cert ||
+        !sameBytes(cert.accountId, envelope.senderIdentityId) ||
+        !sameBytes(cert.deviceId, envelope.senderDeviceId) ||
+        cert.issuedAt > envelope.createdAt ||
+        cert.expiresAt < envelope.createdAt ||
+        !verifyDeviceCert(cert, rootPk) ||
+        !client.crypto.verify(
+          cert.deviceSigningPublicKey,
+          preimage,
+          envelope.signature
+        )
+      ) {
         return;
       }
       if (client.hasIncomingMessage(envelope.messageId)) return;

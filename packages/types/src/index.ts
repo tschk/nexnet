@@ -136,6 +136,7 @@ export interface MessageEnvelope {
   senderIdentityId: IdentityId;
   senderDeviceId: DeviceId;
   recipientIdentityId: IdentityId;
+  senderCertificate: DeviceCertificate;
   senderSequence: number;
   parentIds: EventId[];
   createdAt: number;
@@ -274,6 +275,14 @@ export interface ChainApiClient {
   getIdentityRoot(
     identityId: IdentityId
   ): Promise<{ wallet: WalletAddress } | null>;
+  registerDeviceCertificate(
+    wallet: WalletAddress,
+    certificate: DeviceCertificate
+  ): Promise<DeviceCertificate>;
+  resolveDeviceCertificate(
+    identityId: IdentityId,
+    deviceId: DeviceId
+  ): Promise<DeviceCertificate | null>;
   /** Optional AD-14 validator set (dev stub implements) */
   joinValidatorSet?(
     wallet: WalletAddress,

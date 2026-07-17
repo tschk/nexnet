@@ -9,6 +9,7 @@ It must **not** contain private chat content.
 ```text
 username -> owner wallet
 wallet -> identity root
+wallet address = Ed25519 root signing public key
 wallet -> at most one owned username (AD-10)
 wallet -> authorised passkey commitments
 identity protocol version

@@ -11,6 +11,7 @@ import type {
   DeviceId,
   CryptoProvider,
   CborCdeCodec,
+  DeviceCertificate,
 } from "@nexnet/types";
 import { EventLog } from "@nexnet/storage";
 import { mkdirSync } from "node:fs";
@@ -42,6 +43,10 @@ export interface NexnetClientConfig {
   relayUrl: string;
   storagePath: string;
   signingSecretKey: Uint8Array;
+  deviceSigningSecretKey?: Uint8Array;
+  deviceSigningPublicKey?: Uint8Array;
+  deviceCertificate?: DeviceCertificate;
+  rootPublicKey?: Uint8Array;
   /** Max reconnect attempts before giving up. 0 = infinite. Default: 0 */
   maxReconnectAttempts?: number;
   /** Base backoff delay in ms. Default: 1000 */
@@ -60,6 +65,10 @@ export class NexnetClient {
   readonly relayUrl: string;
   readonly storagePath: string;
   readonly signingSecretKey: Uint8Array;
+  readonly deviceSigningSecretKey?: Uint8Array;
+  readonly deviceSigningPublicKey?: Uint8Array;
+  readonly deviceCertificate?: DeviceCertificate;
+  readonly rootPublicKey?: Uint8Array;
 
   private _online = false;
   private _ws: WebSocket | null = null;
@@ -83,6 +92,10 @@ export class NexnetClient {
     this.relayUrl = config.relayUrl;
     this.storagePath = config.storagePath;
     this.signingSecretKey = config.signingSecretKey;
+    this.deviceSigningSecretKey = config.deviceSigningSecretKey;
+    this.deviceSigningPublicKey = config.deviceSigningPublicKey;
+    this.deviceCertificate = config.deviceCertificate;
+    this.rootPublicKey = config.rootPublicKey;
     this._maxReconnectAttempts = config.maxReconnectAttempts ?? 0;
     this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;
     this._reconnectMaxMs = config.reconnectMaxMs ?? 30_000;

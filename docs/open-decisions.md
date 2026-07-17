@@ -31,14 +31,15 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-17b | CBOR determinism | **AD-4b** CDE |
 | OD-18 | AEAD | **AD-5** XChaCha20-Poly1305 |
 | OD-19 | Internal hash | **AD-8** BLAKE3-256 + derive_key |
+| OD-20 | Wallet address format | 32-byte Ed25519 root signing public key; it verifies device certificates |
 
 ## Still open (non-blocking for Phase 1)
 
 | ID | Topic | Notes |
 |---|---|---|
-| OD-20 | Exact token economics when introduced | Supply curve, emission schedule |
-| OD-21 | Published reputation weight numbers | AD-18 locks *that* weights are published; tune constants in test |
-| OD-22 | Bio max length / charset | Suggest 160 graphemes until set |
-| OD-23 | Official client default relay pin set | Operational, not protocol |
+| OD-21 | Exact token economics when introduced | Supply curve, emission schedule |
+| OD-22 | Published reputation weight numbers | AD-18 locks *that* weights are published; tune constants in test |
+| OD-23 | Bio max length / charset | Suggest 160 graphemes until set |
+| OD-24 | Official client default relay pin set | Operational, not protocol |
 
-Phase 1 (protocol foundations) does not require OD-20–23.
+Phase 1 (protocol foundations) does not require OD-21–24.

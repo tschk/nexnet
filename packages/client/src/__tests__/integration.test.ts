@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import {
   sendDirectMessage,
@@ -149,9 +149,28 @@ function makeClient(fill: number, skFill: number): NexnetClient {
 
 // Attach public keys for verify paths
 const pubkeys = new Map<string, Uint8Array>();
+const rootKeys = new Map<string, Uint8Array>();
 
 function registerKey(client: NexnetClient, publicKey: Uint8Array): void {
   pubkeys.set(Buffer.from(client.identityId).toString("hex"), publicKey);
+}
+
+function deviceCertificate(
+  rootSecretKey: Uint8Array,
+  identityId: Uint8Array,
+  deviceId: Uint8Array,
+  devicePublicKey: Uint8Array
+) {
+  return issueDeviceCert(
+    rootSecretKey,
+    devicePublicKey,
+    devicePublicKey,
+    deviceId,
+    identityId,
+    Date.now(),
+    Number.MAX_SAFE_INTEGER,
+    1
+  );
 }
 
 describe("integration", () => {
@@ -165,6 +184,7 @@ describe("integration", () => {
     clearRatchetSessions();
     clearGroupSessions();
     pubkeys.clear();
+    rootKeys.clear();
   });
 
   afterEach(() => {
@@ -174,28 +194,44 @@ describe("integration", () => {
   test("two clients exchange encrypted DMs through relay", async () => {
     const kpA = cryptoProvider.generateSigningKeyPair();
     const kpB = cryptoProvider.generateSigningKeyPair();
+    const rootA = cryptoProvider.generateSigningKeyPair();
+    const rootB = cryptoProvider.generateSigningKeyPair();
+    const aliceIdentityId = new Uint8Array(32).fill(0xa1);
+    const aliceDeviceId = new Uint8Array(32).fill(0x01);
+    const bobIdentityId = new Uint8Array(32).fill(0xb2);
+    const bobDeviceId = new Uint8Array(32).fill(0x02);
 
     const alice = new NexnetClient({
-      identityId: new Uint8Array(32).fill(0xa1),
-      deviceId: new Uint8Array(32).fill(0x01),
+      identityId: aliceIdentityId,
+      deviceId: aliceDeviceId,
       crypto: cryptoProvider,
       codec,
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-int-a",
       signingSecretKey: kpA.secretKey,
+      deviceSigningSecretKey: kpA.secretKey,
+      deviceSigningPublicKey: kpA.publicKey,
+      deviceCertificate: deviceCertificate(rootA.secretKey, aliceIdentityId, aliceDeviceId, kpA.publicKey),
+      rootPublicKey: rootA.publicKey,
     });
     const bob = new NexnetClient({
-      identityId: new Uint8Array(32).fill(0xb2),
-      deviceId: new Uint8Array(32).fill(0x02),
+      identityId: bobIdentityId,
+      deviceId: bobDeviceId,
       crypto: cryptoProvider,
       codec,
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-int-b",
       signingSecretKey: kpB.secretKey,
+      deviceSigningSecretKey: kpB.secretKey,
+      deviceSigningPublicKey: kpB.publicKey,
+      deviceCertificate: deviceCertificate(rootB.secretKey, bobIdentityId, bobDeviceId, kpB.publicKey),
+      rootPublicKey: rootB.publicKey,
     });
 
     registerKey(alice, kpA.publicKey);
     registerKey(bob, kpB.publicKey);
+    rootKeys.set(alice.identityHex, rootA.publicKey);
+    rootKeys.set(bob.identityHex, rootB.publicKey);
 
     await alice.connect();
     await bob.connect();
@@ -210,7 +246,7 @@ describe("integration", () => {
       (_env, payload) => {
         got.push(payload);
       },
-      (id) => pubkeys.get(Buffer.from(id).toString("hex"))
+      (id) => rootKeys.get(Buffer.from(id).toString("hex"))
     );
 
     const msgId = await sendDirectMessage(alice, bob.identityId, "hello bob");
@@ -244,7 +280,7 @@ describe("integration", () => {
       (_env, payload) => {
         gotA.push(payload);
       },
-      (id) => pubkeys.get(Buffer.from(id).toString("hex"))
+      (id) => rootKeys.get(Buffer.from(id).toString("hex"))
     );
     await sendDirectMessage(bob, alice.identityId, "hey alice");
     await new Promise((r) => setTimeout(r, 30));
@@ -258,6 +294,31 @@ describe("integration", () => {
 
     await alice.disconnect();
     await bob.disconnect();
+  });
+
+  test("DM sending rejects a device certificate not signed by its root", async () => {
+    const device = cryptoProvider.generateSigningKeyPair();
+    const root = cryptoProvider.generateSigningKeyPair();
+    const otherRoot = cryptoProvider.generateSigningKeyPair();
+    const identityId = new Uint8Array(32).fill(0xe1);
+    const deviceId = new Uint8Array(32).fill(0x1e);
+    const client = new NexnetClient({
+      identityId,
+      deviceId,
+      crypto: cryptoProvider,
+      codec,
+      relayUrl: "https://relay.example.com",
+      storagePath: "/tmp/nexnet-int-invalid-cert",
+      signingSecretKey: device.secretKey,
+      deviceSigningSecretKey: device.secretKey,
+      deviceSigningPublicKey: device.publicKey,
+      deviceCertificate: deviceCertificate(otherRoot.secretKey, identityId, deviceId, device.publicKey),
+      rootPublicKey: root.publicKey,
+    });
+
+    await expect(
+      sendDirectMessage(client, new Uint8Array(32).fill(0xe2), "reject")
+    ).rejects.toThrow("Invalid device certificate");
   });
 
   test("group encryption across members with shared epoch", async () => {

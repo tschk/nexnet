@@ -4,6 +4,9 @@
 
 Each account has a root identity controlled by a wallet.
 
+The wallet address is the account's 32-byte Ed25519 root signing public key.
+It verifies device certificates; device keys, not the wallet key, sign messages.
+
 The wallet is final authority over:
 
 - username ownership

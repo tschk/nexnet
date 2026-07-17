@@ -1,6 +1,6 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import {
   prepareAttachment,
   sendAttachment,
@@ -15,6 +15,18 @@ import type { PeerManager } from "../webrtc.js";
 describe("Attachments", () => {
   const crypto = cryptoProvider;
   const codec = { encode: cdeEncode, decode: cdeDecode };
+
+  function deviceConfig(identityId: Uint8Array, deviceId: Uint8Array) {
+    const device = crypto.generateSigningKeyPair();
+    const root = crypto.generateSigningKeyPair();
+    return {
+      signingSecretKey: device.secretKey,
+      deviceSigningSecretKey: device.secretKey,
+      deviceSigningPublicKey: device.publicKey,
+      deviceCertificate: issueDeviceCert(root.secretKey, device.publicKey, device.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      rootPublicKey: root.publicKey,
+    };
+  }
 
   afterEach(() => setDirectTransport(null));
 
@@ -120,15 +132,22 @@ describe("Attachments", () => {
         return true;
       },
     } as unknown as PeerManager);
+    const senderIdentityId = new Uint8Array(32).fill(1);
+    const senderDeviceId = new Uint8Array(32).fill(3);
     const senderKeys = crypto.generateSigningKeyPair();
+    const rootKeys = crypto.generateSigningKeyPair();
     const client = new NexnetClient({
-      identityId: new Uint8Array(32).fill(1),
-      deviceId: new Uint8Array(32).fill(3),
+      identityId: senderIdentityId,
+      deviceId: senderDeviceId,
       crypto,
       codec,
       relayUrl: "ws://relay.example",
       storagePath: "/tmp/attachments",
       signingSecretKey: senderKeys.secretKey,
+      deviceSigningSecretKey: senderKeys.secretKey,
+      deviceSigningPublicKey: senderKeys.publicKey,
+      deviceCertificate: issueDeviceCert(rootKeys.secretKey, senderKeys.publicKey, senderKeys.publicKey, senderDeviceId, senderIdentityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      rootPublicKey: rootKeys.publicKey,
     });
     const recipient = new NexnetClient({
       identityId: recipientId,
@@ -150,7 +169,7 @@ describe("Attachments", () => {
           contentHash = new Uint8Array(payload.attachmentOffer.encryptedContentHash);
         }
       },
-      () => senderKeys.publicKey
+      () => rootKeys.publicKey
     );
 
     await sendAttachment(client, recipientId, file, "a.bin", "application/octet-stream", 2);
@@ -242,7 +261,7 @@ describe("Attachments", () => {
       codec,
       relayUrl: "ws://relay.example",
       storagePath: "/tmp/attachments",
-      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+      ...deviceConfig(new Uint8Array(32).fill(1), new Uint8Array(32).fill(3)),
     });
 
     await expect(
@@ -265,7 +284,7 @@ describe("Attachments", () => {
       codec,
       relayUrl: "ws://relay.example",
       storagePath: "/tmp/attachments",
-      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+      ...deviceConfig(new Uint8Array(32).fill(1), new Uint8Array(32).fill(3)),
     });
 
     await expect(

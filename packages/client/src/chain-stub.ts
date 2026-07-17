@@ -8,11 +8,14 @@
 
 import type {
   ChainApiClient,
+  DeviceCertificate,
+  DeviceId,
   UsernameRecord,
   ValidatorRecord,
   WalletAddress,
   IdentityId,
 } from "@nexnet/types";
+import { verifyDeviceCert } from "@nexnet/protocol";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -47,11 +50,23 @@ interface PersistedValidatorRecord {
   joinedAt: number;
 }
 
+interface PersistedDeviceCertificate {
+  accountId: string;
+  deviceId: string;
+  deviceSigningPublicKey: string;
+  deviceEncryptionPublicKey: string;
+  issuedAt: number;
+  expiresAt: number;
+  capabilities: number;
+  rootSignature: string;
+}
+
 interface PersistedState {
   accounts: [string, AccountMeta][];
   usernames: PersistedUsernameRecord[];
   history: [string, PersistedUsernameRecord[]][];
   identityRoots?: [string, string][];
+  deviceCertificates?: PersistedDeviceCertificate[];
   validators: PersistedValidatorRecord[];
 }
 
@@ -60,6 +75,7 @@ export class DevChainClient implements ChainApiClient {
   private walletToUsername = new Map<string, string>();
   private history = new Map<string, UsernameRecord[]>();
   private identityRoots = new Map<string, WalletAddress>();
+  private deviceCertificates = new Map<string, DeviceCertificate>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
   private validators = new Map<string, ValidatorRecord>();
 
@@ -183,6 +199,49 @@ export class DevChainClient implements ChainApiClient {
     return wallet ? { wallet } : null;
   }
 
+  async registerDeviceCertificate(
+    wallet: WalletAddress,
+    certificate: DeviceCertificate
+  ): Promise<DeviceCertificate> {
+    if (
+      wallet.length !== 32 ||
+      certificate.accountId.length !== 32 ||
+      certificate.deviceId.length !== 32 ||
+      certificate.deviceSigningPublicKey.length !== 32 ||
+      certificate.deviceEncryptionPublicKey.length !== 32 ||
+      certificate.rootSignature.length !== 64 ||
+      !Number.isFinite(certificate.issuedAt) ||
+      !Number.isFinite(certificate.expiresAt) ||
+      certificate.expiresAt <= certificate.issuedAt ||
+      certificate.expiresAt <= Date.now()
+    ) {
+      throw new Error("Invalid device certificate");
+    }
+    const identityHex = Buffer.from(certificate.accountId).toString("hex");
+    const root = this.identityRoots.get(identityHex);
+    if (!root || !Buffer.from(root).equals(Buffer.from(wallet))) {
+      throw new Error("Wallet is not the identity root");
+    }
+    if (!verifyDeviceCert(certificate, wallet)) {
+      throw new Error("Invalid device certificate signature");
+    }
+    const stored = structuredClone(certificate);
+    this.deviceCertificates.set(this.deviceCertificateKey(stored.accountId, stored.deviceId), stored);
+    this.persist();
+    return structuredClone(stored);
+  }
+
+  async resolveDeviceCertificate(
+    identityId: IdentityId,
+    deviceId: DeviceId
+  ): Promise<DeviceCertificate | null> {
+    const certificate = this.deviceCertificates.get(this.deviceCertificateKey(identityId, deviceId));
+    const now = Date.now();
+    return certificate && certificate.issuedAt <= now && now < certificate.expiresAt
+      ? structuredClone(certificate)
+      : null;
+  }
+
   private appendHistory(username: string, record: UsernameRecord): void {
     const list = this.history.get(username) ?? [];
     list.push(record);
@@ -206,6 +265,12 @@ export class DevChainClient implements ChainApiClient {
         identityHex,
         new Uint8Array(Buffer.from(wallet, "base64")),
       ])
+    );
+    this.deviceCertificates = new Map(
+      (state.deviceCertificates ?? []).map((record) => {
+        const certificate = this.deviceCertificate(record);
+        return [this.deviceCertificateKey(certificate.accountId, certificate.deviceId), certificate];
+      })
     );
     if (this.identityRoots.size === 0) {
       for (const records of this.history.values()) {
@@ -250,6 +315,16 @@ export class DevChainClient implements ChainApiClient {
         identityHex,
         Buffer.from(wallet).toString("base64"),
       ]),
+      deviceCertificates: [...this.deviceCertificates.values()].map((certificate) => ({
+        accountId: Buffer.from(certificate.accountId).toString("base64"),
+        deviceId: Buffer.from(certificate.deviceId).toString("base64"),
+        deviceSigningPublicKey: Buffer.from(certificate.deviceSigningPublicKey).toString("base64"),
+        deviceEncryptionPublicKey: Buffer.from(certificate.deviceEncryptionPublicKey).toString("base64"),
+        issuedAt: certificate.issuedAt,
+        expiresAt: certificate.expiresAt,
+        capabilities: certificate.capabilities,
+        rootSignature: Buffer.from(certificate.rootSignature).toString("base64"),
+      })),
       validators: [...this.validators.values()].map((record) => ({
         wallet: Buffer.from(record.wallet).toString("base64"),
         bondedStake: record.bondedStake,
@@ -279,6 +354,23 @@ export class DevChainClient implements ChainApiClient {
       effectivePower: record.effectivePower,
       joinedAt: record.joinedAt,
     };
+  }
+
+  private deviceCertificate(record: PersistedDeviceCertificate): DeviceCertificate {
+    return {
+      accountId: new Uint8Array(Buffer.from(record.accountId, "base64")),
+      deviceId: new Uint8Array(Buffer.from(record.deviceId, "base64")),
+      deviceSigningPublicKey: new Uint8Array(Buffer.from(record.deviceSigningPublicKey, "base64")),
+      deviceEncryptionPublicKey: new Uint8Array(Buffer.from(record.deviceEncryptionPublicKey, "base64")),
+      issuedAt: record.issuedAt,
+      expiresAt: record.expiresAt,
+      capabilities: record.capabilities,
+      rootSignature: new Uint8Array(Buffer.from(record.rootSignature, "base64")),
+    };
+  }
+
+  private deviceCertificateKey(identityId: IdentityId, deviceId: DeviceId): string {
+    return `${Buffer.from(identityId).toString("hex")}:${Buffer.from(deviceId).toString("hex")}`;
   }
 
   async joinValidatorSet(

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import {
   sendDirectMessage,
@@ -35,6 +35,7 @@ import { generateKeyPair as genDh } from "@nexnet/crypto";
 import type { CborCdeCodec } from "@nexnet/types";
 
 const codec: CborCdeCodec = { encode: cdeEncode, decode: cdeDecode };
+const pubs = new Map<string, Uint8Array>();
 
 // ── Mock WS relay ────────────────────────────────────────────────────
 
@@ -107,22 +108,29 @@ class MockWebSocket {
 
 function makeClient(
   fill: number,
-  sk: Uint8Array
+  keys: { secretKey: Uint8Array; publicKey: Uint8Array }
 ): NexnetClient {
+  const identityId = new Uint8Array(32).fill(fill);
+  const deviceId = new Uint8Array(32).fill(fill ^ 0x55);
+  const root = cryptoProvider.generateSigningKeyPair();
+  pubs.set(Buffer.from(identityId).toString("hex"), root.publicKey);
   return new NexnetClient({
-    identityId: new Uint8Array(32).fill(fill),
-    deviceId: new Uint8Array(32).fill(fill ^ 0x55),
+    identityId,
+    deviceId,
     crypto: cryptoProvider,
     codec,
     relayUrl: "https://relay.example.com",
     storagePath: `/tmp/nexnet-x3-${fill}`,
-    signingSecretKey: sk,
+    signingSecretKey: keys.secretKey,
+    deviceSigningSecretKey: keys.secretKey,
+    deviceSigningPublicKey: keys.publicKey,
+    deviceCertificate: issueDeviceCert(root.secretKey, keys.publicKey, keys.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+    rootPublicKey: root.publicKey,
   });
 }
 
 describe("X3DH-wired DMs", () => {
   let origWs: typeof globalThis.WebSocket;
-  const pubs = new Map<string, Uint8Array>();
 
   beforeEach(() => {
     origWs = globalThis.WebSocket;
@@ -142,10 +150,8 @@ describe("X3DH-wired DMs", () => {
   test("first DM uses X3DH when bundles published", async () => {
     const kpA = cryptoProvider.generateSigningKeyPair();
     const kpB = cryptoProvider.generateSigningKeyPair();
-    const alice = makeClient(0xa1, kpA.secretKey);
-    const bob = makeClient(0xb2, kpB.secretKey);
-    pubs.set(Buffer.from(alice.identityId).toString("hex"), kpA.publicKey);
-    pubs.set(Buffer.from(bob.identityId).toString("hex"), kpB.publicKey);
+    const alice = makeClient(0xa1, kpA);
+    const bob = makeClient(0xb2, kpB);
 
     setupLocalPrekeys(
       cryptoProvider,
@@ -194,10 +200,8 @@ describe("X3DH-wired DMs", () => {
   test("fallback HKDF path still works without prekeys", async () => {
     const kpA = cryptoProvider.generateSigningKeyPair();
     const kpB = cryptoProvider.generateSigningKeyPair();
-    const alice = makeClient(0xc1, kpA.secretKey);
-    const bob = makeClient(0xc2, kpB.secretKey);
-    pubs.set(Buffer.from(alice.identityId).toString("hex"), kpA.publicKey);
-    pubs.set(Buffer.from(bob.identityId).toString("hex"), kpB.publicKey);
+    const alice = makeClient(0xc1, kpA);
+    const bob = makeClient(0xc2, kpB);
 
     await alice.connect();
     await bob.connect();
@@ -231,7 +235,7 @@ describe("group membership epoch rotate", () => {
 
   test("removeMember rotates epoch secret", async () => {
     const kp = cryptoProvider.generateSigningKeyPair();
-    const client = makeClient(0xd1, kp.secretKey);
+    const client = makeClient(0xd1, kp);
     // offline create still inits session
     const groupId = await createGroup(client, "crew-rot", [
       new Uint8Array(32).fill(0xee),

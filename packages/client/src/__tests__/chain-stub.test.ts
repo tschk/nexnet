@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DevChainClient } from "../chain-stub.js";
+import { generateSigningKeyPair } from "@nexnet/crypto";
+import { issueDeviceCert } from "@nexnet/protocol";
 
 function makeWallet(n: number): Uint8Array {
   const w = new Uint8Array(32);
@@ -195,5 +197,63 @@ describe("DevChainClient", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  test("authorizes and restores a root-signed device certificate", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nexnet-chain-"));
+    const statePath = join(directory, "state.json");
+    try {
+      const root = generateSigningKeyPair();
+      const deviceSigning = generateSigningKeyPair();
+      const deviceEncryption = generateSigningKeyPair();
+      const identity = makeIdentity(8);
+      const deviceId = makeIdentity(9);
+      const now = Date.now();
+      const certificate = issueDeviceCert(
+        root.secretKey,
+        deviceSigning.publicKey,
+        deviceEncryption.publicKey,
+        deviceId,
+        identity,
+        now,
+        now + 60_000,
+        1
+      );
+      const chain = new DevChainClient(statePath);
+      ageAccount(chain, root.publicKey);
+      await chain.registerUsername("alice", root.publicKey, identity);
+      await expect(chain.registerDeviceCertificate(root.publicKey, certificate)).resolves.toEqual(certificate);
+      certificate.capabilities = 2;
+      expect((await chain.resolveDeviceCertificate(identity, deviceId))?.capabilities).toBe(1);
+
+      const reopened = new DevChainClient(statePath);
+      expect((await reopened.resolveDeviceCertificate(identity, deviceId))?.capabilities).toBe(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects device certificates without the identity root signature", async () => {
+    const root = generateSigningKeyPair();
+    const deviceSigning = generateSigningKeyPair();
+    const deviceEncryption = generateSigningKeyPair();
+    const identity = makeIdentity(10);
+    const certificate = issueDeviceCert(
+      root.secretKey,
+      deviceSigning.publicKey,
+      deviceEncryption.publicKey,
+      makeIdentity(11),
+      identity,
+      Date.now(),
+      Date.now() + 60_000,
+      1
+    );
+    certificate.capabilities = 2;
+    const chain = new DevChainClient();
+    ageAccount(chain, root.publicKey);
+    await chain.registerUsername("alice", root.publicKey, identity);
+    await expect(chain.registerDeviceCertificate(root.publicKey, certificate)).rejects.toThrow(
+      "Invalid device certificate signature"
+    );
   });
 });

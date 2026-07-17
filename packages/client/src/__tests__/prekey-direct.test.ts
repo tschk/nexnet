@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import {
   setupLocalPrekeys,
@@ -139,14 +139,22 @@ describe("direct transport DM path", () => {
   test("sendDirectMessage prefers direct over relay", async () => {
     const kpA = cryptoProvider.generateSigningKeyPair();
     const kpB = cryptoProvider.generateSigningKeyPair();
+    const rootA = cryptoProvider.generateSigningKeyPair();
+    const rootB = cryptoProvider.generateSigningKeyPair();
+    const aliceId = new Uint8Array(32).fill(0xa1);
+    const aliceDeviceId = new Uint8Array(32).fill(1);
     const alice = new NexnetClient({
-      identityId: new Uint8Array(32).fill(0xa1),
-      deviceId: new Uint8Array(32).fill(1),
+      identityId: aliceId,
+      deviceId: aliceDeviceId,
       crypto: cryptoProvider,
       codec,
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/d-a",
       signingSecretKey: kpA.secretKey,
+      deviceSigningSecretKey: kpA.secretKey,
+      deviceSigningPublicKey: kpA.publicKey,
+      deviceCertificate: issueDeviceCert(rootA.secretKey, kpA.publicKey, kpA.publicKey, aliceDeviceId, aliceId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      rootPublicKey: rootA.publicKey,
     });
     const bobId = new Uint8Array(32).fill(0xb2);
     const bobHex = Buffer.from(bobId).toString("hex");
@@ -175,9 +183,13 @@ describe("direct transport DM path", () => {
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/d-b",
       signingSecretKey: kpB.secretKey,
+      deviceSigningSecretKey: kpB.secretKey,
+      deviceSigningPublicKey: kpB.publicKey,
+      deviceCertificate: issueDeviceCert(rootB.secretKey, kpB.publicKey, kpB.publicKey, new Uint8Array(32).fill(2), bobId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      rootPublicKey: rootB.publicKey,
     });
     const pubs = new Map([
-      [Buffer.from(alice.identityId).toString("hex"), kpA.publicKey],
+      [Buffer.from(alice.identityId).toString("hex"), rootA.publicKey],
     ]);
     const got: string[] = [];
     onDirectMessage(

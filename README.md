@@ -83,7 +83,7 @@ and privacy-routed stranger discovery.
 ```text
 nettle/
   Cargo.toml
-  crates/
+  crates/                 # Rust workspace
     nettle-types/
     nettle-protocol/
     nettle-crypto/
@@ -99,10 +99,11 @@ nettle/
     nettle-attachments/
     nettle-reputation/
     nettle-chain-client/
-    nettle-chain-runtime/
+    nettle-chain-runtime/ # host/executor bridge to chain/
     nettle-relay/
     nettle-node/
     nettle-cli/
+  chain/                  # inauguration .in state machine (AD-3)
   docs/
   test-vectors/
   deployments/

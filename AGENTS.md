@@ -31,6 +31,7 @@ started.
 - **Own chain** — application logic in inauguration `.in`
   (`../inauguration`); clients only via `nettle-chain-client`
 - **AD-2:** chain app `.in` only; node/relay/messaging/crypto/CLI = Rust
+- **AD-3:** monorepo — `chain/` (`.in`) next to `crates/`
 - Chain runtime isolated; single-node executor OK until consensus
 
 ## Doc map

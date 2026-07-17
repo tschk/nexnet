@@ -76,6 +76,20 @@ Chain remains isolated behind a clean interface.
 Expand `.in` into validator host later when networking/stdlib ready. Do not
 migrate messaging to `.in` in the first implementation wave.
 
+## Repo packaging (AD-3)
+
+**Locked: monorepo.**
+
+```text
+nettle/
+  crates/          # Rust workspace
+  chain/           # inauguration .in chain app + tests/vectors
+  docs/
+  test-vectors/
+```
+
+No separate `nettle-chain` repo and no chain sources inside inauguration.
+
 ## Non-negotiables
 
 - reviewed cryptographic libraries only

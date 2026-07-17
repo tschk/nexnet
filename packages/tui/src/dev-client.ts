@@ -4,7 +4,7 @@
  */
 
 import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nettle/crypto";
-import { NettleClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId } from "@nettle/client";
+import { NettleClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId, onDirectMessage } from "@nettle/client";
 import { cdeEncode, cdeDecode } from "@nettle/protocol";
 import type { CborCdeCodec } from "@nettle/types";
 
@@ -117,26 +117,19 @@ export async function connectDev(relayUrl: string): Promise<void> {
     });
   }
 
-  // Handle inbound DMs
-  client.on("dm", (data) => {
-    try {
-      const raw = data as { envelope?: number[] };
-      if (!raw.envelope) return;
-      // ponytail: show as encrypted placeholder — real decrypt needs session key
-      const envBytes = new Uint8Array(raw.envelope);
-      const msg: ChatMessage = {
-        id: nextMsgId(),
-        senderHex: "(encrypted)",
-        senderName: "peer",
-        text: "[encrypted message]",
-        createdAt: Date.now(),
-        delivered: true,
-        own: false,
-      };
-      // Can't route without decrypting; skip adding for now
-    } catch {
-      // malformed
-    }
+  // Handle inbound DMs (real decryption via @nettle/client)
+  onDirectMessage(client, (envelope, payload) => {
+    const authorHex = hexEncode(envelope.senderIdentityId);
+    const msg: ChatMessage = {
+      id: nextMsgId(),
+      senderHex: authorHex,
+      senderName: authorHex.slice(0, 12),
+      text: payload.text ?? "[non-text message]",
+      createdAt: envelope.createdAt,
+      delivered: true,
+      own: false,
+    };
+    addMessage(authorHex, msg);
   });
 
   // Handle presence

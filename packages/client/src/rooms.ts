@@ -7,7 +7,7 @@
  * Moderation: per-user cooldown, votekick, automod spam filter.
  */
 
-import type { RoomId, NexnetEvent } from "@nexnet/types";
+import type { RoomId, NexnetEvent, PublicKey } from "@nexnet/types";
 import { DOMAIN_ROOM_ID, PROTOCOL_VERSION } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 
@@ -20,7 +20,7 @@ const RATE_WINDOW_MS = 60_000;
 /** Votekick threshold: fraction of active users needed */
 const VOTEKICK_THRESHOLD = 2 / 3;
 /** Votekick expiry (5 minutes to collect votes) */
-const VOTEKICK_WINDOW_MS = 5 * 60_1000;
+const VOTEKICK_WINDOW_MS = 5 * 60_000;
 /** Auto-ban duration for spam (30 minutes) */
 const SPAM_BAN_MS = 30 * 60_1000;
 /** Max identical messages in window before automod */
@@ -326,16 +326,28 @@ export async function sendRoomMessage(
 export function onRoomMessage(
   client: NexnetClient,
   roomId: RoomId,
-  callback: (event: NexnetEvent) => void
+  callback: (event: NexnetEvent) => void,
+  getSenderPublicKey?: (identityId: Uint8Array) => PublicKey | undefined
 ): void {
   const roomIdHex = Buffer.from(roomId).toString("hex");
 
   client.on("room_event", (data) => {
-    const msg = data as { room_id?: string; event?: { event?: number[] } };
-    if (msg.room_id === roomIdHex && msg.event?.event) {
+    const msg = data as {
+      room_id?: string;
+      event?: { event?: number[]; signature?: number[] };
+    };
+    if (msg.room_id === roomIdHex && msg.event?.event && msg.event.signature) {
       try {
         const bytes = new Uint8Array(msg.event.event);
         const event = client.codec.decode<NexnetEvent>(bytes);
+        const senderPublicKey = getSenderPublicKey?.(event.authorIdentityId);
+        if (
+          event.eventType !== "room.message" ||
+          !senderPublicKey ||
+          !client.crypto.verify(senderPublicKey, bytes, new Uint8Array(msg.event.signature))
+        ) {
+          return;
+        }
         callback(event);
       } catch {
         // malformed — ignore

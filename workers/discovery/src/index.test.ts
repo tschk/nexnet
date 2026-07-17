@@ -260,6 +260,60 @@ describe("DiscoveryIndex", () => {
     const body = await resp.json() as { match: unknown };
     expect(body.match).toBeNull();
   });
+
+  test("random match excludes identities blocked in either direction", async () => {
+    for (const identityId of ["alice", "bob"]) {
+      await index.fetch(jsonPost("/do/profile/upsert", {
+        identityId,
+        username: identityId,
+        interests: ["shared"],
+        languages: ["en"],
+        online: true,
+        reputationScore: 1,
+      }));
+    }
+
+    await index.fetch(jsonPost("/do/block", { identityId: "alice", blockedIdentityId: "bob" }));
+    const response = await index.fetch(jsonPost("/do/random-match", {
+      identityId: "bob", interests: ["shared"], languages: ["en"],
+    }));
+    const body = await response.json() as { match: unknown };
+    expect(body.match).toBeNull();
+  });
+
+  test("blocks survive Durable Object recreation", async () => {
+    const state = createMockState();
+    const first = new DiscoveryIndex(state, createMockEnv());
+    await first.fetch(jsonPost("/do/block", { identityId: "alice", blockedIdentityId: "bob" }));
+    const recreated = new DiscoveryIndex(state, createMockEnv());
+    for (const identityId of ["alice", "bob"]) {
+      await recreated.fetch(jsonPost("/do/profile/upsert", {
+        identityId,
+        username: identityId,
+        interests: ["shared"],
+        languages: ["en"],
+        online: true,
+        reputationScore: 1,
+      }));
+    }
+
+    const response = await recreated.fetch(jsonPost("/do/random-match", {
+      identityId: "alice", interests: ["shared"], languages: ["en"],
+    }));
+    const body = await response.json() as { match: unknown };
+    expect(body.match).toBeNull();
+  });
+
+  test("random match throttles excessive requests per identity", async () => {
+    const body = { identityId: "requester", interests: ["shared"], languages: ["en"] };
+    for (let request = 0; request < 5; request++) {
+      expect((await index.fetch(jsonPost("/do/random-match", body))).status).toBe(200);
+    }
+
+    const response = await index.fetch(jsonPost("/do/random-match", body));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: "random match rate limited" });
+  });
 });
 
 test("Hono profile route forwards to the discovery Durable Object", async () => {

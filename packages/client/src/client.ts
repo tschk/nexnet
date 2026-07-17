@@ -329,6 +329,8 @@ export class NexnetClient {
         this.emit("room_message", msg);
         break;
       case "group_message":
+      case "group.message":
+      case "group.membership":
         this.emit("group_message", msg);
         break;
       case "presence":

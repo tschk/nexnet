@@ -172,6 +172,9 @@ export async function mlsDecrypt(
   state: ClientState,
   wire: Uint8Array
 ): Promise<{ state: ClientState; plaintext: Uint8Array }> {
+  if (state.groupActiveState.kind !== "active") {
+    throw new Error("mls: removed from group");
+  }
   const impl = await mlsCiphersuite();
   const decoded = decodeMlsMessage(wire, 0)?.[0];
   if (!decoded || decoded.wireformat !== "mls_private_message") {

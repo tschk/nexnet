@@ -38,6 +38,9 @@ interface StoredGroup {
   createdAt: number;
 }
 
+const MATCH_RATE_LIMIT = 5;
+const MATCH_RATE_WINDOW_MS = 60_000;
+
 interface Env {
   DISCOVERY: DurableObjectNamespace;
 }
@@ -48,6 +51,8 @@ export class DiscoveryIndex {
   private state: DurableObjectState;
   private profiles = new Map<string, StoredProfile>();
   private groups = new Map<string, StoredGroup>();
+  private blocks = new Map<string, Set<string>>();
+  private matchRequests = new Map<string, number[]>();
   private loaded = false;
 
   constructor(state: DurableObjectState, _env: Env) {
@@ -71,6 +76,8 @@ export class DiscoveryIndex {
         return this.handleSearchLanguage(request);
       case "/do/random-match":
         return this.handleRandomMatch(request);
+      case "/do/block":
+        return this.handleBlock(request);
       case "/do/groups/list":
         return this.handleGroupsList();
       default:
@@ -91,6 +98,10 @@ export class DiscoveryIndex {
       } else if (key.startsWith("group:")) {
         const g = value as StoredGroup;
         this.groups.set(g.groupId, g);
+      } else if (key.startsWith("blocks:")) {
+        this.blocks.set(key.slice("blocks:".length), new Set(value as string[]));
+      } else if (key.startsWith("match-requests:")) {
+        this.matchRequests.set(key.slice("match-requests:".length), value as number[]);
       }
     }
     this.loaded = true;
@@ -206,6 +217,26 @@ export class DiscoveryIndex {
 
   // ── Random match (AD-18) ───────────────────────────────────────────
 
+  private async handleBlock(request: Request): Promise<Response> {
+    let body: { identityId?: string; blockedIdentityId?: string };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return jsonResponse({ error: "invalid JSON" }, 400);
+    }
+
+    if (!body.identityId || !body.blockedIdentityId || body.identityId === body.blockedIdentityId) {
+      return jsonResponse({ error: "distinct identityId and blockedIdentityId required" }, 400);
+    }
+
+    const blocked = this.blocks.get(body.identityId) ?? new Set<string>();
+    blocked.add(body.blockedIdentityId);
+    this.blocks.set(body.identityId, blocked);
+    await this.state.storage.put(`blocks:${body.identityId}`, [...blocked]);
+
+    return jsonResponse({ ok: true });
+  }
+
   private async handleRandomMatch(request: Request): Promise<Response> {
     let body: {
       identityId?: string;
@@ -223,6 +254,17 @@ export class DiscoveryIndex {
       return jsonResponse({ error: "identityId, interests, languages required" }, 400);
     }
 
+    const now = Date.now();
+    const requests = (this.matchRequests.get(body.identityId) ?? []).filter(
+      (requestedAt) => requestedAt > now - MATCH_RATE_WINDOW_MS
+    );
+    if (requests.length >= MATCH_RATE_LIMIT) {
+      return jsonResponse({ error: "random match rate limited", retryAfterMs: requests[0] + MATCH_RATE_WINDOW_MS - now }, 429);
+    }
+    requests.push(now);
+    this.matchRequests.set(body.identityId, requests);
+    await this.state.storage.put(`match-requests:${body.identityId}`, requests);
+
     const excludeSet = new Set(body.exclude ?? []);
     excludeSet.add(body.identityId); // never match self
 
@@ -236,6 +278,8 @@ export class DiscoveryIndex {
       if (!profile.online) continue;
       if (profile.reputationScore < DEFAULT_REPUTATION_THRESHOLD) continue;
       if (excludeSet.has(profile.identityId)) continue;
+      if (this.blocks.get(body.identityId)?.has(profile.identityId)) continue;
+      if (this.blocks.get(profile.identityId)?.has(body.identityId)) continue;
 
       // Must have at least one interest or language overlap
       const interestOverlap = profile.interests.some((i) =>
@@ -317,6 +361,7 @@ app.delete("/discovery/profile/:identityId", (c) => handleProfileDelete(c.req.pa
 app.post("/discovery/search/interest", (c) => handleSearchInterest(c.req.raw, c.env));
 app.post("/discovery/search/language", (c) => handleSearchLanguage(c.req.raw, c.env));
 app.post("/discovery/random-match", (c) => handleRandomMatch(c.req.raw, c.env));
+app.post("/discovery/block", (c) => handleBlock(c.req.raw, c.env));
 app.get("/discovery/groups", (c) => handleGroupsList(c.req.raw, c.env));
 app.notFound((c) => c.json({ error: "not found" }, 404));
 app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "internal error" }, 500));
@@ -385,6 +430,19 @@ async function handleRandomMatch(
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/random-match", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+}
+
+async function handleBlock(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  const body = await request.text();
+  const stub = getDiscoveryStub(env);
+  return stub.fetch("https://discovery/do/block", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,

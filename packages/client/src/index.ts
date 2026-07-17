@@ -101,11 +101,11 @@ export {
   removeMember,
   sendGroupMessage,
   onGroupMessage,
-  registerMemberDh,
-  applyGroupEpochMessage,
+  publishMlsKeyPackage,
+  applyGroupMembershipMessage,
   listGroupMembers,
-  clearGroupMembership,
-} from "./groups.js";
+  clearMlsGroups,
+} from "./mls-groups.js";
 
 export { QueueManager } from "./queue-manager.js";
 export { DevChainClient } from "./chain-stub.js";

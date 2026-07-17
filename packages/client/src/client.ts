@@ -12,6 +12,7 @@ import type {
   CryptoProvider,
   CborCdeCodec,
   DeviceCertificate,
+  DeviceCertificateResolver,
 } from "@nexnet/types";
 import { EventLog } from "@nexnet/storage";
 import { mkdirSync } from "node:fs";
@@ -46,6 +47,7 @@ export interface NexnetClientConfig {
   deviceSigningSecretKey?: Uint8Array;
   deviceSigningPublicKey?: Uint8Array;
   deviceCertificate?: DeviceCertificate;
+  deviceCertificateResolver?: DeviceCertificateResolver;
   rootPublicKey?: Uint8Array;
   /** Max reconnect attempts before giving up. 0 = infinite. Default: 0 */
   maxReconnectAttempts?: number;
@@ -68,6 +70,7 @@ export class NexnetClient {
   readonly deviceSigningSecretKey?: Uint8Array;
   readonly deviceSigningPublicKey?: Uint8Array;
   readonly deviceCertificate?: DeviceCertificate;
+  readonly deviceCertificateResolver?: DeviceCertificateResolver;
   readonly rootPublicKey?: Uint8Array;
 
   private _online = false;
@@ -95,6 +98,7 @@ export class NexnetClient {
     this.deviceSigningSecretKey = config.deviceSigningSecretKey;
     this.deviceSigningPublicKey = config.deviceSigningPublicKey;
     this.deviceCertificate = config.deviceCertificate;
+    this.deviceCertificateResolver = config.deviceCertificateResolver;
     this.rootPublicKey = config.rootPublicKey;
     this._maxReconnectAttempts = config.maxReconnectAttempts ?? 0;
     this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;

@@ -87,6 +87,13 @@ Users authenticate with passkeys.
 
 Passkeys authorise short-lived client sessions and device keys.
 
+The wallet records a signed commitment to each passkey credential. The
+commitment binds the credential ID, COSE public key, relying-party ID, and
+origin to the identity. A fresh assertion over a single-use, certificate-bound
+challenge authorises a device certificate; the chain records that result and
+advances the authenticator counter. Receivers resolve that recorded certificate
+when it is not independently root-signed.
+
 Authority chain:
 
 ```text
@@ -102,7 +109,9 @@ The wallet should **not** sign every chat message.
 
 Each device generates its own device signing and encryption keys.
 
-The account root authorises the device through a signed certificate.
+The account root may authorise the device through a signed certificate. A
+wallet-authorised passkey may also authorise it through the recorded assertion
+flow above.
 
 Suggested certificate fields:
 

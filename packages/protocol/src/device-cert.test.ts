@@ -1,5 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { issueDeviceCert, verifyDeviceCert } from "./device-cert.js";
+import {
+  authorizePasskeyCredential,
+  issueDeviceCert,
+  verifyDeviceCert,
+  verifyPasskeyCredentialAuthorization,
+} from "./device-cert.js";
 import { generateSigningKeyPair } from "@nexnet/crypto";
 
 describe("DeviceCertificate", () => {
@@ -69,5 +74,25 @@ describe("DeviceCertificate", () => {
     expect(cert.deviceId).toEqual(deviceId);
     expect(cert.capabilities).toBe(0xff);
     expect(cert.rootSignature.length).toBe(64);
+  });
+
+  test("root authorizes an immutable passkey commitment", () => {
+    const credential = {
+      credentialId: "credential-id",
+      publicKey: new Uint8Array([1, 2, 3]),
+      counter: 0,
+      rpId: "nexnet.example",
+      origin: "https://nexnet.example",
+    };
+    const signature = authorizePasskeyCredential(root.secretKey, accountId, credential);
+    expect(verifyPasskeyCredentialAuthorization(root.publicKey, accountId, credential, signature)).toBe(true);
+    expect(
+      verifyPasskeyCredentialAuthorization(
+        root.publicKey,
+        accountId,
+        { ...credential, rpId: "other.example" },
+        signature
+      )
+    ).toBe(false);
   });
 });

@@ -15,6 +15,7 @@
     "@nexnet/types": "workspace:*",
     "@noble/ciphers": "2.1.1",
     "@noble/curves": "2.0.1",
+    "@simplewebauthn/server": "13.2.2",
     "ts-mls": "1.6.2",
     "werift": "0.23.0"
   },

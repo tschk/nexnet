@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.tsx",
-  "scripts": { "dev": "bun run src/index.tsx", "build": "tsc", "build:bundle": "bun run build.ts" },
+  "scripts": { "dev": "bun run src/index.tsx", "build": "tsc", "build:bundle": "bun run build.ts", "native:build": "bun run native/build.ts" },
   "dependencies": {
     "@nexnet/types": "workspace:*",
     "@nexnet/client": "workspace:*",

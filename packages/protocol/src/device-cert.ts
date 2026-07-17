@@ -4,7 +4,7 @@
  * A root identity issues a certificate binding a device's signing
  * and encryption public keys to a time window and capability set.
  */
-import type { DeviceCertificate, IdentityId, PublicKey, Signature } from "@nexnet/types";
+import type { DeviceCertificate, IdentityId, PasskeyCredential, PublicKey, Signature } from "@nexnet/types";
 import { sign, verify } from "@nexnet/crypto";
 import { cdeEncode } from "./cde.js";
 
@@ -61,4 +61,37 @@ export function verifyDeviceCert(
     capabilities: cert.capabilities,
   };
   return verify(rootPk, cdeEncode(preimage), cert.rootSignature);
+}
+
+function passkeyPreimage(accountId: IdentityId, credential: PasskeyCredential): {
+  accountId: IdentityId;
+  credentialId: string;
+  publicKey: Uint8Array;
+  rpId: string;
+  origin: string;
+} {
+  return {
+    accountId,
+    credentialId: credential.credentialId,
+    publicKey: credential.publicKey,
+    rpId: credential.rpId,
+    origin: credential.origin,
+  };
+}
+
+export function authorizePasskeyCredential(
+  rootSk: Uint8Array,
+  accountId: IdentityId,
+  credential: PasskeyCredential
+): Signature {
+  return sign(rootSk, cdeEncode(passkeyPreimage(accountId, credential)));
+}
+
+export function verifyPasskeyCredentialAuthorization(
+  rootPk: PublicKey,
+  accountId: IdentityId,
+  credential: PasskeyCredential,
+  rootSignature: Signature
+): boolean {
+  return verify(rootPk, cdeEncode(passkeyPreimage(accountId, credential)), rootSignature);
 }

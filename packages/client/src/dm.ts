@@ -14,6 +14,7 @@ import type {
   MessageEnvelope,
   OutboundQueueLike,
   DeviceCertificate,
+  DeviceCertificateResolver,
 } from "@nexnet/types";
 import { DOMAIN_EVENT_ID, PROTOCOL_VERSION } from "@nexnet/types";
 import { verifyDeviceCert } from "@nexnet/protocol";
@@ -54,11 +55,23 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.every((value, index) => value === b[index]);
 }
 
-function senderCertificate(client: NexnetClient): DeviceCertificate {
+function sameCertificate(a: DeviceCertificate, b: DeviceCertificate): boolean {
+  return (
+    sameBytes(a.accountId, b.accountId) &&
+    sameBytes(a.deviceId, b.deviceId) &&
+    sameBytes(a.deviceSigningPublicKey, b.deviceSigningPublicKey) &&
+    sameBytes(a.deviceEncryptionPublicKey, b.deviceEncryptionPublicKey) &&
+    a.issuedAt === b.issuedAt &&
+    a.expiresAt === b.expiresAt &&
+    a.capabilities === b.capabilities &&
+    sameBytes(a.rootSignature, b.rootSignature)
+  );
+}
+
+async function senderCertificate(client: NexnetClient): Promise<DeviceCertificate> {
   const cert = client.deviceCertificate;
   if (
     !cert ||
-    !client.rootPublicKey ||
     !client.deviceSigningPublicKey ||
     !client.deviceSigningSecretKey
   ) {
@@ -68,11 +81,109 @@ function senderCertificate(client: NexnetClient): DeviceCertificate {
     !sameBytes(cert.accountId, client.identityId) ||
     !sameBytes(cert.deviceId, client.deviceId) ||
     !sameBytes(cert.deviceSigningPublicKey, client.deviceSigningPublicKey) ||
-    !verifyDeviceCert(cert, client.rootPublicKey)
+    cert.issuedAt > Date.now() ||
+    cert.expiresAt <= Date.now()
   ) {
     throw new Error("Invalid device certificate");
   }
+  if (client.rootPublicKey && verifyDeviceCert(cert, client.rootPublicKey)) {
+    return cert;
+  }
+  const registered = await client.deviceCertificateResolver?.(
+    client.identityId,
+    client.deviceId
+  );
+  if (!registered || !sameCertificate(cert, registered)) {
+    throw new Error("Invalid device certificate");
+  }
   return cert;
+}
+
+function handleAuthorizedDirectMessage(
+  client: NexnetClient,
+  callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
+  envelope: MessageEnvelope,
+  bytes: Uint8Array,
+  preimage: Uint8Array
+): void {
+  try {
+    const cert = envelope.senderCertificate;
+    if (!cert || !client.crypto.verify(cert.deviceSigningPublicKey, preimage, envelope.signature)) return;
+    if (client.hasIncomingMessage(envelope.messageId)) return;
+
+    if (envelope.ciphertext.length < 2) return;
+
+    const aad = client.codec.encode({
+      conversationId: envelope.conversationId,
+      senderIdentityId: envelope.senderIdentityId,
+      recipientIdentityId: envelope.recipientIdentityId,
+    });
+    const sessionKey = sessionStoreKey(
+      envelope.conversationId,
+      envelope.senderIdentityId
+    );
+
+    let ratchetBlob = envelope.ciphertext;
+    let existing = getSession(sessionKey);
+
+    if (!existing) {
+      const x3dh = decodeX3dhPrefix(envelope.ciphertext);
+      const local = getLocalPrekeys(client.identityId);
+
+      if (x3dh && local) {
+        const resp = x3dhRespond(
+          client.crypto,
+          local,
+          x3dh.identityDhPublic,
+          x3dh.ekPublic,
+          x3dh.otpId
+        );
+        existing = initResponder(resp.sk, client.crypto);
+        setSession(sessionKey, existing);
+        ratchetBlob = x3dh.ratchetBlob;
+        // Drop used OTP from published bundle if we know our sign pk
+        // our own sign pk is not in getSenderPublicKey; refresh if local only
+        const selfBundle = fetchBundle(client.identityId);
+        if (selfBundle) {
+          refreshPublishedBundle(
+            client.identityId,
+            selfBundle.identitySignPublic
+          );
+        }
+      } else {
+        const rootSk = deriveConversationKey(
+          client.crypto,
+          envelope.conversationId
+        );
+        existing = getOrCreateRecvSession(
+          sessionKey,
+          rootSk,
+          client.crypto
+        );
+      }
+    } else if (envelope.ciphertext[0] === DM_WIRE_X3DH) {
+      // Session already exists; strip accidental v2 prefix if re-delivered
+      const x3dh = decodeX3dhPrefix(envelope.ciphertext);
+      if (x3dh) ratchetBlob = x3dh.ratchetBlob;
+    }
+
+    const plaintext = ratchetOpen(
+      client.crypto,
+      existing,
+      ratchetBlob,
+      aad
+    );
+    saveSession(sessionKey, existing);
+
+    const payload = client.codec.decode<MessagePayload>(plaintext);
+    if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
+    callback(envelope, payload);
+    client.sendDeliveryReceipt(
+      Buffer.from(envelope.senderIdentityId).toString("hex"),
+      envelope.messageId
+    );
+  } catch {
+  }
 }
 
 /**
@@ -144,7 +255,7 @@ export async function sendDirectMessage(
   queue?: OutboundQueueLike,
   options: SendDirectMessageOptions = {}
 ): Promise<MessageId> {
-  const certificate = senderCertificate(client);
+  const certificate = await senderCertificate(client);
   const conversationId = deriveConversationId(
     client.crypto,
     client.identityId,
@@ -289,7 +400,8 @@ export async function sendDirectMessage(
 export function onDirectMessage(
   client: NexnetClient,
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
-  getSenderRootPublicKey?: (identityId: IdentityId) => Uint8Array | undefined
+  getSenderRootPublicKey?: (identityId: IdentityId) => Uint8Array | undefined,
+  resolveDeviceCertificate: DeviceCertificateResolver | undefined = client.deviceCertificateResolver
 ): void {
   client.on("dm", (data) => {
     const msg = data as { envelope: number[] };
@@ -316,94 +428,30 @@ export function onDirectMessage(
       const rootPk = getSenderRootPublicKey?.(envelope.senderIdentityId);
       const cert = envelope.senderCertificate;
       if (
-        !rootPk ||
         !cert ||
         !sameBytes(cert.accountId, envelope.senderIdentityId) ||
         !sameBytes(cert.deviceId, envelope.senderDeviceId) ||
         cert.issuedAt > envelope.createdAt ||
-        cert.expiresAt < envelope.createdAt ||
-        !verifyDeviceCert(cert, rootPk) ||
-        !client.crypto.verify(
-          cert.deviceSigningPublicKey,
-          preimage,
-          envelope.signature
-        )
+        cert.expiresAt < envelope.createdAt
       ) {
         return;
       }
-      if (client.hasIncomingMessage(envelope.messageId)) return;
-
-      if (envelope.ciphertext.length < 2) return;
-
-      const aad = client.codec.encode({
-        conversationId: envelope.conversationId,
-        senderIdentityId: envelope.senderIdentityId,
-        recipientIdentityId: envelope.recipientIdentityId,
-      });
-      const sessionKey = sessionStoreKey(
-        envelope.conversationId,
-        envelope.senderIdentityId
-      );
-
-      let ratchetBlob = envelope.ciphertext;
-      let existing = getSession(sessionKey);
-
-      if (!existing) {
-        const x3dh = decodeX3dhPrefix(envelope.ciphertext);
-        const local = getLocalPrekeys(client.identityId);
-
-        if (x3dh && local) {
-          const resp = x3dhRespond(
-            client.crypto,
-            local,
-            x3dh.identityDhPublic,
-            x3dh.ekPublic,
-            x3dh.otpId
-          );
-          existing = initResponder(resp.sk, client.crypto);
-          setSession(sessionKey, existing);
-          ratchetBlob = x3dh.ratchetBlob;
-          // Drop used OTP from published bundle if we know our sign pk
-          // our own sign pk is not in getSenderPublicKey; refresh if local only
-          const selfBundle = fetchBundle(client.identityId);
-          if (selfBundle) {
-            refreshPublishedBundle(
-              client.identityId,
-              selfBundle.identitySignPublic
-            );
-          }
-        } else {
-          const rootSk = deriveConversationKey(
-            client.crypto,
-            envelope.conversationId
-          );
-          existing = getOrCreateRecvSession(
-            sessionKey,
-            rootSk,
-            client.crypto
-          );
-        }
-      } else if (envelope.ciphertext[0] === DM_WIRE_X3DH) {
-        // Session already exists; strip accidental v2 prefix if re-delivered
-        const x3dh = decodeX3dhPrefix(envelope.ciphertext);
-        if (x3dh) ratchetBlob = x3dh.ratchetBlob;
+      if (rootPk && verifyDeviceCert(cert, rootPk)) {
+        handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
+        return;
       }
-
-      const plaintext = ratchetOpen(
-        client.crypto,
-        existing,
-        ratchetBlob,
-        aad
-      );
-      saveSession(sessionKey, existing);
-
-      const payload = client.codec.decode<MessagePayload>(plaintext);
-      if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
-      callback(envelope, payload);
-      client.sendDeliveryReceipt(
-        Buffer.from(envelope.senderIdentityId).toString("hex"),
-        envelope.messageId
-      );
+      if (!resolveDeviceCertificate) return;
+      void (async () => {
+        try {
+          const registered = await resolveDeviceCertificate(
+            envelope.senderIdentityId,
+            envelope.senderDeviceId
+          );
+          if (registered && sameCertificate(cert, registered)) {
+            handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
+          }
+        } catch {}
+      })();
     } catch {
       // malformed / decrypt fail — drop
     }

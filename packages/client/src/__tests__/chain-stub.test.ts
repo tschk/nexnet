@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DevChainClient } from "../chain-stub.js";
 import { generateSigningKeyPair } from "@nexnet/crypto";
-import { issueDeviceCert } from "@nexnet/protocol";
+import { authorizePasskeyCredential, issueDeviceCert } from "@nexnet/protocol";
 
 function makeWallet(n: number): Uint8Array {
   const w = new Uint8Array(32);
@@ -255,5 +255,56 @@ describe("DevChainClient", () => {
     await expect(chain.registerDeviceCertificate(root.publicKey, certificate)).rejects.toThrow(
       "Invalid device certificate signature"
     );
+  });
+
+  test("stores a wallet-authorized passkey commitment and binds a certificate challenge", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nexnet-chain-"));
+    const statePath = join(directory, "state.json");
+    try {
+      const root = generateSigningKeyPair();
+      const device = generateSigningKeyPair();
+      const identity = makeIdentity(12);
+      const certificate = issueDeviceCert(
+        root.secretKey,
+        device.publicKey,
+        device.publicKey,
+        makeIdentity(13),
+        identity,
+        Date.now(),
+        Date.now() + 60_000,
+        1
+      );
+      const credential = {
+        credentialId: "credential-id",
+        publicKey: new Uint8Array([1, 2, 3]),
+        counter: 0,
+        rpId: "nexnet.example",
+        origin: "https://nexnet.example",
+      };
+      const chain = new DevChainClient(statePath);
+      ageAccount(chain, root.publicKey);
+      await chain.registerUsername("alice", root.publicKey, identity);
+      const signature = authorizePasskeyCredential(root.secretKey, identity, credential);
+      await expect(
+        chain.registerPasskeyCredential(root.publicKey, identity, credential, signature)
+      ).resolves.toEqual(credential);
+      const challenge = await chain.beginPasskeyDeviceCertificateAuthorization(identity, certificate);
+      expect(challenge.challenge).toHaveLength(43);
+      await expect(
+        chain.authorizeDeviceCertificateWithPasskey(identity, { ...certificate, capabilities: 2 }, {
+          id: credential.credentialId,
+          rawId: credential.credentialId,
+          type: "public-key",
+          response: { clientDataJSON: "", authenticatorData: "", signature: "" },
+          clientExtensionResults: {},
+        })
+      ).rejects.toThrow("Passkey authorization is missing or expired");
+
+      const reopened = new DevChainClient(statePath);
+      const restored = await reopened.beginPasskeyDeviceCertificateAuthorization(identity, certificate);
+      expect(restored.challenge).not.toBe(challenge.challenge);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

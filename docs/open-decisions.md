@@ -32,6 +32,7 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-18 | AEAD | **AD-5** XChaCha20-Poly1305 |
 | OD-19 | Internal hash | **AD-8** BLAKE3-256 + derive_key |
 | OD-20 | Wallet address format | 32-byte Ed25519 root signing public key; it verifies device certificates |
+| OD-20b | Passkey device authorisation | Wallet-sign a credential commitment bound to credential ID, COSE key, RP ID, and origin; a verified, single-use assertion authorises or renews a device certificate |
 
 ## Still open (non-blocking for Phase 1)
 

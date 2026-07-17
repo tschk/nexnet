@@ -10,12 +10,17 @@ import type {
   ChainApiClient,
   DeviceCertificate,
   DeviceId,
+  PasskeyAssertion,
+  PasskeyCertificateChallenge,
+  PasskeyCredential,
   UsernameRecord,
   ValidatorRecord,
   WalletAddress,
   IdentityId,
 } from "@nexnet/types";
-import { verifyDeviceCert } from "@nexnet/protocol";
+import { verifyPasskeyCredentialAuthorization, verifyDeviceCert } from "@nexnet/protocol";
+import { randomBytes } from "@nexnet/crypto";
+import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -61,12 +66,28 @@ interface PersistedDeviceCertificate {
   rootSignature: string;
 }
 
+interface PersistedPasskeyCredential {
+  credentialId: string;
+  publicKey: string;
+  counter: number;
+  rpId: string;
+  origin: string;
+}
+
+interface PendingPasskeyAuthorization {
+  challenge: string;
+  certificate: PersistedDeviceCertificate;
+  expiresAt: number;
+}
+
 interface PersistedState {
   accounts: [string, AccountMeta][];
   usernames: PersistedUsernameRecord[];
   history: [string, PersistedUsernameRecord[]][];
   identityRoots?: [string, string][];
   deviceCertificates?: PersistedDeviceCertificate[];
+  passkeys?: [string, PersistedPasskeyCredential[]][];
+  pendingPasskeyAuthorizations?: [string, PendingPasskeyAuthorization][];
   validators: PersistedValidatorRecord[];
 }
 
@@ -76,6 +97,8 @@ export class DevChainClient implements ChainApiClient {
   private history = new Map<string, UsernameRecord[]>();
   private identityRoots = new Map<string, WalletAddress>();
   private deviceCertificates = new Map<string, DeviceCertificate>();
+  private passkeys = new Map<string, PasskeyCredential[]>();
+  private pendingPasskeyAuthorizations = new Map<string, PendingPasskeyAuthorization>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
   private validators = new Map<string, ValidatorRecord>();
 
@@ -242,6 +265,98 @@ export class DevChainClient implements ChainApiClient {
       : null;
   }
 
+  async registerPasskeyCredential(
+    wallet: WalletAddress,
+    identityId: IdentityId,
+    credential: PasskeyCredential,
+    rootSignature: Uint8Array
+  ): Promise<PasskeyCredential> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const root = this.identityRoots.get(identityHex);
+    if (!root || !Buffer.from(root).equals(Buffer.from(wallet))) {
+      throw new Error("Wallet is not the identity root");
+    }
+    if (
+      !credential.credentialId ||
+      credential.publicKey.length === 0 ||
+      !Number.isSafeInteger(credential.counter) ||
+      credential.counter < 0 ||
+      !credential.rpId ||
+      !credential.origin ||
+      rootSignature.length !== 64 ||
+      !verifyPasskeyCredentialAuthorization(wallet, identityId, credential, rootSignature)
+    ) {
+      throw new Error("Invalid passkey credential authorization");
+    }
+    const credentials = this.passkeys.get(identityHex) ?? [];
+    if (credentials.some((item) => item.credentialId === credential.credentialId)) {
+      throw new Error("Passkey credential already registered");
+    }
+    const stored = structuredClone(credential);
+    credentials.push(stored);
+    this.passkeys.set(identityHex, credentials);
+    this.persist();
+    return structuredClone(stored);
+  }
+
+  async beginPasskeyDeviceCertificateAuthorization(
+    identityId: IdentityId,
+    certificate: DeviceCertificate
+  ): Promise<PasskeyCertificateChallenge> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    if (!this.identityRoots.has(identityHex) || !this.isDeviceCertificateShapeValid(certificate, identityId)) {
+      throw new Error("Invalid device certificate");
+    }
+    if ((this.passkeys.get(identityHex)?.length ?? 0) === 0) {
+      throw new Error("No passkey credential registered");
+    }
+    const authorization = {
+      challenge: Buffer.from(randomBytes(32)).toString("base64url"),
+      certificate: this.persistedDeviceCertificate(certificate),
+      expiresAt: Date.now() + 5 * 60_000,
+    };
+    this.pendingPasskeyAuthorizations.set(identityHex, authorization);
+    this.persist();
+    return { challenge: authorization.challenge, expiresAt: authorization.expiresAt };
+  }
+
+  async authorizeDeviceCertificateWithPasskey(
+    identityId: IdentityId,
+    certificate: DeviceCertificate,
+    assertion: PasskeyAssertion
+  ): Promise<DeviceCertificate> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const pending = this.pendingPasskeyAuthorizations.get(identityHex);
+    if (
+      !pending ||
+      pending.expiresAt < Date.now() ||
+      !this.isDeviceCertificateShapeValid(certificate, identityId) ||
+      !this.sameDeviceCertificate(this.deviceCertificate(pending.certificate), certificate)
+    ) {
+      throw new Error("Passkey authorization is missing or expired");
+    }
+    const credential = this.passkeys.get(identityHex)?.find((item) => item.credentialId === assertion.id);
+    if (!credential) throw new Error("Passkey credential is not authorized");
+    const result = await verifyAuthenticationResponse({
+      response: assertion as never,
+      expectedChallenge: pending.challenge,
+      expectedOrigin: credential.origin,
+      expectedRPID: credential.rpId,
+      credential: {
+        id: credential.credentialId,
+        publicKey: Uint8Array.from(credential.publicKey),
+        counter: credential.counter,
+      },
+    });
+    if (!result.verified) throw new Error("Invalid passkey assertion");
+    credential.counter = result.authenticationInfo.newCounter;
+    const stored = structuredClone(certificate);
+    this.deviceCertificates.set(this.deviceCertificateKey(stored.accountId, stored.deviceId), stored);
+    this.pendingPasskeyAuthorizations.delete(identityHex);
+    this.persist();
+    return structuredClone(stored);
+  }
+
   private appendHistory(username: string, record: UsernameRecord): void {
     const list = this.history.get(username) ?? [];
     list.push(record);
@@ -272,6 +387,13 @@ export class DevChainClient implements ChainApiClient {
         return [this.deviceCertificateKey(certificate.accountId, certificate.deviceId), certificate];
       })
     );
+    this.passkeys = new Map(
+      (state.passkeys ?? []).map(([identityHex, credentials]) => [
+        identityHex,
+        credentials.map((credential) => this.passkeyCredential(credential)),
+      ])
+    );
+    this.pendingPasskeyAuthorizations = new Map(state.pendingPasskeyAuthorizations ?? []);
     if (this.identityRoots.size === 0) {
       for (const records of this.history.values()) {
         for (const record of records) {
@@ -316,15 +438,13 @@ export class DevChainClient implements ChainApiClient {
         Buffer.from(wallet).toString("base64"),
       ]),
       deviceCertificates: [...this.deviceCertificates.values()].map((certificate) => ({
-        accountId: Buffer.from(certificate.accountId).toString("base64"),
-        deviceId: Buffer.from(certificate.deviceId).toString("base64"),
-        deviceSigningPublicKey: Buffer.from(certificate.deviceSigningPublicKey).toString("base64"),
-        deviceEncryptionPublicKey: Buffer.from(certificate.deviceEncryptionPublicKey).toString("base64"),
-        issuedAt: certificate.issuedAt,
-        expiresAt: certificate.expiresAt,
-        capabilities: certificate.capabilities,
-        rootSignature: Buffer.from(certificate.rootSignature).toString("base64"),
+        ...this.persistedDeviceCertificate(certificate),
       })),
+      passkeys: [...this.passkeys.entries()].map(([identityHex, credentials]) => [
+        identityHex,
+        credentials.map((credential) => this.persistedPasskeyCredential(credential)),
+      ]),
+      pendingPasskeyAuthorizations: [...this.pendingPasskeyAuthorizations.entries()],
       validators: [...this.validators.values()].map((record) => ({
         wallet: Buffer.from(record.wallet).toString("base64"),
         bondedStake: record.bondedStake,
@@ -367,6 +487,65 @@ export class DevChainClient implements ChainApiClient {
       capabilities: record.capabilities,
       rootSignature: new Uint8Array(Buffer.from(record.rootSignature, "base64")),
     };
+  }
+
+  private persistedDeviceCertificate(certificate: DeviceCertificate): PersistedDeviceCertificate {
+    return {
+      accountId: Buffer.from(certificate.accountId).toString("base64"),
+      deviceId: Buffer.from(certificate.deviceId).toString("base64"),
+      deviceSigningPublicKey: Buffer.from(certificate.deviceSigningPublicKey).toString("base64"),
+      deviceEncryptionPublicKey: Buffer.from(certificate.deviceEncryptionPublicKey).toString("base64"),
+      issuedAt: certificate.issuedAt,
+      expiresAt: certificate.expiresAt,
+      capabilities: certificate.capabilities,
+      rootSignature: Buffer.from(certificate.rootSignature).toString("base64"),
+    };
+  }
+
+  private passkeyCredential(record: PersistedPasskeyCredential): PasskeyCredential {
+    return {
+      credentialId: record.credentialId,
+      publicKey: new Uint8Array(Buffer.from(record.publicKey, "base64")),
+      counter: record.counter,
+      rpId: record.rpId,
+      origin: record.origin,
+    };
+  }
+
+  private persistedPasskeyCredential(credential: PasskeyCredential): PersistedPasskeyCredential {
+    return {
+      credentialId: credential.credentialId,
+      publicKey: Buffer.from(credential.publicKey).toString("base64"),
+      counter: credential.counter,
+      rpId: credential.rpId,
+      origin: credential.origin,
+    };
+  }
+
+  private isDeviceCertificateShapeValid(certificate: DeviceCertificate, identityId: IdentityId): boolean {
+    return (
+      certificate.accountId.length === 32 &&
+      Buffer.from(certificate.accountId).equals(Buffer.from(identityId)) &&
+      certificate.deviceId.length === 32 &&
+      certificate.deviceSigningPublicKey.length === 32 &&
+      certificate.deviceEncryptionPublicKey.length === 32 &&
+      certificate.rootSignature.length === 64 &&
+      Number.isFinite(certificate.issuedAt) &&
+      Number.isFinite(certificate.expiresAt) &&
+      certificate.expiresAt > certificate.issuedAt &&
+      certificate.expiresAt > Date.now()
+    );
+  }
+
+  private sameDeviceCertificate(a: DeviceCertificate, b: DeviceCertificate): boolean {
+    return Buffer.from(a.accountId).equals(Buffer.from(b.accountId)) &&
+      Buffer.from(a.deviceId).equals(Buffer.from(b.deviceId)) &&
+      Buffer.from(a.deviceSigningPublicKey).equals(Buffer.from(b.deviceSigningPublicKey)) &&
+      Buffer.from(a.deviceEncryptionPublicKey).equals(Buffer.from(b.deviceEncryptionPublicKey)) &&
+      a.issuedAt === b.issuedAt &&
+      a.expiresAt === b.expiresAt &&
+      a.capabilities === b.capabilities &&
+      Buffer.from(a.rootSignature).equals(Buffer.from(b.rootSignature));
   }
 
   private deviceCertificateKey(identityId: IdentityId, deviceId: DeviceId): string {

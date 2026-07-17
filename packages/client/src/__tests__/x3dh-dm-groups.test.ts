@@ -108,12 +108,15 @@ class MockWebSocket {
 
 function makeClient(
   fill: number,
-  keys: { secretKey: Uint8Array; publicKey: Uint8Array }
+  keys: { secretKey: Uint8Array; publicKey: Uint8Array },
+  passkeyAuthorized = false
 ): NexnetClient {
   const identityId = new Uint8Array(32).fill(fill);
   const deviceId = new Uint8Array(32).fill(fill ^ 0x55);
   const root = cryptoProvider.generateSigningKeyPair();
   pubs.set(Buffer.from(identityId).toString("hex"), root.publicKey);
+  const certificate = issueDeviceCert(root.secretKey, keys.publicKey, keys.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1);
+  if (passkeyAuthorized) certificate.rootSignature = new Uint8Array(64);
   return new NexnetClient({
     identityId,
     deviceId,
@@ -124,7 +127,14 @@ function makeClient(
     signingSecretKey: keys.secretKey,
     deviceSigningSecretKey: keys.secretKey,
     deviceSigningPublicKey: keys.publicKey,
-    deviceCertificate: issueDeviceCert(root.secretKey, keys.publicKey, keys.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+    deviceCertificate: certificate,
+    deviceCertificateResolver: passkeyAuthorized
+      ? async (identity, device) =>
+          Buffer.from(identity).equals(Buffer.from(identityId)) &&
+          Buffer.from(device).equals(Buffer.from(deviceId))
+            ? structuredClone(certificate)
+            : null
+      : undefined,
     rootPublicKey: root.publicKey,
   });
 }
@@ -216,6 +226,56 @@ describe("X3DH-wired DMs", () => {
     await sendDirectMessage(alice, bob.identityId, "plain path");
     await new Promise((r) => setTimeout(r, 40));
     expect(got).toEqual(["plain path"]);
+
+    await alice.disconnect();
+    await bob.disconnect();
+  });
+
+  test("accepts a passkey-authorized certificate only when the chain resolves the same certificate", async () => {
+    const alice = makeClient(0xc3, cryptoProvider.generateSigningKeyPair(), true);
+    const bob = makeClient(0xc4, cryptoProvider.generateSigningKeyPair(), true);
+
+    await alice.connect();
+    await bob.connect();
+
+    const got: string[] = [];
+    onDirectMessage(
+      bob,
+      (_e, p) => got.push(p.text),
+      (id) => pubs.get(Buffer.from(id).toString("hex")),
+      async (identity, device) =>
+        Buffer.from(identity).equals(Buffer.from(alice.identityId)) &&
+        Buffer.from(device).equals(Buffer.from(alice.deviceId))
+          ? structuredClone(alice.deviceCertificate!)
+          : null
+    );
+
+    await sendDirectMessage(alice, bob.identityId, "passkey hello");
+    await new Promise((r) => setTimeout(r, 40));
+    expect(got).toEqual(["passkey hello"]);
+
+    await alice.disconnect();
+    await bob.disconnect();
+  });
+
+  test("drops a passkey-authorized certificate that differs from the chain record", async () => {
+    const alice = makeClient(0xc5, cryptoProvider.generateSigningKeyPair(), true);
+    const bob = makeClient(0xc6, cryptoProvider.generateSigningKeyPair(), true);
+
+    await alice.connect();
+    await bob.connect();
+
+    const got: string[] = [];
+    onDirectMessage(
+      bob,
+      (_e, p) => got.push(p.text),
+      (id) => pubs.get(Buffer.from(id).toString("hex")),
+      async () => ({ ...structuredClone(alice.deviceCertificate!), capabilities: 2 })
+    );
+
+    await sendDirectMessage(alice, bob.identityId, "reject me");
+    await new Promise((r) => setTimeout(r, 40));
+    expect(got).toEqual([]);
 
     await alice.disconnect();
     await bob.disconnect();

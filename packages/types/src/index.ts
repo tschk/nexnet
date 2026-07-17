@@ -126,6 +126,38 @@ export interface DeviceCertificate {
   rootSignature: Signature;
 }
 
+export type DeviceCertificateResolver = (
+  identityId: IdentityId,
+  deviceId: DeviceId
+) => Promise<DeviceCertificate | null>;
+
+export interface PasskeyCredential {
+  credentialId: string;
+  publicKey: Uint8Array;
+  counter: number;
+  rpId: string;
+  origin: string;
+}
+
+export interface PasskeyAssertion {
+  id: string;
+  rawId: string;
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle?: string;
+  };
+  clientExtensionResults: Record<string, unknown>;
+  type: "public-key";
+  authenticatorAttachment?: "platform" | "cross-platform";
+}
+
+export interface PasskeyCertificateChallenge {
+  challenge: string;
+  expiresAt: number;
+}
+
 // ── Messages ─────────────────────────────────────────────────────────
 
 /** Outer message envelope (encrypted payload inside) */
@@ -283,6 +315,21 @@ export interface ChainApiClient {
     identityId: IdentityId,
     deviceId: DeviceId
   ): Promise<DeviceCertificate | null>;
+  registerPasskeyCredential(
+    wallet: WalletAddress,
+    identityId: IdentityId,
+    credential: PasskeyCredential,
+    rootSignature: Signature
+  ): Promise<PasskeyCredential>;
+  beginPasskeyDeviceCertificateAuthorization(
+    identityId: IdentityId,
+    certificate: DeviceCertificate
+  ): Promise<PasskeyCertificateChallenge>;
+  authorizeDeviceCertificateWithPasskey(
+    identityId: IdentityId,
+    certificate: DeviceCertificate,
+    assertion: PasskeyAssertion
+  ): Promise<DeviceCertificate>;
   /** Optional AD-14 validator set (dev stub implements) */
   joinValidatorSet?(
     wallet: WalletAddress,

@@ -21,9 +21,10 @@ presence_lease {
 }
 ```
 
-Suggested duration: **60–120 seconds**.
+**AD-11 locked duration: 90 seconds.**
 
-Clients renew while active. Expired lease → shown offline.
+Clients renew while active (typically before expiry, e.g. ~45–60s).
+Expired lease → shown offline.
 
 ```mermaid
 sequenceDiagram
@@ -33,7 +34,7 @@ sequenceDiagram
 
   loop while active
     C->>P: publish_presence_lease
-    Note over C,P: TTL 60-120s
+    Note over C,P: TTL 90s (AD-11)
   end
   S->>P: subscribe_presence(identity)
   P-->>S: online

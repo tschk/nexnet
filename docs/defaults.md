@@ -18,6 +18,7 @@ recovery: wallet-authorised only
 message history: local only
 offline message location: sender device
 presence retry interval: 30 minutes
+presence lease TTL: 90 seconds (AD-11)
 presence: exact online, no last seen
 receipts: delivered only
 read receipts: disabled

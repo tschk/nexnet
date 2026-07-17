@@ -50,8 +50,10 @@ function adaptChannel(ch: RTCDataChannel): DataChannelLike {
     } else if (data instanceof ArrayBuffer) {
       adapted.onmessage?.({ data });
     } else if (Buffer.isBuffer(data)) {
+      const bytes = new Uint8Array(data.byteLength);
+      bytes.set(data);
       adapted.onmessage?.({
-        data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+        data: bytes.buffer,
       });
     } else {
       adapted.onmessage?.({ data: new Uint8Array(data as ArrayBuffer).buffer });

@@ -3,7 +3,10 @@
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "scripts": { "test": "bun test", "dev": "wrangler dev", "deploy": "wrangler deploy" },
-  "dependencies": { "@nexnet/types": "workspace:*" },
-  "devDependencies": { "wrangler": "^3" }
+  "scripts": { "test": "bun test", "typecheck": "bunx tsc --noEmit -p tsconfig.json", "dev": "wrangler dev", "deploy": "wrangler deploy" },
+  "dependencies": {
+    "@nexnet/types": "workspace:*",
+    "hono": "^4.12.30"
+  },
+  "devDependencies": { "@cloudflare/workers-types": "^5.20260717.1", "wrangler": "^3" }
 }

@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import { createTextAttributes } from "@opentui/core";
 import { discoveredUsers, navigate, setActivePeer, type DiscoveredUser } from "../state";
 import { theme, hexToShort, truncate } from "../theme";
 import { StatusBar } from "../components/status-bar";
@@ -46,10 +47,7 @@ export function DiscoverScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text>
-          <text fg={theme.accent} bold>Discover</text>
-          <text fg={theme.textDim}> — find people</text>
-        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>Discover — find people</text>
         <text fg={theme.textDim}>Esc back · Enter message</text>
       </box>
 
@@ -70,22 +68,15 @@ export function DiscoverScreen() {
         />
       </box>
 
-      <box flexDirection="column" flexGrow paddingLeft={1} paddingRight={1} paddingTop={1}>
+      <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1} paddingTop={1}>
         <For each={filtered()}>
           {(user, idx) => {
             const isSel = () => idx() === selected();
             return (
               <box flexDirection="column" paddingBottom={1}>
                 <box flexDirection="row" justifyContent="space-between">
-                  <text>
-                    <text fg={isSel() ? theme.accent : theme.textDim}>
-                      {isSel() ? "▸ " : "  "}
-                    </text>
-                    <text fg={user.online ? theme.online : theme.textDim}>● </text>
-                    <text fg={isSel() ? theme.textBright : theme.text} bold>
-                      {user.username}
-                    </text>
-                    <text fg={theme.textDim}> ({hexToShort(user.identityHex)})</text>
+                  <text fg={isSel() ? theme.textBright : theme.text} attributes={createTextAttributes({ bold: true })}>
+                    {`${isSel() ? "▸" : " "} ${user.online ? "●" : "○"} ${user.username} (${hexToShort(user.identityHex)})`}
                   </text>
                 </box>
                 <text fg={theme.textDim}>{"    "}{truncate(user.bio, 60)}</text>

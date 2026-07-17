@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import { createTextAttributes } from "@opentui/core";
 import { generateIdentity, connectDev } from "../dev-client";
 import { navigate, identity } from "../state";
 import { theme } from "../theme";
@@ -34,48 +35,21 @@ export function LoginScreen() {
         flexDirection="column"
         alignItems="center"
         justifyContent="center"
-        flexGrow
+        flexGrow={1}
       >
-        <text>
-          <text fg={theme.accent} bold>
-            {"  _   _      _ _ _       "}
-          </text>
-        </text>
-        <text>
-          <text fg={theme.accent} bold>
-            {" | \\ | |    | (_) |      "}
-          </text>
-        </text>
-        <text>
-          <text fg={theme.accent} bold>
-            {" |  \\| | ___| |_| |_ ___ "}
-          </text>
-        </text>
-        <text>
-          <text fg={theme.accent} bold>
-            {" | . ` |/ _ \\ | | __/ _ \\"}
-          </text>
-        </text>
-        <text>
-          <text fg={theme.accent} bold>
-            {" | |\\  |  __/ | | ||  __/"}
-          </text>
-        </text>
-        <text>
-          <text fg={theme.accent} bold>
-            {" \\_| \\_/\\___|_|_|\\__\\___|"}
-          </text>
-        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{"  _   _      _ _ _       "}</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | \\ | |    | (_) |      "}</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" |  \\| | ___| |_| |_ ___ "}</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | . ` |/ _ \\ | | __/ _ \\"}</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | |\\  |  __/ | | ||  __/"}</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" \\_| \\_/\\___|_|_|\\__\\___|"}</text>
 
         <text fg={theme.textDim}> peer-to-peer chat · v0.1</text>
 
         <text> </text>
 
         {identity() ? (
-          <text>
-            <text fg={theme.success}>✓ </text>
-            <text fg={theme.text}>Identity: {identity()!.publicKeyHex.slice(0, 16)}…</text>
-          </text>
+          <text fg={theme.success}>{`✓ Identity: ${identity()!.publicKeyHex.slice(0, 16)}…`}</text>
         ) : (
           <text fg={theme.textDim}>No identity generated yet.</text>
         )}
@@ -83,13 +57,8 @@ export function LoginScreen() {
         <text> </text>
 
         {items.map((item, i) => (
-          <text>
-            <text fg={selectedItem() === i ? theme.accent : theme.textDim}>
-              {selectedItem() === i ? "▸ " : "  "}
-            </text>
-            <text fg={selectedItem() === i ? theme.textBright : theme.text}>
-              {item}
-            </text>
+          <text fg={selectedItem() === i ? theme.textBright : theme.text}>
+            {`${selectedItem() === i ? "▸" : " "} ${item}`}
           </text>
         ))}
 

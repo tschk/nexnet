@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import { createTextAttributes } from "@opentui/core";
 import { rooms, activeRoom, navigate } from "../state";
 import { sendDevRoomMessage } from "../dev-client";
 import { theme } from "../theme";
@@ -33,14 +34,13 @@ export function RoomViewScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text>
-          <text fg={theme.accent} bold>{room()?.name ?? "Room"}</text>
-          <text fg={theme.textDim}> · {room()?.memberCount ?? 0} members</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {`${room()?.name ?? "Room"} · ${room()?.memberCount ?? 0} members`}
         </text>
         <text fg={theme.textDim}>Esc back</text>
       </box>
 
-      <box flexDirection="column" flexGrow paddingLeft={0} paddingRight={0} paddingTop={1}>
+      <box flexDirection="column" flexGrow={1} paddingLeft={0} paddingRight={0} paddingTop={1}>
         <For each={messages()}>
           {(msg) => <MessageBubble message={msg} />}
         </For>

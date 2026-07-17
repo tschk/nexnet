@@ -1,5 +1,5 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { PresenceTracker } from "./index.js";
+import worker, { PresenceTracker } from "./index.js";
 
 const _realDateNow = Date.now.bind(Date);
 
@@ -292,4 +292,16 @@ describe("PresenceTracker prekeys", () => {
     expect(sBody.leases).toBe(1);
     expect(sBody.prekeys).toBe(1);
   });
+});
+
+test("Hono presence route forwards to the presence Durable Object", async () => {
+  const fetch = mock(async () => new Response(JSON.stringify({ identityId: "alice", status: "offline" })));
+  const env = {
+    PRESENCE: { idFromName: mock(() => "global"), get: mock(() => ({ fetch })) },
+  } as unknown as { PRESENCE: DurableObjectNamespace };
+  const response = await worker.fetch(new Request("https://presence/presence/alice"), env, {} as ExecutionContext);
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  expect(fetch).toHaveBeenCalledWith("https://presence/do/query?identityId=alice");
 });

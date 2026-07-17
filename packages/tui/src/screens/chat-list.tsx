@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import { createTextAttributes } from "@opentui/core";
 import { conversations, rooms, setActivePeer, setActiveRoom, navigate, type Conversation, type Room } from "../state";
 import { theme, formatTime, truncate } from "../theme";
 import { StatusBar } from "../components/status-bar";
@@ -44,36 +45,21 @@ export function ChatListScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text>
-          <text fg={theme.accent} bold>Nexnet</text>
-          <text fg={theme.textDim}> — chat list</text>
-        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>Nexnet — chat list</text>
         <text fg={theme.textDim}>n new · Enter open</text>
       </box>
 
-      <box flexDirection="column" flexGrow paddingLeft={1} paddingRight={1} paddingTop={1}>
+      <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1} paddingTop={1}>
         <Show when={conversations().length > 0}>
-          <text>
-            <text fg={theme.textDim} bold>Direct Messages</text>
-          </text>
+          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>Direct Messages</text>
           <For each={conversations()}>
             {(conv, idx) => {
               const isSel = () => idx() === selected();
               const lastMsg = () => conv.messages[conv.messages.length - 1];
               return (
                 <box flexDirection="row" justifyContent="space-between">
-                  <text>
-                    <text fg={isSel() ? theme.accent : theme.textDim}>
-                      {isSel() ? "▸ " : "  "}
-                    </text>
-                    <text fg={conv.online ? theme.online : theme.textDim}>● </text>
-                    <text fg={isSel() ? theme.textBright : theme.text}>
-                      {truncate(conv.peerName, 20)}
-                    </text>
-                    <text fg={theme.textDim}>
-                      {" "}
-                      {lastMsg() ? truncate(lastMsg()!.text, 36) : "no messages"}
-                    </text>
+                  <text fg={isSel() ? theme.textBright : theme.text}>
+                    {`${isSel() ? "▸" : " "} ${conv.online ? "●" : "○"} ${truncate(conv.peerName, 20)} ${lastMsg() ? truncate(lastMsg()!.text, 36) : "no messages"}`}
                   </text>
                   <text fg={theme.textDim}>
                     {lastMsg() ? formatTime(lastMsg()!.createdAt) : ""}
@@ -85,22 +71,15 @@ export function ChatListScreen() {
         </Show>
 
         <Show when={rooms().length > 0}>
-          <text>
-            <text fg={theme.textDim} bold>Rooms</text>
-          </text>
+          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>Rooms</text>
           <For each={rooms()}>
             {(room, idx) => {
               const offset = () => conversations().length;
               const isSel = () => idx() + offset() === selected();
               return (
                 <box flexDirection="row" justifyContent="space-between">
-                  <text>
-                    <text fg={isSel() ? theme.accent : theme.textDim}>
-                      {isSel() ? "▸ " : "  "}
-                    </text>
-                    <text fg={theme.accent}># </text>
-                    <text fg={isSel() ? theme.textBright : theme.text}>{room.name}</text>
-                    <text fg={theme.textDim}> ({room.memberCount})</text>
+                  <text fg={isSel() ? theme.textBright : theme.text}>
+                    {`${isSel() ? "▸" : " "} # ${room.name} (${room.memberCount})`}
                   </text>
                 </box>
               );

@@ -153,8 +153,8 @@ describe("direct transport DM path", () => {
 
     const directSent: Uint8Array[] = [];
     setDirectTransport({
-      isOpen: (h) => h === bobHex,
-      send: (_h, data) => {
+      isOpen: (h: string) => h === bobHex,
+      send: (_h: string, data: Uint8Array) => {
         directSent.push(new Uint8Array(data));
         return true;
       },

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import { createTextAttributes } from "@opentui/core";
 import { conversations, activePeer, navigate } from "../state";
 import { sendDevMessage } from "../dev-client";
 import { theme, hexToShort } from "../theme";
@@ -40,14 +41,11 @@ export function DmViewScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text>
-          <text fg={theme.accent} bold>{peerName()}</text>
-          <text fg={theme.textDim}> · DM</text>
-        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{`${peerName()} · DM`}</text>
         <text fg={theme.textDim}>Esc back</text>
       </box>
 
-      <box flexDirection="column" flexGrow paddingLeft={0} paddingRight={0} paddingTop={1}>
+      <box flexDirection="column" flexGrow={1} paddingLeft={0} paddingRight={0} paddingTop={1}>
         <For each={messages()}>
           {(msg) => <MessageBubble message={msg} />}
         </For>
@@ -61,4 +59,3 @@ export function DmViewScreen() {
     </box>
   );
 }
-

@@ -1,5 +1,5 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { DiscoveryIndex } from "./index.js";
+import worker, { DiscoveryIndex } from "./index.js";
 
 function createMockState() {
   const store = new Map<string, unknown>();
@@ -260,4 +260,16 @@ describe("DiscoveryIndex", () => {
     const body = await resp.json() as { match: unknown };
     expect(body.match).toBeNull();
   });
+});
+
+test("Hono profile route forwards to the discovery Durable Object", async () => {
+  const fetch = mock(async () => new Response(JSON.stringify({ identityId: "alice", username: "alice" })));
+  const env = {
+    DISCOVERY: { idFromName: mock(() => "global"), get: mock(() => ({ fetch })) },
+  } as unknown as { DISCOVERY: DurableObjectNamespace };
+  const response = await worker.fetch(new Request("https://discovery/discovery/profile/alice"), env, {} as ExecutionContext);
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  expect(fetch).toHaveBeenCalledWith("https://discovery/do/profile/get?identityId=alice");
 });

@@ -1,1 +1,1 @@
-{ "extends": "../../tsconfig.json", "compilerOptions": { "outDir": "dist", "rootDir": "src" }, "include": ["src"] }
+{ "extends": "../../tsconfig.json", "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["bun-types", "@cloudflare/workers-types"] }, "include": ["src"] }

@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../state";
+import { createTextAttributes } from "@opentui/core";
 import { theme, formatTime } from "../theme";
 
 export function MessageBubble(props: { message: ChatMessage }) {
@@ -13,11 +14,8 @@ export function MessageBubble(props: { message: ChatMessage }) {
       paddingBottom={0}
     >
       <box flexDirection="row" justifyContent="space-between">
-        <text>
-          <text fg={m().own ? theme.accent : theme.success} bold>
-            {m().senderName}
-          </text>
-          <text fg={theme.textDim}> {formatTime(m().createdAt)}</text>
+        <text fg={m().own ? theme.accent : theme.success} attributes={createTextAttributes({ bold: true })}>
+          {`${m().senderName} ${formatTime(m().createdAt)}`}
         </text>
         <text fg={m().delivered ? theme.success : theme.textDim}>
           {m().delivered ? "✓" : "◌"}

@@ -108,7 +108,7 @@ function decodeX3dhPrefix(blob: Uint8Array): {
 export async function sendDirectMessage(
   client: NexnetClient,
   recipientId: IdentityId,
-  text: string,
+  message: string | MessagePayload,
   queue?: OutboundQueueLike
 ): Promise<MessageId> {
   const conversationId = deriveConversationId(
@@ -117,10 +117,10 @@ export async function sendDirectMessage(
     recipientId
   );
 
-  const payload: MessagePayload = {
-    contentType: "text",
-    text,
-  };
+  const payload: MessagePayload =
+    typeof message === "string"
+      ? { contentType: "text", text: message }
+      : message;
   const payloadCde = client.codec.encode(payload);
   const messageId = client.crypto.deriveId(DOMAIN_EVENT_ID, payloadCde);
 

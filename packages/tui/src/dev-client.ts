@@ -135,7 +135,7 @@ export async function connectDev(relayUrl: string): Promise<void> {
   // Handle presence
   client.on("presence", (data) => {
     const p = data as { peers?: string[] };
-    if (p.peers) setOnlinePeers(new Set(p.peers));
+    if (p.peers) setOnlinePeers(new Set<string>(p.peers));
   });
 }
 
@@ -190,7 +190,7 @@ export function disconnectDev(): void {
   client?.disconnect();
   client = null;
   setConnStatus("disconnected");
-  setOnlinePeers(new Set());
+  setOnlinePeers(new Set<string>());
 }
 
 // ── Hex helpers ─────────────────────────────────────────────────────

@@ -62,7 +62,7 @@ describe("DevChainClient", () => {
   test("transferUsername is disabled", async () => {
     const chain = new DevChainClient();
     await expect(
-      chain.transferUsername("alice", makeWallet(2))
+      chain.transferUsername()
     ).rejects.toThrow("Username transfer disabled");
   });
 

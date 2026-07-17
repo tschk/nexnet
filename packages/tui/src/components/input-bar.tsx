@@ -24,7 +24,7 @@ export function InputBar(props: { onSend: (text: string) => void; placeholder?: 
       <input
         ref={inputRef}
         placeholder={props.placeholder ?? "type a message…"}
-        onEnter={handleSend}
+        on:enter={handleSend}
         width={80}
         backgroundColor={theme.inputBg}
         focusedBackgroundColor={theme.inputFocused}

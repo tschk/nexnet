@@ -1,5 +1,5 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { RelaySession } from "./index.js";
+import worker, { RelaySession } from "./index.js";
 
 // Minimal DurableObjectState mock
 function createMockState() {
@@ -187,4 +187,16 @@ describe("RelaySession", () => {
 
     expect((wsB as any)._sent).toHaveLength(0);
   });
+});
+
+test("Hono health route forwards to the relay Durable Object", async () => {
+  const fetch = mock(async () => new Response(JSON.stringify({ connections: 0, rooms: 0 })));
+  const env = {
+    RELAY: { idFromName: mock(() => "default"), get: mock(() => ({ fetch })) },
+  } as unknown as { RELAY: DurableObjectNamespace };
+  const response = await worker.fetch(new Request("https://relay/health"), env, {} as ExecutionContext);
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  expect(fetch).toHaveBeenCalledWith("https://relay/status");
 });

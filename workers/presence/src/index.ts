@@ -12,6 +12,8 @@
 
 import { PRESENCE_LEASE_TTL_MS } from "@nexnet/types";
 import { ed25519 } from "@noble/curves/ed25519";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -31,12 +33,6 @@ interface Env {
   /** Set "1" to allow unsigned presence leases (preview/dev only). */
   ALLOW_UNSIGNED_LEASES?: string;
 }
-
-type RouteHandler = (
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext
-) => Response | Promise<Response>;
 
 // ── Durable Object: PresenceTracker ──────────────────────────────────
 
@@ -399,64 +395,29 @@ export class PresenceTracker {
 
 // ── Fetch handler ────────────────────────────────────────────────────
 
-const routes: Record<string, RouteHandler> = {
-  "POST /presence/publish": handlePublish,
-  "GET /presence/subscribe": handleSubscribe,
-  "POST /prekeys/publish": handlePrekeyPublishHttp,
-};
+const app = new Hono<{ Bindings: Env }>();
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
-    }
+app.use("*", cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
-    try {
-      const url = new URL(request.url);
-      const routeKey = `${request.method} ${url.pathname}`;
+app.post("/presence/publish", (c) => handlePublish(c.req.raw, c.env));
+app.get("/presence/subscribe", (c) => handleSubscribe(c.req.raw, c.env));
+app.post("/prekeys/publish", (c) => handlePrekeyPublishHttp(c.req.raw, c.env));
+app.get("/presence/:identityId", (c) => handleQueryIdentity(c.req.param("identityId"), c.env));
+app.delete("/presence/:identityId", (c) => handleRemoveIdentity(c.req.param("identityId"), c.env));
+app.get("/prekeys/:identityId", (c) => handlePrekeyGetHttp(c.req.param("identityId"), c.env));
+app.delete("/prekeys/:identityId", (c) => handlePrekeyRemoveHttp(c.req.param("identityId"), c.env));
+app.notFound((c) => c.json({ error: "not found" }, 404));
+app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "internal error" }, 500));
 
-      // Check static routes first
-      const handler = routes[routeKey];
-      if (handler) {
-        return addCorsHeaders(await handler(request, env, ctx));
-      }
-
-      // /presence/:identityId (GET or DELETE)
-      const identityMatch = url.pathname.match(/^\/presence\/([^/]+)$/);
-      if (identityMatch) {
-        const identityId = identityMatch[1];
-        if (request.method === "GET") {
-          return addCorsHeaders(await handleQueryIdentity(identityId, env));
-        }
-        if (request.method === "DELETE") {
-          return addCorsHeaders(await handleRemoveIdentity(identityId, env));
-        }
-      }
-
-      // /prekeys/:identityId (GET or DELETE)
-      const prekeyMatch = url.pathname.match(/^\/prekeys\/([^/]+)$/);
-      if (prekeyMatch) {
-        const identityId = prekeyMatch[1];
-        if (request.method === "GET") {
-          return addCorsHeaders(await handlePrekeyGetHttp(identityId, env));
-        }
-        if (request.method === "DELETE") {
-          return addCorsHeaders(await handlePrekeyRemoveHttp(identityId, env));
-        }
-      }
-
-      return addCorsHeaders(jsonResponse({ error: "not found" }, 404));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "internal error";
-      return addCorsHeaders(jsonResponse({ error: message }, 500));
-    }
-  },
-};
+export default app;
 
 async function handlePublish(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getPresenceStub(env);
@@ -477,8 +438,7 @@ async function handleQueryIdentity(
 
 async function handleSubscribe(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const stub = getPresenceStub(env);
   return stub.fetch(request);
@@ -494,8 +454,7 @@ async function handleRemoveIdentity(
 
 async function handlePrekeyPublishHttp(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getPresenceStub(env);
@@ -529,29 +488,6 @@ async function handlePrekeyRemoveHttp(
 function getPresenceStub(env: Env): DurableObjectStub {
   const id = env.PRESENCE.idFromName("global");
   return env.PRESENCE.get(id);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function corsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-}
-
-function addCorsHeaders(response: Response): Response {
-  const newHeaders = new Headers(response.headers);
-  for (const [k, v] of Object.entries(corsHeaders())) {
-    newHeaders.set(k, v);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: newHeaders,
-    webSocket: (response as any).webSocket,
-  });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

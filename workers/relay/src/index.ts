@@ -9,6 +9,9 @@
  * AD: relays never permanently store private message bodies.
  */
 
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+
 // ── Message types ────────────────────────────────────────────────────
 
 interface SessionOfferMessage {
@@ -73,12 +76,6 @@ type RelayMessage =
 interface Env {
   RELAY: DurableObjectNamespace;
 }
-
-type RouteHandler = (
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext
-) => Response | Promise<Response>;
 
 // ── Durable Object: RelaySession ─────────────────────────────────────
 
@@ -293,41 +290,25 @@ export class RelaySession {
 
 // ── Fetch handler ────────────────────────────────────────────────────
 
-const routes: Record<string, RouteHandler> = {
-  "GET /ws": handleWebSocket,
-  "POST /relay/path": handleRelayPath,
-  "GET /health": handleHealth,
-};
+const app = new Hono<{ Bindings: Env }>();
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
-    }
+app.use("*", cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
-    try {
-      const url = new URL(request.url);
-      const routeKey = `${request.method} ${url.pathname}`;
+app.get("/ws", (c) => handleWebSocket(c.req.raw, c.env));
+app.post("/relay/path", (c) => handleRelayPath(c.req.raw, c.env));
+app.get("/health", (c) => handleHealth(c.req.raw, c.env));
+app.notFound((c) => c.json({ error: "not found" }, 404));
+app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "internal error" }, 500));
 
-      const handler = routes[routeKey];
-      if (handler) {
-        const response = await handler(request, env, ctx);
-        return addCorsHeaders(response);
-      }
-
-      return addCorsHeaders(jsonResponse({ error: "not found" }, 404));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "internal error";
-      return addCorsHeaders(jsonResponse({ error: message }, 500));
-    }
-  },
-};
+export default app;
 
 async function handleWebSocket(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const url = new URL(request.url);
   const identity = url.searchParams.get("identity");
@@ -345,8 +326,7 @@ async function handleWebSocket(
 
 async function handleRelayPath(
   _request: Request,
-  _env: Env,
-  _ctx: ExecutionContext
+  _env: Env
 ): Promise<Response> {
   // Stub: onion relay path request
   // TODO: implement actual relay path selection when multi-hop sessions land (AD-21)
@@ -359,37 +339,13 @@ async function handleRelayPath(
 
 async function handleHealth(
   _request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const id = env.RELAY.idFromName("default");
   const stub = env.RELAY.get(id);
   const statusResp = await stub.fetch("https://relay/status");
-  const status = await statusResp.json();
+  const status = await statusResp.json() as Record<string, unknown>;
   return jsonResponse({ status: "ok", ...status });
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function corsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-}
-
-function addCorsHeaders(response: Response): Response {
-  const newHeaders = new Headers(response.headers);
-  for (const [k, v] of Object.entries(corsHeaders())) {
-    newHeaders.set(k, v);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: newHeaders,
-    webSocket: (response as any).webSocket,
-  });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

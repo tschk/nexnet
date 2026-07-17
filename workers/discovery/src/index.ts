@@ -14,6 +14,8 @@ import {
   DEFAULT_REPUTATION_THRESHOLD,
   DEFAULT_REPUTATION_WEIGHTS,
 } from "@nexnet/types";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -39,12 +41,6 @@ interface StoredGroup {
 interface Env {
   DISCOVERY: DurableObjectNamespace;
 }
-
-type RouteHandler = (
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext
-) => Response | Promise<Response>;
 
 // ── Durable Object: DiscoveryIndex ───────────────────────────────────
 
@@ -307,54 +303,29 @@ export class DiscoveryIndex {
 
 // ── Fetch handler ────────────────────────────────────────────────────
 
-const routes: Record<string, RouteHandler> = {
-  "POST /discovery/profile": handleProfileUpsert,
-  "POST /discovery/search/interest": handleSearchInterest,
-  "POST /discovery/search/language": handleSearchLanguage,
-  "POST /discovery/random-match": handleRandomMatch,
-  "GET /discovery/groups": handleGroupsList,
-};
+const app = new Hono<{ Bindings: Env }>();
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
-    }
+app.use("*", cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
-    try {
-      const url = new URL(request.url);
-      const routeKey = `${request.method} ${url.pathname}`;
+app.post("/discovery/profile", (c) => handleProfileUpsert(c.req.raw, c.env));
+app.get("/discovery/profile/:identityId", (c) => handleProfileGet(c.req.param("identityId"), c.env));
+app.delete("/discovery/profile/:identityId", (c) => handleProfileDelete(c.req.param("identityId"), c.env));
+app.post("/discovery/search/interest", (c) => handleSearchInterest(c.req.raw, c.env));
+app.post("/discovery/search/language", (c) => handleSearchLanguage(c.req.raw, c.env));
+app.post("/discovery/random-match", (c) => handleRandomMatch(c.req.raw, c.env));
+app.get("/discovery/groups", (c) => handleGroupsList(c.req.raw, c.env));
+app.notFound((c) => c.json({ error: "not found" }, 404));
+app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "internal error" }, 500));
 
-      // Check static routes
-      const handler = routes[routeKey];
-      if (handler) {
-        return addCorsHeaders(await handler(request, env, ctx));
-      }
-
-      // /discovery/profile/:identityId (GET or DELETE)
-      const profileMatch = url.pathname.match(/^\/discovery\/profile\/([^/]+)$/);
-      if (profileMatch) {
-        const identityId = profileMatch[1];
-        if (request.method === "GET") {
-          return addCorsHeaders(await handleProfileGet(identityId, env));
-        }
-        if (request.method === "DELETE") {
-          return addCorsHeaders(await handleProfileDelete(identityId, env));
-        }
-      }
-
-      return addCorsHeaders(jsonResponse({ error: "not found" }, 404));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "internal error";
-      return addCorsHeaders(jsonResponse({ error: message }, 500));
-    }
-  },
-};
+export default app;
 
 async function handleProfileUpsert(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
@@ -383,8 +354,7 @@ async function handleProfileDelete(
 
 async function handleSearchInterest(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
@@ -397,8 +367,7 @@ async function handleSearchInterest(
 
 async function handleSearchLanguage(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
@@ -411,8 +380,7 @@ async function handleSearchLanguage(
 
 async function handleRandomMatch(
   request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
@@ -425,8 +393,7 @@ async function handleRandomMatch(
 
 async function handleGroupsList(
   _request: Request,
-  env: Env,
-  _ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/groups/list");
@@ -435,28 +402,6 @@ async function handleGroupsList(
 function getDiscoveryStub(env: Env): DurableObjectStub {
   const id = env.DISCOVERY.idFromName("global");
   return env.DISCOVERY.get(id);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function corsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-}
-
-function addCorsHeaders(response: Response): Response {
-  const newHeaders = new Headers(response.headers);
-  for (const [k, v] of Object.entries(corsHeaders())) {
-    newHeaders.set(k, v);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: newHeaders,
-  });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

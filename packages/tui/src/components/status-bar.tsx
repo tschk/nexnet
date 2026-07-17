@@ -33,13 +33,9 @@ export function StatusBar() {
       paddingLeft={1}
       paddingRight={1}
     >
-      <text>
-        <text fg={statusColor()}>{statusText()}</text>
-      </text>
-      <text>
-        <text fg={theme.textDim}>
-          {identity()?.username ? identity()!.username : hexToShort(identity()?.publicKeyHex ?? "—")}
-        </text>
+      <text fg={statusColor()}>{statusText()}</text>
+      <text fg={theme.textDim}>
+        {identity()?.username ? identity()!.username : hexToShort(identity()?.publicKeyHex ?? "—")}
       </text>
     </box>
   );

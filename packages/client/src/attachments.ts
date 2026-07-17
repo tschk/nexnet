@@ -118,7 +118,7 @@ export async function sendAttachment(
   const messageId = await sendDirectMessage(
     client,
     recipientId,
-    client.codec.encode(payload)
+    payload
   );
 
   // Transfer blob in chunks via relay

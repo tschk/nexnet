@@ -39,10 +39,25 @@ export { DevChainClient } from "./chain-stub.js";
 export {
   deriveGroupKey,
   deriveEpoch,
+  createEpoch,
+  advanceEpoch,
+  wrapEpochSecret,
+  unwrapEpochSecret,
   encryptGroupMessage,
   decryptGroupMessage,
+  initGroupSession,
+  getGroupSession,
+  setMemberDh,
+  rotateEpoch,
+  applyEpochWrap,
+  clearGroupSessions,
 } from "./group-crypto.js";
-export type { EncryptedGroupPayload } from "./group-crypto.js";
+export type {
+  EncryptedGroupPayload,
+  EpochSecretWrap,
+  GroupEpoch,
+  GroupSession,
+} from "./group-crypto.js";
 
 export {
   prepareAttachment,

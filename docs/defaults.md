@@ -20,6 +20,7 @@ offline message location: sender device
 presence retry interval: 30 minutes
 presence lease TTL: 90 seconds (AD-11)
 presence: exact online, no last seen
+presence visibility: global (AD-12)
 receipts: delivered only
 read receipts: disabled
 message editing: disabled

@@ -23,7 +23,7 @@ implementation.
 | OD-13 | Relay admission / checksum governance | |
 | OD-14 | Group ownership on-chain | Optional |
 | OD-15 | Public profile bios/avatars | May omit in first release |
-| OD-16 | Presence visibility controls | Global exact first; finer later |
+| OD-16 | ~~Presence visibility v1~~ **LOCKED AD-12** | **Global exact online** — anyone can see who is online; finer controls later optional |
 | OD-16b | ~~Presence lease TTL~~ **LOCKED AD-11** | **90 seconds**; renew while active |
 | OD-17 | ~~Canonical encoding~~ **LOCKED AD-4** | **H2: CBOR wire + CDDL schemas**; debug JSON tooling only |
 | OD-17b | ~~CBOR deterministic profile~~ **LOCKED AD-4b** | **CDE** (RFC 8949 §4.2); dCBOR not required |

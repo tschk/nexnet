@@ -42,17 +42,20 @@ sequenceDiagram
   P-->>S: offline on expiry
 ```
 
-## Visibility
+## Visibility (AD-12)
 
-Access may differ by context:
+**Locked v1: global exact online.** Anyone who can query the presence service
+can see whether an identity is online. No contact-only gate in the first
+release.
 
-- private contacts may query exact online state
-- group members may see exact online if enabled
-- random matching may use online state without global exposure
-- public username lookup need not reveal presence to unauthenticated users
+```text
+v1: everyone can see who else is online (exact online / offline)
+no last-seen
+no historical presence trail in the product API
+```
 
-First implementation may use exact presence globally for simplicity; API
-should allow later visibility controls.
+API should still be structured so later controls (contacts-only, hide from
+strangers) can land without rewriting clients — but defaults are open.
 
 ## Metadata
 

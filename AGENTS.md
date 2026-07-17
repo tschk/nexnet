@@ -22,7 +22,7 @@ started.
 - Passkey on every interactive app open; device cert until process death (AD-6)
 - DM fanout only to online devices; history via P2P device sync (AD-7)
 - Max 1 username owned per wallet; free transfer/create with rate limits (AD-10)
-- Presence lease TTL 90s (AD-11)
+- Presence lease TTL 90s (AD-11); global presence visibility (AD-12)
 - Schemas versioned; operations idempotent where possible
 - ISC license; no telemetry; no secret logging
 

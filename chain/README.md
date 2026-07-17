@@ -21,11 +21,16 @@ state primitives mature; executor may keep state off-language until then.
 | 11 | group creator already set (AD-23) |
 | 12 | relay key empty (AD-22) |
 | 13 | identity root already bound |
+| 20 | already a validator |
+| 21 | insufficient stake |
+| 22 | validator set full (max 21) |
+| 23 | leave would drop below min 4 |
 
 Constants:
 
 - `MIN_ACCOUNT_AGE_MS` = 7 days
 - `INACTIVITY_RELEASE_MS` = 90 days
+- validators: min 4, max 21, target 7 (AD-14)
 
 ## Run self-check
 

@@ -14,8 +14,31 @@ export {
   seal as ratchetSeal,
   open as ratchetOpen,
   clearSessions as clearRatchetSessions,
+  setSessionBackend,
+  serializeState,
+  deserializeState,
+  saveSession,
+  sessionStoreKey,
 } from "./double-ratchet.js";
-export type { RatchetState, RatchetHeader } from "./double-ratchet.js";
+export type {
+  RatchetState,
+  RatchetHeader,
+  SessionBackend,
+} from "./double-ratchet.js";
+
+export {
+  createLocalPrekeys,
+  exportBundle,
+  verifyBundle,
+  x3dhInitiate,
+  x3dhRespond,
+} from "./x3dh.js";
+export type {
+  PrekeyBundle,
+  LocalPrekeyMaterial,
+  X3dhInitResult,
+  X3dhRecvResult,
+} from "./x3dh.js";
 
 export {
   joinRoom,

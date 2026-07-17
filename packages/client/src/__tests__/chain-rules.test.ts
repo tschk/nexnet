@@ -50,6 +50,33 @@ function canBindIdentityRoot(alreadyBound: number): number {
   return 0;
 }
 
+const MIN_VALIDATORS = 4;
+const MAX_VALIDATORS = 21;
+
+function canJoinValidatorSet(
+  stakeOk: number,
+  setSize: number,
+  alreadyValidator: number
+): number {
+  if (alreadyValidator !== 0) return 20;
+  if (stakeOk === 0) return 21;
+  if (setSize > MAX_VALIDATORS) return 22;
+  return 0;
+}
+
+function canLeaveValidatorSet(
+  setSizeAfter: number,
+  bootstrapping: number
+): number {
+  if (bootstrapping !== 0) return 0;
+  if (setSizeAfter < MIN_VALIDATORS) return 23;
+  return 0;
+}
+
+function effectiveVotingPower(rawStake: number, powerCap: number): number {
+  return rawStake < powerCap ? rawStake : powerCap;
+}
+
 describe("chain transition rules (mirror of chain/nexnet_chain.in)", () => {
   test("register ok for aged free name", () => {
     expect(canRegisterUsername(MIN_ACCOUNT_AGE_MS, 0, 0, 0, 5)).toBe(0);
@@ -99,5 +126,30 @@ describe("chain transition rules (mirror of chain/nexnet_chain.in)", () => {
 
   test("identity already bound rejected", () => {
     expect(canBindIdentityRoot(1)).toBe(13);
+  });
+
+  test("validator join ok", () => {
+    expect(canJoinValidatorSet(1, 5, 0)).toBe(0);
+  });
+
+  test("validator join insufficient stake", () => {
+    expect(canJoinValidatorSet(0, 5, 0)).toBe(21);
+  });
+
+  test("validator join set full", () => {
+    expect(canJoinValidatorSet(1, 22, 0)).toBe(22);
+  });
+
+  test("validator leave below min blocked", () => {
+    expect(canLeaveValidatorSet(3, 0)).toBe(23);
+  });
+
+  test("validator leave during bootstrap ok", () => {
+    expect(canLeaveValidatorSet(3, 1)).toBe(0);
+  });
+
+  test("effective power caps stake", () => {
+    expect(effectiveVotingPower(100, 50)).toBe(50);
+    expect(effectiveVotingPower(10, 50)).toBe(10);
   });
 });

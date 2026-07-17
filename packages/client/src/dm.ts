@@ -22,6 +22,7 @@ import {
   getOrCreateRecvSession,
   getOrCreateSendSession,
   open as ratchetOpen,
+  saveSession,
   seal as ratchetSeal,
   sessionStoreKey,
 } from "./double-ratchet.js";
@@ -88,6 +89,7 @@ export async function sendDirectMessage(
   const ratchet = getOrCreateSendSession(sessionKey, rootSk, client.crypto);
   // Wire: version ‖ header ‖ nonce ‖ ciphertext (Double Ratchet)
   const ciphertext = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
+  saveSession(sessionKey, ratchet);
 
   const now = Date.now();
   const envelopePreimage = client.codec.encode({
@@ -215,6 +217,7 @@ export function onDirectMessage(
         envelope.ciphertext,
         aad
       );
+      saveSession(sessionKey, ratchet);
 
       // 3. Parse payload
       const payload = client.codec.decode<MessagePayload>(plaintext);

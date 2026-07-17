@@ -250,6 +250,14 @@ export interface UsernameRecord {
   registeredAt: number;
 }
 
+/** AD-14 stake-ranked validator entry */
+export interface ValidatorRecord {
+  wallet: WalletAddress;
+  bondedStake: number;
+  effectivePower: number;
+  joinedAt: number;
+}
+
 /** Chain client interface (talks to .in chain or dev stub) */
 export interface ChainApiClient {
   registerUsername(
@@ -266,6 +274,13 @@ export interface ChainApiClient {
   getIdentityRoot(
     identityId: IdentityId
   ): Promise<{ wallet: WalletAddress } | null>;
+  /** Optional AD-14 validator set (dev stub implements) */
+  joinValidatorSet?(
+    wallet: WalletAddress,
+    bondedStake: number
+  ): Promise<ValidatorRecord>;
+  leaveValidatorSet?(wallet: WalletAddress): Promise<void>;
+  listValidators?(): Promise<ValidatorRecord[]>;
 }
 
 // ── Crypto API interface ─────────────────────────────────────────────

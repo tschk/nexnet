@@ -97,4 +97,40 @@ describe("DevChainClient", () => {
     const history = await chain.getUsernameHistory("nobody");
     expect(history).toHaveLength(0);
   });
+
+  test("joinValidatorSet ranks by effective power", async () => {
+    const chain = new DevChainClient();
+    await chain.joinValidatorSet(makeWallet(1), 100);
+    await chain.joinValidatorSet(makeWallet(2), 500);
+    const list = await chain.listValidators();
+    expect(list).toHaveLength(2);
+    expect(list[0]!.effectivePower).toBe(500);
+  });
+
+  test("joinValidatorSet rejects duplicate", async () => {
+    const chain = new DevChainClient();
+    await chain.joinValidatorSet(makeWallet(1), 10);
+    await expect(chain.joinValidatorSet(makeWallet(1), 10)).rejects.toThrow(
+      /Already a validator/
+    );
+  });
+
+  test("leaveValidatorSet blocked below min after bootstrap", async () => {
+    const chain = new DevChainClient();
+    for (let i = 1; i <= 4; i++) {
+      await chain.joinValidatorSet(makeWallet(i), 10);
+    }
+    // at min 4 — leave would go to 3
+    await expect(chain.leaveValidatorSet(makeWallet(1))).rejects.toThrow(
+      /min validators/
+    );
+  });
+
+  test("leaveValidatorSet ok during bootstrap", async () => {
+    const chain = new DevChainClient();
+    await chain.joinValidatorSet(makeWallet(1), 10);
+    await chain.joinValidatorSet(makeWallet(2), 10);
+    await chain.leaveValidatorSet(makeWallet(1));
+    expect(await chain.listValidators()).toHaveLength(1);
+  });
 });

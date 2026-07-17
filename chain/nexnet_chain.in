@@ -57,6 +57,47 @@ fn can_bind_identity_root(already_bound: Int) -> Int {
   return 0;
 }
 
+// AD-14: stake-ranked validators, min 4, target 7-21, power cap
+const MIN_VALIDATORS = 4
+const MAX_VALIDATORS = 21
+const TARGET_VALIDATORS = 7
+
+// stake_ok: 1 if bonded stake meets min bond
+// set_size: current validator count after proposed join
+// already_validator: 1 if already in set
+fn can_join_validator_set(stake_ok: Int, set_size: Int, already_validator: Int) -> Int {
+  if already_validator != 0 {
+    return 20;
+  }
+  if stake_ok == 0 {
+    return 21;
+  }
+  if set_size > MAX_VALIDATORS {
+    return 22;
+  }
+  return 0;
+}
+
+// After leave, set must stay >= MIN_VALIDATORS once past bootstrap
+// bootstrapping: 1 while set still forming (size was < MIN)
+fn can_leave_validator_set(set_size_after: Int, bootstrapping: Int) -> Int {
+  if bootstrapping != 0 {
+    return 0;
+  }
+  if set_size_after < MIN_VALIDATORS {
+    return 23;
+  }
+  return 0;
+}
+
+// effective_power = min(raw_stake, power_cap)
+fn effective_voting_power(raw_stake: Int, power_cap: Int) -> Int {
+  if raw_stake < power_cap {
+    return raw_stake;
+  }
+  return power_cap;
+}
+
 fn main() -> Int {
   if can_register_username(604800000, 0, 0, 0, 5) != 0 {
     return 100;
@@ -90,6 +131,27 @@ fn main() -> Int {
   }
   if can_bind_identity_root(1) != 13 {
     return 110;
+  }
+  if can_join_validator_set(1, 5, 0) != 0 {
+    return 111;
+  }
+  if can_join_validator_set(0, 5, 0) != 21 {
+    return 112;
+  }
+  if can_join_validator_set(1, 22, 0) != 22 {
+    return 113;
+  }
+  if can_leave_validator_set(3, 0) != 23 {
+    return 114;
+  }
+  if can_leave_validator_set(3, 1) != 0 {
+    return 115;
+  }
+  if effective_voting_power(100, 50) != 50 {
+    return 116;
+  }
+  if effective_voting_power(10, 50) != 10 {
+    return 117;
   }
   return 0;
 }

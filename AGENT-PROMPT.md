@@ -26,7 +26,7 @@ grep -r "nettle" --include='*.ts' --include='*.tsx' --include='*.json' --include
 
 Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nettle→Nexnet, NETTLE→NEXNET, @nettle/→@nexnet/).
 
-## Current state (181 tests passing)
+## Current state (200+ tests passing)
 
 | Package | What | Status |
 |---|---|---|
@@ -81,7 +81,8 @@ Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nett
 
 ### 1. Double Ratchet for DM forward secrecy — ✅ done
 
-`packages/client/src/double-ratchet.ts` wired into `dm.ts`. X25519 + HKDF + XChaCha20. In-memory sessions; persist later.
+`packages/client/src/double-ratchet.ts` wired into `dm.ts`. X25519 + HKDF + XChaCha20.
+`setSessionBackend` + `@nexnet/storage` `SessionStore` for disk. X3DH in `x3dh.ts`.
 
 ### 2. MLS for group encryption — ✅ simplified epoch secrets
 
@@ -95,11 +96,11 @@ Not full MLS. Random epoch secrets + X25519 wrap to members. Membership rotate �
 
 `packages/client/src/__tests__/integration.test.ts`: encrypted DM, group epoch crypto, attachments, room cooldown+votekick.
 
-### 5. Chain .in state machine — ✅ transition rules
+### 5. Chain .in state machine — ✅ transition rules + validators
 
-`chain/nexnet_chain.in` pure checks (AD-10, anti-squat, transfer off, AD-22/23).
-`in execute chain/nexnet_chain.in` → Int(0). TS mirror tests in `chain-rules.test.ts`.
-Full state maps deferred until inauguration has map primitives; DevChainClient remains dev executor.
+`chain/nexnet_chain.in` pure checks (AD-10, anti-squat, transfer off, AD-22/23, AD-14).
+`in execute chain/nexnet_chain.in` → Int(0). DevChainClient: join/leave/list validators.
+Full state maps deferred until inauguration has map primitives.
 
 ## Running tests
 
@@ -109,7 +110,7 @@ bun install
 bun test --workspace
 ```
 
-Expected: 181+ tests passing.
+Expected: 200+ tests passing.
 
 ## Key files
 

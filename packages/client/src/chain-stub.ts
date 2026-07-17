@@ -9,6 +9,7 @@
 import type {
   ChainApiClient,
   UsernameRecord,
+  ValidatorRecord,
   WalletAddress,
   IdentityId,
 } from "@nexnet/types";
@@ -18,6 +19,12 @@ const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Release username after 90 days of no presence */
 const INACTIVITY_RELEASE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** AD-14 */
+const MIN_VALIDATORS = 4;
+const MAX_VALIDATORS = 21;
+const MIN_BOND = 1;
+const VALIDATOR_POWER_CAP = 1_000_000;
 
 interface AccountMeta {
   createdAt: number;
@@ -29,6 +36,7 @@ export class DevChainClient implements ChainApiClient {
   private walletToUsername = new Map<string, string>();
   private history = new Map<string, UsernameRecord[]>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
+  private validators = new Map<string, ValidatorRecord>();
 
   /**
    * Register an account (call on first wallet creation).
@@ -142,5 +150,50 @@ export class DevChainClient implements ChainApiClient {
     const list = this.history.get(username) ?? [];
     list.push(record);
     this.history.set(username, list);
+  }
+
+  async joinValidatorSet(
+    wallet: WalletAddress,
+    bondedStake: number
+  ): Promise<ValidatorRecord> {
+    const hex = Buffer.from(wallet).toString("hex");
+    if (this.validators.has(hex)) {
+      throw new Error("Already a validator (code 20)");
+    }
+    if (bondedStake < MIN_BOND) {
+      throw new Error("Insufficient stake (code 21)");
+    }
+    if (this.validators.size + 1 > MAX_VALIDATORS) {
+      throw new Error("Validator set full (code 22)");
+    }
+    const effectivePower = Math.min(bondedStake, VALIDATOR_POWER_CAP);
+    const rec: ValidatorRecord = {
+      wallet,
+      bondedStake,
+      effectivePower,
+      joinedAt: Date.now(),
+    };
+    this.validators.set(hex, rec);
+    return rec;
+  }
+
+  async leaveValidatorSet(wallet: WalletAddress): Promise<void> {
+    const hex = Buffer.from(wallet).toString("hex");
+    if (!this.validators.has(hex)) {
+      throw new Error("Not a validator");
+    }
+    const after = this.validators.size - 1;
+    // Bootstrap: allow leave while size was never required yet
+    const bootstrapping = this.validators.size < MIN_VALIDATORS;
+    if (!bootstrapping && after < MIN_VALIDATORS) {
+      throw new Error("Would drop below min validators (code 23)");
+    }
+    this.validators.delete(hex);
+  }
+
+  async listValidators(): Promise<ValidatorRecord[]> {
+    return [...this.validators.values()].sort(
+      (a, b) => b.effectivePower - a.effectivePower
+    );
   }
 }

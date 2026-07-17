@@ -2,7 +2,8 @@
  * @nexnet/client — Double Ratchet (Signal-style)
  *
  * X25519 DH ratchet + HKDF symmetric ratchet + XChaCha20-Poly1305.
- * No X3DH prekeys: first sender is initiator; root seed is conversation SK.
+ * Root SK from conversation HKDF or X3DH (see x3dh.ts).
+ * Optional disk backend via setSessionBackend (SessionStore blob API).
  */
 
 import {
@@ -302,8 +303,20 @@ export function open(
   return crypto.decrypt(mk, nonce, fullAad, ct);
 }
 
-/** In-memory session store. ponytail: no disk persist until multi-device needs it. */
+/** Pluggable blob backend (e.g. @nexnet/storage SessionStore). */
+export interface SessionBackend {
+  get(sessionKey: string): Uint8Array | null;
+  put(sessionKey: string, blob: Uint8Array): void;
+  delete?(sessionKey: string): void;
+  clear?(): void;
+}
+
 const sessions = new Map<string, RatchetState>();
+let backend: SessionBackend | null = null;
+
+export function setSessionBackend(b: SessionBackend | null): void {
+  backend = b;
+}
 
 export function sessionStoreKey(
   conversationId: Uint8Array,
@@ -312,16 +325,83 @@ export function sessionStoreKey(
   return `${Buffer.from(conversationId).toString("hex")}:${Buffer.from(peerId).toString("hex")}`;
 }
 
+interface SerializedRatchet {
+  DHs: { secretKey: number[]; publicKey: number[] };
+  DHr: number[] | null;
+  RK: number[];
+  CKs: number[] | null;
+  CKr: number[] | null;
+  Ns: number;
+  Nr: number;
+  PN: number;
+  skipped: Array<[string, number[]]>;
+}
+
+export function serializeState(state: RatchetState): Uint8Array {
+  const obj: SerializedRatchet = {
+    DHs: {
+      secretKey: Array.from(state.DHs.secretKey),
+      publicKey: Array.from(state.DHs.publicKey),
+    },
+    DHr: state.DHr ? Array.from(state.DHr) : null,
+    RK: Array.from(state.RK),
+    CKs: state.CKs ? Array.from(state.CKs) : null,
+    CKr: state.CKr ? Array.from(state.CKr) : null,
+    Ns: state.Ns,
+    Nr: state.Nr,
+    PN: state.PN,
+    skipped: [...state.skipped.entries()].map(([k, v]) => [k, Array.from(v)]),
+  };
+  return new TextEncoder().encode(JSON.stringify(obj));
+}
+
+export function deserializeState(blob: Uint8Array): RatchetState {
+  const obj = JSON.parse(new TextDecoder().decode(blob)) as SerializedRatchet;
+  return {
+    DHs: {
+      secretKey: new Uint8Array(obj.DHs.secretKey),
+      publicKey: new Uint8Array(obj.DHs.publicKey),
+    },
+    DHr: obj.DHr ? new Uint8Array(obj.DHr) : null,
+    RK: new Uint8Array(obj.RK),
+    CKs: obj.CKs ? new Uint8Array(obj.CKs) : null,
+    CKr: obj.CKr ? new Uint8Array(obj.CKr) : null,
+    Ns: obj.Ns,
+    Nr: obj.Nr,
+    PN: obj.PN,
+    skipped: new Map(
+      obj.skipped.map(([k, v]) => [k, new Uint8Array(v)] as [string, Uint8Array])
+    ),
+  };
+}
+
+function persist(key: string, state: RatchetState): void {
+  sessions.set(key, state);
+  backend?.put(key, serializeState(state));
+}
+
+function load(key: string): RatchetState | undefined {
+  const mem = sessions.get(key);
+  if (mem) return mem;
+  if (!backend) return undefined;
+  const blob = backend.get(key);
+  if (!blob) return undefined;
+  const state = deserializeState(blob);
+  sessions.set(key, state);
+  return state;
+}
+
 export function getSession(key: string): RatchetState | undefined {
-  return sessions.get(key);
+  return load(key);
 }
 
 export function setSession(key: string, state: RatchetState): void {
-  sessions.set(key, state);
+  persist(key, state);
 }
 
 export function clearSessions(): void {
   sessions.clear();
+  backend?.clear?.();
 }
 
 export function getOrCreateSendSession(
@@ -329,10 +409,10 @@ export function getOrCreateSendSession(
   sk: Uint8Array,
   crypto: RatchetCrypto
 ): RatchetState {
-  let state = sessions.get(key);
+  let state = load(key);
   if (!state) {
     state = initInitiator(sk, crypto);
-    sessions.set(key, state);
+    persist(key, state);
   }
   return state;
 }
@@ -342,10 +422,15 @@ export function getOrCreateRecvSession(
   sk: Uint8Array,
   crypto: RatchetCrypto
 ): RatchetState {
-  let state = sessions.get(key);
+  let state = load(key);
   if (!state) {
     state = initResponder(sk, crypto);
-    sessions.set(key, state);
+    persist(key, state);
   }
   return state;
+}
+
+/** Call after seal/open so disk tracks ratchet advance. */
+export function saveSession(key: string, state: RatchetState): void {
+  persist(key, state);
 }

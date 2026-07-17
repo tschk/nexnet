@@ -7,6 +7,8 @@
   "dependencies": {
     "@nettle/types": "workspace:*",
     "@nettle/client": "workspace:*",
+    "@nettle/crypto": "workspace:*",
+    "@nettle/protocol": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/solid": "latest",
     "solid-js": "^1"

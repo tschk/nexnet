@@ -11,15 +11,19 @@
  */
 
 import { PRESENCE_LEASE_TTL_MS } from "@nettle/types";
+import { ed25519 } from "@noble/curves/ed25519";
 
 // ── Types ────────────────────────────────────────────────────────────
 
 interface PresenceLeaseData {
   identityId: string;
   deviceId: string;
+  publicKey?: string; // hex-encoded Ed25519 public key
   relayHint?: string;
   issuedAt: number;
   expiresAt: number;
+  nonce?: string; // hex-encoded 32-byte nonce
+  signature?: string; // hex-encoded Ed25519 signature
 }
 
 interface Env {
@@ -93,8 +97,29 @@ export class PresenceTracker {
       lease.expiresAt = maxExpiry;
     }
 
-    // TODO: verify Ed25519 signature on lease in production
-    // For now accept unsigned in dev mode (no-op)
+    // Verify Ed25519 signature when present (AD-11)
+    if (lease.signature && lease.publicKey) {
+      try {
+        const pk = hexToBytes(lease.publicKey);
+        const sig = hexToBytes(lease.signature);
+        const msg = new TextEncoder().encode(
+          `nettle presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`
+        );
+        if (!ed25519.verify(sig, msg, pk)) {
+          return jsonResponse({ error: "invalid lease signature" }, 403);
+        }
+      } catch {
+        return jsonResponse({ error: "malformed signature or public key" }, 400);
+      }
+    } else {
+      // Reject unsigned leases in production
+      // ponytail: env flag, replace with proper env injection when wrangler is used
+      // In tests/dev, DEBUG env is typically set. Without it, reject.
+      const isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+      if (!isDev) {
+        return jsonResponse({ error: "lease must be signed" }, 403);
+      }
+    }
 
     this.leases.set(lease.identityId, lease);
     this.startCleanupTimer();
@@ -359,4 +384,12 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }

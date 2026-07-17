@@ -1,9 +1,12 @@
 /**
- * Dev-mode client adapter.
- * Generates Ed25519 keypairs, stores identity locally, and provides
- * stub methods that work with in-memory state so the TUI is functional
- * before the real @nettle/client is wired up.
+ * Client adapter — real @nettle/crypto and @nettle/client.
+ * Ed25519 keypairs, XChaCha20-Poly1305 encryption, WebSocket relay.
  */
+
+import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nettle/crypto";
+import { NettleClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId } from "@nettle/client";
+import { cdeEncode, cdeDecode } from "@nettle/protocol";
+import type { CborCdeCodec } from "@nettle/types";
 
 import {
   identity,
@@ -13,44 +16,31 @@ import {
   addRoomMessage,
   setOnlinePeers,
   setRooms,
-  setDiscoveredUsers,
   nextMsgId,
   type LocalIdentity,
   type ChatMessage,
 } from "./state";
 
-// ── Crypto helpers (minimal, dev-only) ──────────────────────────────
+// ── Codec singleton ─────────────────────────────────────────────────
 
-function randomHex(n: number): string {
-  const bytes = new Uint8Array(n);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+const codec: CborCdeCodec = { encode: cdeEncode, decode: cdeDecode };
 
-function generateKeypair(): { publicKey: Uint8Array; secretKey: Uint8Array; publicKeyHex: string } {
-  // Dev-mode: 32 random bytes as "public key"
-  // Real impl uses @noble/ed25519
-  const secretKey = new Uint8Array(32);
-  crypto.getRandomValues(secretKey);
-  const publicKey = new Uint8Array(32);
-  crypto.getRandomValues(publicKey);
-  const publicKeyHex = Array.from(publicKey)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return { publicKey, secretKey, publicKeyHex };
-}
+// ── Client singleton ────────────────────────────────────────────────
+
+let client: NettleClient | null = null;
 
 // ── Public API ──────────────────────────────────────────────────────
 
 export function generateIdentity(): LocalIdentity {
-  const kp = generateKeypair();
+  const kp = generateSigningKeyPair();
+  const identityId = deriveId("nettle identity v1", kp.publicKey);
+  const identityIdHex = hexEncode(identityId);
+
   const id: LocalIdentity = {
-    publicKeyHex: kp.publicKeyHex,
+    publicKeyHex: identityIdHex,
     secretKey: kp.secretKey,
     publicKey: kp.publicKey,
-    username: kp.publicKeyHex.slice(0, 12),
+    username: identityIdHex.slice(0, 12),
   };
   setIdentity(id);
   return id;
@@ -58,62 +48,107 @@ export function generateIdentity(): LocalIdentity {
 
 export async function connectDev(relayUrl: string): Promise<void> {
   const id = identity();
-  if (!id) return;
+  if (!id) throw new Error("generate identity first");
 
   setConnStatus("connecting");
 
-  // Simulate connection delay
-  await new Promise((r) => setTimeout(r, 500));
+  const identityId = deriveId("nettle identity v1", id.publicKey);
+  // ponytail: reuse publicKey as deviceId for single-device v1
+  const deviceId = id.publicKey.slice(0, 32);
+
+  client = new NettleClient({
+    identityId,
+    deviceId,
+    crypto: cryptoProvider,
+    codec,
+    relayUrl,
+    storagePath: "", // ponytail: no persistence until local-first history
+    signingSecretKey: id.secretKey,
+  });
+
+  try {
+    await client.connect();
+  } catch {
+    setConnStatus("disconnected");
+    return;
+  }
 
   setConnStatus("connected");
 
-  // Seed some fake rooms
-  setRooms([
-    {
-      id: "room-general",
-      name: "#general",
-      memberCount: 3,
-      messages: [],
-      lastActivity: Date.now() - 60_000,
-    },
-    {
-      id: "room-dev",
-      name: "#dev",
-      memberCount: 2,
-      messages: [],
-      lastActivity: Date.now() - 120_000,
-    },
-  ]);
+  // Subscribe to default rooms
+  const defaultRooms = ["general", "dev"];
+  for (const name of defaultRooms) {
+    const roomId = deriveRoomId(client.crypto, name);
+    const roomIdHex = hexEncode(roomId);
+    await joinRoom(client, name);
 
-  // Seed fake discovered users
-  setDiscoveredUsers([
-    {
-      identityHex: randomHex(32),
-      username: "alice",
-      bio: "Building decentralized chat.",
-      interests: ["software.rust", "crypto.p2p"],
-      online: true,
-    },
-    {
-      identityHex: randomHex(32),
-      username: "bob",
-      bio: "Privacy enthusiast.",
-      interests: ["crypto.privacy", "software.zig"],
-      online: false,
-    },
-    {
-      identityHex: randomHex(32),
-      username: "charlie",
-      bio: "Terminal UI lover.",
-      interests: ["software.typescript", "design.tui"],
-      online: true,
-    },
-  ]);
+    setRooms((prev) => {
+      if (prev.some((r) => r.id === roomIdHex)) return prev;
+      return [
+        ...prev,
+        {
+          id: roomIdHex,
+          name: `#${name}`,
+          memberCount: 0,
+          messages: [],
+          lastActivity: Date.now(),
+        },
+      ];
+    });
+
+    onRoomMessage(client, roomId, (event) => {
+      const payload = codec.decode<{ text?: string }>(
+        typeof event.payload === "object" && event.payload instanceof Uint8Array
+          ? event.payload
+          : new Uint8Array()
+      );
+      const authorHex = hexEncode(event.authorIdentityId);
+      const own = authorHex === id.publicKeyHex;
+      const msg: ChatMessage = {
+        id: nextMsgId(),
+        senderHex: authorHex,
+        senderName: own ? id.username : authorHex.slice(0, 12),
+        text: payload.text ?? "",
+        createdAt: event.createdAt,
+        delivered: true,
+        own,
+      };
+      addRoomMessage(roomIdHex, msg);
+    });
+  }
+
+  // Handle inbound DMs
+  client.on("dm", (data) => {
+    try {
+      const raw = data as { envelope?: number[] };
+      if (!raw.envelope) return;
+      // ponytail: show as encrypted placeholder — real decrypt needs session key
+      const envBytes = new Uint8Array(raw.envelope);
+      const msg: ChatMessage = {
+        id: nextMsgId(),
+        senderHex: "(encrypted)",
+        senderName: "peer",
+        text: "[encrypted message]",
+        createdAt: Date.now(),
+        delivered: true,
+        own: false,
+      };
+      // Can't route without decrypting; skip adding for now
+    } catch {
+      // malformed
+    }
+  });
+
+  // Handle presence
+  client.on("presence", (data) => {
+    const p = data as { peers?: string[] };
+    if (p.peers) setOnlinePeers(new Set(p.peers));
+  });
 }
 
 export function sendDevMessage(recipientHex: string, text: string): ChatMessage {
   const id = identity();
-  if (!id) throw new Error("not logged in");
+  if (!id || !client) throw new Error("not connected");
 
   const msg: ChatMessage = {
     id: nextMsgId(),
@@ -127,29 +162,18 @@ export function sendDevMessage(recipientHex: string, text: string): ChatMessage 
 
   addMessage(recipientHex, msg);
 
-  // Simulate echo reply after 1-3s (dev mode)
-  setTimeout(
-    () => {
-      const reply: ChatMessage = {
-        id: nextMsgId(),
-        senderHex: recipientHex,
-        senderName: recipientHex.slice(0, 12),
-        text: `echo: ${text}`,
-        createdAt: Date.now(),
-        delivered: true,
-        own: false,
-      };
-      addMessage(recipientHex, reply);
-    },
-    1000 + Math.random() * 2000,
-  );
+  // Fire-and-forget async send — real encryption via sendDirectMessage
+  const recipientId = hexDecode(recipientHex);
+  sendDirectMessage(client, recipientId, text).catch(() => {
+    // ponytail: mark undelivered later
+  });
 
   return msg;
 }
 
 export function sendDevRoomMessage(roomId: string, text: string): ChatMessage {
   const id = identity();
-  if (!id) throw new Error("not logged in");
+  if (!id || !client) throw new Error("not connected");
 
   const msg: ChatMessage = {
     id: nextMsgId(),
@@ -162,10 +186,32 @@ export function sendDevRoomMessage(roomId: string, text: string): ChatMessage {
   };
 
   addRoomMessage(roomId, msg);
+
+  const roomIdBytes = hexDecode(roomId);
+  sendRoomMessage(client, roomIdBytes, text).catch(() => {});
+
   return msg;
 }
 
 export function disconnectDev(): void {
+  client?.disconnect();
+  client = null;
   setConnStatus("disconnected");
   setOnlinePeers(new Set());
+}
+
+// ── Hex helpers ─────────────────────────────────────────────────────
+
+function hexEncode(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function hexDecode(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
 }

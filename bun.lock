@@ -49,6 +49,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@nettle/client": "workspace:*",
+        "@nettle/crypto": "workspace:*",
+        "@nettle/protocol": "workspace:*",
         "@nettle/types": "workspace:*",
         "@opentui/core": "latest",
         "@opentui/solid": "latest",
@@ -74,6 +76,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@nettle/types": "workspace:*",
+        "@noble/curves": "^1.8.0",
       },
       "devDependencies": {
         "wrangler": "^3",

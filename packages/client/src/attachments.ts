@@ -183,6 +183,7 @@ export class AttachmentReceiver {
       chunks: Map<number, Uint8Array>;
       totalChunks: number;
       receivedAt: number;
+      contentHash: Uint8Array;
     }
   >;
 
@@ -196,8 +197,29 @@ export class AttachmentReceiver {
     attachmentId: Uint8Array,
     chunkIndex: number,
     totalChunks: number,
-    data: Uint8Array
+    data: Uint8Array,
+    contentHash: Uint8Array
 ): Uint8Array | null {
+    if (
+      attachmentId.length !== 32 ||
+      contentHash.length !== 32 ||
+      !Number.isInteger(chunkIndex) ||
+      !Number.isInteger(totalChunks) ||
+      chunkIndex < 0 ||
+      totalChunks <= 0 ||
+      chunkIndex >= totalChunks
+    ) {
+      throw new Error("Invalid attachment chunk");
+    }
+
+    const expectedAttachmentId = this.crypto.deriveId(
+      DOMAIN_ATTACHMENT_ID,
+      contentHash
+    );
+    if (!equalBytes(attachmentId, expectedAttachmentId)) {
+      throw new Error("Attachment offer does not match content hash");
+    }
+
     const idHex = Buffer.from(attachmentId).toString("hex");
 
     if (!this.transfers.has(idHex)) {
@@ -205,10 +227,22 @@ export class AttachmentReceiver {
         chunks: new Map(),
         totalChunks,
         receivedAt: Date.now(),
+        contentHash: new Uint8Array(contentHash),
       });
     }
 
     const transfer = this.transfers.get(idHex)!;
+    if (
+      transfer.totalChunks !== totalChunks ||
+      !equalBytes(transfer.contentHash, contentHash)
+    ) {
+      throw new Error("Attachment chunk metadata changed during transfer");
+    }
+
+    const existing = transfer.chunks.get(chunkIndex);
+    if (existing && !equalBytes(existing, data)) {
+      throw new Error("Attachment chunk conflicts with received data");
+    }
     transfer.chunks.set(chunkIndex, data);
 
     // Check if complete
@@ -226,6 +260,10 @@ export class AttachmentReceiver {
       }
 
       this.transfers.delete(idHex);
+      const actualHash = this.crypto.deriveId(DOMAIN_ATTACHMENT_ID, blob);
+      if (!equalBytes(actualHash, transfer.contentHash)) {
+        throw new Error("Attachment integrity verification failed");
+      }
       return blob;
     }
 
@@ -244,6 +282,13 @@ export class AttachmentReceiver {
     const ciphertext = encryptedBlob.slice(24);
     return this.crypto.decrypt(key, nonce, new Uint8Array(0), ciphertext);
   }
+}
+
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let different = 0;
+  for (let i = 0; i < a.length; i++) different |= a[i]! ^ b[i]!;
+  return different === 0;
 }
 
 function formatSize(bytes: number): string {

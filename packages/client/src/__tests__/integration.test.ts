@@ -341,7 +341,8 @@ describe("integration", () => {
         prepared.attachmentId,
         i,
         total,
-        slice
+        slice,
+        prepared.contentHash
       );
     }
     expect(reassembled).not.toBeNull();

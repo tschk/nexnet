@@ -26,7 +26,7 @@ started.
 
 - Rust workspace monorepo for node/relay/cli (default)
 - Tokio, QUIC/WebRTC transports, CBOR+CDE+CDDL (AD-4/4b), encrypted SQLite
-- Ed25519 / X25519 / HKDF / XChaCha20-Poly1305 or AES-GCM
+- Ed25519 / X25519 / HKDF / XChaCha20-Poly1305 (AD-5)
 - Double Ratchet for DMs; OpenMLS for groups
 - **Own chain** — application logic in inauguration `.in`
   (`../inauguration`); clients only via `nettle-chain-client`

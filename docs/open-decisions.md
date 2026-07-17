@@ -26,6 +26,6 @@ implementation.
 | OD-16 | Presence visibility controls | Global exact first; finer later |
 | OD-17 | ~~Canonical encoding~~ **LOCKED AD-4** | **H2: CBOR wire + CDDL schemas**; debug JSON tooling only |
 | OD-17b | ~~CBOR deterministic profile~~ **LOCKED AD-4b** | **CDE** (RFC 8949 §4.2); dCBOR not required |
-| OD-18 | AEAD choice | XChaCha20-Poly1305 vs AES-GCM |
+| OD-18 | ~~AEAD choice~~ **LOCKED AD-5** | **XChaCha20-Poly1305**; AES-GCM not required |
 
 Update this table when a decision locks; link to the issue or ADR.

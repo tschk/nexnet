@@ -20,7 +20,7 @@ Coding agents may adjust, but this is the strong default.
 - ed25519-dalek
 - x25519-dalek
 - blake3
-- chacha20poly1305
+- chacha20poly1305 (XChaCha20-Poly1305 — AD-5)
 - hkdf
 - established Double Ratchet implementation
 - OpenMLS

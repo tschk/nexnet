@@ -9,7 +9,7 @@ Use established primitives. **Do not invent custom crypto.**
 | Signatures | Ed25519 |
 | Key agreement | X25519 |
 | KDF | HKDF |
-| AEAD | XChaCha20-Poly1305 or AES-GCM |
+| AEAD | **XChaCha20-Poly1305** (AD-5) |
 | Direct messages | Double Ratchet |
 | Private groups | MLS (OpenMLS) |
 | Content hashing | BLAKE3 or SHA-256 |
@@ -69,6 +69,15 @@ Messages must still be **signed**.
 Transport encryption still protects network links.
 
 Clients verify signatures before display.
+
+## AEAD (AD-5)
+
+**Locked: XChaCha20-Poly1305** for private payloads / session seals.
+
+Rationale: 192-bit nonces reduce misuse risk in ratchets and queued envelopes;
+strong pure-software performance; common in modern messaging stacks.
+
+AES-GCM not required. Do not dual-stack without a real interop need.
 
 ## Non-goals
 

@@ -78,6 +78,20 @@ describe("OutboundQueue", () => {
     q.close();
   });
 
+  test("pendingForRecipient retries on a presence update despite backoff", () => {
+    const q = OutboundQueue.open(":memory:");
+    const recipient = new Uint8Array(32).fill(0x02);
+    const item = makeItem({
+      recipientIdentityId: recipient,
+      nextAttemptAt: Date.now() + 60_000,
+    });
+    q.enqueue(item);
+
+    expect(q.pending()).toEqual([]);
+    expect(q.pendingForRecipient(recipient)).toHaveLength(1);
+    q.close();
+  });
+
   test("enqueue replaces on duplicate message_id", () => {
     const q = OutboundQueue.open(":memory:");
     const msgId = new Uint8Array(32).fill(0xab);

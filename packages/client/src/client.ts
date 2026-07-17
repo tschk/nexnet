@@ -22,6 +22,7 @@ export type EventType =
   | "session_answer"
   | "candidate"
   | "presence"
+  | "delivery_receipt"
   | "connected"
   | "disconnected"
   | "reconnecting"
@@ -331,7 +332,11 @@ export class NexnetClient {
         this.emit("group_message", msg);
         break;
       case "presence":
+      case "presence_update":
         this.emit("presence", msg);
+        break;
+      case "delivery_receipt":
+        this.emit("delivery_receipt", msg);
         break;
       case "error":
         this.emit("error", msg);

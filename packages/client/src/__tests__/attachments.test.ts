@@ -1,14 +1,22 @@
-import { describe, test, expect } from "bun:test";
+import { afterEach, describe, test, expect } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode } from "@nexnet/protocol";
 import {
   prepareAttachment,
+  sendAttachment,
   AttachmentReceiver,
+  type DirectAttachmentChunk,
 } from "../attachments.js";
+import { NexnetClient } from "../client.js";
+import { onDirectMessage } from "../dm.js";
+import { setDirectTransport } from "../transport.js";
+import type { PeerManager } from "../webrtc.js";
 
 describe("Attachments", () => {
   const crypto = cryptoProvider;
   const codec = { encode: cdeEncode, decode: cdeDecode };
+
+  afterEach(() => setDirectTransport(null));
 
   test("prepareAttachment encrypts and hashes", () => {
     const file = new TextEncoder().encode("Hello, this is a test file!");
@@ -100,5 +108,77 @@ describe("Attachments", () => {
     // Decrypt
     const decrypted = receiver.decryptAttachment(reassembled!, transfer.key);
     expect(new TextDecoder().decode(decrypted)).toBe("secret document");
+  });
+
+  test("sendAttachment uses the direct session for its offer and chunks", async () => {
+    const recipientId = new Uint8Array(32).fill(2);
+    const recipientHex = Buffer.from(recipientId).toString("hex");
+    const sent: Uint8Array[] = [];
+    setDirectTransport({
+      isOpen: (peer: string) => peer === recipientHex,
+      send: (_peer: string, data: Uint8Array) => {
+        sent.push(new Uint8Array(data));
+        return true;
+      },
+    } as unknown as PeerManager);
+    const client = new NexnetClient({
+      identityId: new Uint8Array(32).fill(1),
+      deviceId: new Uint8Array(32).fill(3),
+      crypto,
+      codec,
+      relayUrl: "ws://relay.example",
+      storagePath: "/tmp/attachments",
+      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+    });
+    const recipient = new NexnetClient({
+      identityId: recipientId,
+      deviceId: new Uint8Array(32).fill(4),
+      crypto,
+      codec,
+      relayUrl: "ws://relay.example",
+      storagePath: "/tmp/attachments-recipient",
+      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+    });
+    const file = new Uint8Array([1, 2, 3, 4, 5]);
+    let attachmentKey: Uint8Array | undefined;
+    onDirectMessage(recipient, (_envelope, payload) => {
+      attachmentKey = new Uint8Array(payload.clientMetadata?.attachmentKey as number[]);
+    });
+
+    await sendAttachment(client, recipientId, file, "a.bin", "application/octet-stream", 2);
+
+    expect(sent.length).toBeGreaterThan(1);
+    const receiver = new AttachmentReceiver(crypto);
+    let blob: Uint8Array | null = null;
+    for (const bytes of sent.slice(1)) {
+      const chunk = codec.decode<DirectAttachmentChunk>(bytes);
+      blob = receiver.receiveChunk(
+        chunk.attachmentId,
+        chunk.chunkIndex,
+        chunk.totalChunks,
+        chunk.data
+      );
+    }
+    expect(blob).not.toBeNull();
+    recipient.emit("dm", { envelope: Array.from(sent[0]!) });
+    expect(attachmentKey).toBeDefined();
+    expect(receiver.decryptAttachment(blob!, attachmentKey!)).toEqual(file);
+  });
+
+  test("sendAttachment rejects without an open direct session", async () => {
+    const recipientId = new Uint8Array(32).fill(2);
+    const client = new NexnetClient({
+      identityId: new Uint8Array(32).fill(1),
+      deviceId: new Uint8Array(32).fill(3),
+      crypto,
+      codec,
+      relayUrl: "ws://relay.example",
+      storagePath: "/tmp/attachments",
+      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+    });
+
+    await expect(
+      sendAttachment(client, recipientId, new Uint8Array([1]), "a.bin", "application/octet-stream")
+    ).rejects.toThrow("Direct session is required");
   });
 });

@@ -13,6 +13,8 @@ import type {
   WalletAddress,
   IdentityId,
 } from "@nexnet/types";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 /** Minimum account age before registering a username (7 days) */
 const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -31,12 +33,39 @@ interface AccountMeta {
   lastActiveAt: number;
 }
 
+interface PersistedUsernameRecord {
+  username: string;
+  ownerWallet: string;
+  identityId: string;
+  registeredAt: number;
+}
+
+interface PersistedValidatorRecord {
+  wallet: string;
+  bondedStake: number;
+  effectivePower: number;
+  joinedAt: number;
+}
+
+interface PersistedState {
+  accounts: [string, AccountMeta][];
+  usernames: PersistedUsernameRecord[];
+  history: [string, PersistedUsernameRecord[]][];
+  validators: PersistedValidatorRecord[];
+}
+
 export class DevChainClient implements ChainApiClient {
   private usernames = new Map<string, UsernameRecord>();
   private walletToUsername = new Map<string, string>();
   private history = new Map<string, UsernameRecord[]>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
   private validators = new Map<string, ValidatorRecord>();
+
+  constructor(private readonly statePath?: string) {
+    if (statePath && existsSync(statePath)) {
+      this.restore(readFileSync(statePath, "utf8"));
+    }
+  }
 
   /**
    * Register an account (call on first wallet creation).
@@ -49,6 +78,7 @@ export class DevChainClient implements ChainApiClient {
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
       });
+      this.persist();
     }
   }
 
@@ -61,6 +91,7 @@ export class DevChainClient implements ChainApiClient {
     const meta = this.accounts.get(walletHex);
     if (meta) {
       meta.lastActiveAt = Date.now();
+      this.persist();
     }
   }
 
@@ -117,6 +148,7 @@ export class DevChainClient implements ChainApiClient {
     this.usernames.set(normalized, record);
     this.walletToUsername.set(walletHex, normalized);
     this.appendHistory(normalized, record);
+    this.persist();
 
     return record;
   }
@@ -152,6 +184,78 @@ export class DevChainClient implements ChainApiClient {
     this.history.set(username, list);
   }
 
+  private restore(serialized: string): void {
+    const state = JSON.parse(serialized) as PersistedState;
+    this.accounts = new Map(state.accounts);
+    this.usernames = new Map(
+      state.usernames.map((record) => [record.username, this.usernameRecord(record)])
+    );
+    this.history = new Map(
+      state.history.map(([username, records]) => [
+        username,
+        records.map((record) => this.usernameRecord(record)),
+      ])
+    );
+    this.validators = new Map(
+      state.validators.map((record) => {
+        const validator = this.validatorRecord(record);
+        return [Buffer.from(validator.wallet).toString("hex"), validator];
+      })
+    );
+    this.walletToUsername = new Map(
+      [...this.usernames.values()].map((record) => [
+        Buffer.from(record.ownerWallet).toString("hex"),
+        record.username,
+      ])
+    );
+  }
+
+  private persist(): void {
+    if (!this.statePath) return;
+    const serializeUsername = (record: UsernameRecord): PersistedUsernameRecord => ({
+      username: record.username,
+      ownerWallet: Buffer.from(record.ownerWallet).toString("base64"),
+      identityId: Buffer.from(record.identityId).toString("base64"),
+      registeredAt: record.registeredAt,
+    });
+    const state: PersistedState = {
+      accounts: [...this.accounts.entries()],
+      usernames: [...this.usernames.values()].map(serializeUsername),
+      history: [...this.history.entries()].map(([username, records]) => [
+        username,
+        records.map(serializeUsername),
+      ]),
+      validators: [...this.validators.values()].map((record) => ({
+        wallet: Buffer.from(record.wallet).toString("base64"),
+        bondedStake: record.bondedStake,
+        effectivePower: record.effectivePower,
+        joinedAt: record.joinedAt,
+      })),
+    };
+    mkdirSync(dirname(this.statePath), { recursive: true });
+    const temporaryPath = `${this.statePath}.tmp`;
+    writeFileSync(temporaryPath, JSON.stringify(state));
+    renameSync(temporaryPath, this.statePath);
+  }
+
+  private usernameRecord(record: PersistedUsernameRecord): UsernameRecord {
+    return {
+      username: record.username,
+      ownerWallet: new Uint8Array(Buffer.from(record.ownerWallet, "base64")),
+      identityId: new Uint8Array(Buffer.from(record.identityId, "base64")),
+      registeredAt: record.registeredAt,
+    };
+  }
+
+  private validatorRecord(record: PersistedValidatorRecord): ValidatorRecord {
+    return {
+      wallet: new Uint8Array(Buffer.from(record.wallet, "base64")),
+      bondedStake: record.bondedStake,
+      effectivePower: record.effectivePower,
+      joinedAt: record.joinedAt,
+    };
+  }
+
   async joinValidatorSet(
     wallet: WalletAddress,
     bondedStake: number
@@ -174,6 +278,7 @@ export class DevChainClient implements ChainApiClient {
       joinedAt: Date.now(),
     };
     this.validators.set(hex, rec);
+    this.persist();
     return rec;
   }
 
@@ -189,6 +294,7 @@ export class DevChainClient implements ChainApiClient {
       throw new Error("Would drop below min validators (code 23)");
     }
     this.validators.delete(hex);
+    this.persist();
   }
 
   async listValidators(): Promise<ValidatorRecord[]> {

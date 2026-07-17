@@ -43,6 +43,10 @@ const DOMAIN_CONVERSATION_KEY = "nexnet dm conversation key v1";
 export const DM_WIRE_X3DH = 2;
 const X3DH_PREFIX_LEN = 1 + 32 + 32 + 4; // ver || IKa || EKa || otp_id
 
+export interface SendDirectMessageOptions {
+  directOnly?: boolean;
+}
+
 /**
  * Fallback root SK from conversation_id (no prekeys).
  */
@@ -109,7 +113,8 @@ export async function sendDirectMessage(
   client: NexnetClient,
   recipientId: IdentityId,
   message: string | MessagePayload,
-  queue?: OutboundQueueLike
+  queue?: OutboundQueueLike,
+  options: SendDirectMessageOptions = {}
 ): Promise<MessageId> {
   const conversationId = deriveConversationId(
     client.crypto,
@@ -209,6 +214,10 @@ export async function sendDirectMessage(
   // Prefer open WebRTC data channel (AD-20 style direct)
   if (trySendDirect(recipientHex, encoded)) {
     return messageId;
+  }
+
+  if (options.directOnly) {
+    throw new Error("Direct session is required");
   }
 
   if (client.online) {

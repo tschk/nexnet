@@ -17,6 +17,14 @@ function createMockQueue(): OutboundQueueLike & { _items: OutboundQueueItem[] } 
           (!i.nextAttemptAt || i.nextAttemptAt <= now)
       );
     },
+    pendingForRecipient(identityId: Uint8Array) {
+      const hex = Buffer.from(identityId).toString("hex");
+      return _items.filter(
+        (i) =>
+          i.deliveryState === "pending" &&
+          Buffer.from(i.recipientIdentityId).toString("hex") === hex
+      );
+    },
     markDelivered(messageId: Uint8Array) {
       const hex = Buffer.from(messageId).toString("hex");
       const item = _items.find(
@@ -62,5 +70,57 @@ describe("QueueManager", () => {
     const manager = new QueueManager(queue);
 
     expect(() => manager.stop()).not.toThrow();
+  });
+
+  test("presence retries only the recipient and receipt marks delivered", () => {
+    const queue = createMockQueue();
+    const manager = new QueueManager(queue);
+    const handlers = new Map<string, (data: unknown) => void>();
+    const sent: string[] = [];
+    const client = {
+      online: true,
+      on(event: string, handler: (data: unknown) => void) {
+        handlers.set(event, handler);
+      },
+      off(event: string) {
+        handlers.delete(event);
+      },
+      sendDm(to: string) {
+        sent.push(to);
+        return true;
+      },
+    } as unknown as import("../client.js").NexnetClient;
+    const recipient = new Uint8Array(32).fill(2);
+    const otherRecipient = new Uint8Array(32).fill(3);
+    const messageId = new Uint8Array(32).fill(1);
+
+    manager.enqueue({
+      messageId,
+      recipientIdentityId: recipient,
+      encryptedEnvelope: new Uint8Array([1]),
+      createdAt: Date.now(),
+      attemptCount: 0,
+      deliveryState: "pending",
+    });
+    manager.enqueue({
+      messageId: new Uint8Array(32).fill(4),
+      recipientIdentityId: otherRecipient,
+      encryptedEnvelope: new Uint8Array([2]),
+      createdAt: Date.now(),
+      attemptCount: 0,
+      deliveryState: "pending",
+    });
+
+    manager.start(client);
+    handlers.get("presence")?.({
+      status: "online",
+      identityId: Buffer.from(recipient).toString("hex"),
+    });
+    expect(sent).toEqual([Buffer.from(recipient).toString("hex")]);
+    expect(queue._items[0]?.deliveryState).toBe("pending");
+
+    handlers.get("delivery_receipt")?.({ message_id: Array.from(messageId) });
+    expect(queue._items[0]?.deliveryState).toBe("delivered");
+    manager.stop();
   });
 });

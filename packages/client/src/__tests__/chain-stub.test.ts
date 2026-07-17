@@ -1,4 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { DevChainClient } from "../chain-stub.js";
 
 function makeWallet(n: number): Uint8Array {
@@ -132,5 +135,30 @@ describe("DevChainClient", () => {
     await chain.joinValidatorSet(makeWallet(2), 10);
     await chain.leaveValidatorSet(makeWallet(1));
     expect(await chain.listValidators()).toHaveLength(1);
+  });
+
+  test("reopens persisted usernames, accounts, and validators", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nexnet-chain-"));
+    const statePath = join(directory, "state.json");
+    try {
+      const wallet = makeWallet(1);
+      const identity = makeIdentity(1);
+      const chain = new DevChainClient(statePath);
+      chain.registerAccount(wallet);
+      (chain as unknown as { accounts: Map<string, { createdAt: number; lastActiveAt: number }> }).accounts.set(
+        Buffer.from(wallet).toString("hex"),
+        { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() }
+      );
+      await chain.registerUsername("alice", wallet, identity);
+      await chain.joinValidatorSet(wallet, 100);
+
+      const reopened = new DevChainClient(statePath);
+      expect(await reopened.resolveUsername("ALICE")).toEqual(await chain.resolveUsername("alice"));
+      expect(await reopened.getUsernameHistory("alice")).toHaveLength(1);
+      expect(await reopened.getIdentityRoot(identity)).toEqual({ wallet });
+      expect(await reopened.listValidators()).toHaveLength(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

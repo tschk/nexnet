@@ -19,6 +19,7 @@ import {
 } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 import { sendDirectMessage } from "./dm.js";
+import { trySendDirect } from "./transport.js";
 
 /** Default chunk size: 64 KB */
 const DEFAULT_CHUNK_SIZE = 64 * 1024;
@@ -31,6 +32,14 @@ export interface AttachmentTransfer {
   encryptedBlob: Uint8Array;
   key: Uint8Array; // 32-byte XChaCha key
   contentHash: Uint8Array; // BLAKE3-256 of encrypted blob
+}
+
+export interface DirectAttachmentChunk {
+  type: "attachment_chunk";
+  attachmentId: Uint8Array;
+  chunkIndex: number;
+  totalChunks: number;
+  data: Uint8Array;
 }
 
 /**
@@ -102,7 +111,7 @@ export async function sendAttachment(
     mimeType: transfer.mimeType,
     size: transfer.size,
     encryptedContentHash: transfer.contentHash,
-    transferCapabilities: ["chunked"],
+    transferCapabilities: ["chunked", "direct"],
   };
 
   // Send DM with attachment offer (key embedded in encrypted payload)
@@ -118,7 +127,9 @@ export async function sendAttachment(
   const messageId = await sendDirectMessage(
     client,
     recipientId,
-    payload
+    payload,
+    undefined,
+    { directOnly: true }
   );
 
   // Transfer blob in chunks via relay
@@ -145,24 +156,19 @@ async function transferBlob(
     const chunk = transfer.encryptedBlob.slice(offset, end);
 
     // Send chunk via relay
-    const message = {
+    const message: DirectAttachmentChunk = {
       type: "attachment_chunk",
-      to: recipientHex,
-      attachment_id: Array.from(transfer.attachmentId),
-      chunk_index: i,
-      total_chunks: totalChunks,
-      data: Array.from(chunk),
+      attachmentId: transfer.attachmentId,
+      chunkIndex: i,
+      totalChunks,
+      data: chunk,
     };
 
     // Use WebSocket if available
-    if (client.online) {
-      (client as any).ws?.send(JSON.stringify(message));
+    if (!trySendDirect(recipientHex, client.codec.encode(message))) {
+      throw new Error("Direct session closed during attachment transfer");
     }
-
     // Small delay between chunks to avoid flooding
-    if (i < totalChunks - 1) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
   }
 }
 

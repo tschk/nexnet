@@ -390,6 +390,7 @@ export interface OutboundQueueItem {
 export interface OutboundQueueLike {
   enqueue(item: OutboundQueueItem): void;
   pending(): OutboundQueueItem[];
+  pendingForRecipient(identityId: IdentityId): OutboundQueueItem[];
   markDelivered(messageId: MessageId): void;
   markAttempt(messageId: MessageId): void;
 }

@@ -139,6 +139,7 @@ export {
   AttachmentReceiver,
 } from "./attachments.js";
 export type { AttachmentTransfer } from "./attachments.js";
+export type { DirectAttachmentChunk } from "./attachments.js";
 
 export { PeerManager } from "./webrtc.js";
 export type {

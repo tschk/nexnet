@@ -23,6 +23,7 @@ export class OutboundQueue implements OutboundQueueLike {
 
   private enqueueStmt: ReturnType<Database["query"]>;
   private pendingStmt: ReturnType<Database["query"]>;
+  private pendingForRecipientStmt: ReturnType<Database["query"]>;
   private markDeliveredStmt: ReturnType<Database["query"]>;
   private markAttemptStmt: ReturnType<Database["query"]>;
   private getByIdStmt: ReturnType<Database["query"]>;
@@ -40,6 +41,12 @@ export class OutboundQueue implements OutboundQueueLike {
       `SELECT * FROM outbound
        WHERE delivery_state = 'pending'
          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+       ORDER BY created_at ASC`
+    );
+    this.pendingForRecipientStmt = this.db.prepare(
+      `SELECT * FROM outbound
+       WHERE delivery_state = 'pending'
+         AND recipient_identity = ?
        ORDER BY created_at ASC`
     );
     this.markDeliveredStmt = this.db.prepare(
@@ -91,8 +98,15 @@ export class OutboundQueue implements OutboundQueueLike {
   }
 
   pending(): OutboundQueueItem[] {
-    const now = Date.now();
-    const rows = this.pendingStmt.all(now) as Array<{
+    return this.rowsToItems(this.pendingStmt.all(Date.now()));
+  }
+
+  pendingForRecipient(identityId: IdentityId): OutboundQueueItem[] {
+    return this.rowsToItems(this.pendingForRecipientStmt.all(identityId));
+  }
+
+  private rowsToItems(rows: unknown[]): OutboundQueueItem[] {
+    return (rows as Array<{
       message_id: Uint8Array;
       recipient_identity: Uint8Array;
       encrypted_envelope: Uint8Array;
@@ -101,8 +115,7 @@ export class OutboundQueue implements OutboundQueueLike {
       next_attempt_at: number | null;
       attempt_count: number;
       delivery_state: string;
-    }>;
-    return rows.map((row) => ({
+    }>).map((row) => ({
       messageId: new Uint8Array(row.message_id),
       recipientIdentityId: new Uint8Array(row.recipient_identity),
       encryptedEnvelope: new Uint8Array(row.encrypted_envelope),

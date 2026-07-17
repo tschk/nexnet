@@ -4,16 +4,25 @@ import { PresenceTracker } from "./index.js";
 const _realDateNow = Date.now.bind(Date);
 
 function createMockState() {
+  const store = new Map<string, unknown>();
   return {
     storage: {
-      get: async () => undefined,
-      put: async () => {},
-      delete: async () => {},
-      list: async () => [],
+      get: async (key: string) => store.get(key),
+      put: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      delete: async (key: string) => {
+        store.delete(key);
+      },
+      list: async () => store,
     },
     acceptWebSocket: mock(() => {}),
-    blockConcurrencyWhile: async (fn: () => Promise<void>) => { await fn(); },
-  } as unknown as DurableObjectState;
+    blockConcurrencyWhile: async (fn: () => Promise<void>) => {
+      await fn();
+    },
+    // test helper: shared store for reload simulation
+    _store: store,
+  } as unknown as DurableObjectState & { _store: Map<string, unknown> };
 }
 
 function createMockEnv() {
@@ -251,5 +260,36 @@ describe("PresenceTracker prekeys", () => {
       makeRequest(`/do/prekeys/get?identityId=${bundle.identityId}`)
     );
     expect(get.status).toBe(404);
+  });
+
+  test("prekeys and leases survive DO reload from storage", async () => {
+    const state = createMockState() as DurableObjectState & {
+      _store: Map<string, unknown>;
+    };
+    const t1 = new PresenceTracker(state, createMockEnv());
+    const now = Date.now();
+    await t1.fetch(jsonPost("/do/publish", {
+      identityId: "alice",
+      deviceId: "d1",
+      issuedAt: now,
+      expiresAt: now + 60_000,
+    }));
+    const bundle = await validBundle("bb".repeat(32));
+    await t1.fetch(jsonPost("/do/prekeys/publish", bundle));
+
+    // New isolate, same storage map
+    const t2 = new PresenceTracker(state, createMockEnv());
+    const q = await t2.fetch(makeRequest("/do/query?identityId=alice"));
+    const qBody = await q.json() as { status: string };
+    expect(qBody.status).toBe("online");
+
+    const pk = await t2.fetch(
+      makeRequest(`/do/prekeys/get?identityId=${bundle.identityId}`)
+    );
+    expect(pk.status).toBe(200);
+    const status = await t2.fetch(makeRequest("/do/status"));
+    const sBody = await status.json() as { leases: number; prekeys: number };
+    expect(sBody.leases).toBe(1);
+    expect(sBody.prekeys).toBe(1);
   });
 });

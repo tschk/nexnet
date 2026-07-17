@@ -59,12 +59,14 @@ export class PresenceTracker {
   // active SSE/WebSocket subscribers
   private subscriptions = new Set<WebSocket>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private loaded = false;
 
   constructor(state: DurableObjectState, _env: Env) {
     this.state = state;
   }
 
   async fetch(request: Request): Promise<Response> {
+    await this.ensureLoaded();
     const url = new URL(request.url);
 
     switch (url.pathname) {
@@ -91,6 +93,24 @@ export class PresenceTracker {
       default:
         return jsonResponse({ error: "not found" }, 404);
     }
+  }
+
+  /** Hydrate maps from DO storage once per isolate lifetime. */
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    const all = await this.state.storage.list();
+    for (const [key, value] of all) {
+      if (typeof key !== "string") continue;
+      if (key.startsWith("lease:")) {
+        const lease = value as PresenceLeaseData;
+        this.leases.set(lease.identityId, lease);
+      } else if (key.startsWith("prekey:")) {
+        const bundle = value as PrekeyBundleData;
+        this.prekeys.set(bundle.identityId, bundle);
+      }
+    }
+    this.loaded = true;
+    if (this.leases.size > 0) this.startCleanupTimer();
   }
 
   // ── Publish lease ──────────────────────────────────────────────────
@@ -143,6 +163,7 @@ export class PresenceTracker {
     }
 
     this.leases.set(lease.identityId, lease);
+    await this.state.storage.put(`lease:${lease.identityId}`, lease);
     this.startCleanupTimer();
 
     // Broadcast to subscribers
@@ -158,7 +179,7 @@ export class PresenceTracker {
 
   // ── Query ──────────────────────────────────────────────────────────
 
-  private handleQuery(url: URL): Response {
+  private async handleQuery(url: URL): Promise<Response> {
     const identityId = url.searchParams.get("identityId");
     if (!identityId) {
       return jsonResponse({ error: "identityId param required" }, 400);
@@ -168,6 +189,7 @@ export class PresenceTracker {
     if (!lease || this.isExpired(lease)) {
       if (lease) {
         this.leases.delete(identityId);
+        await this.state.storage.delete(`lease:${identityId}`);
       }
       return jsonResponse({ identityId, status: "offline" });
     }
@@ -266,6 +288,7 @@ export class PresenceTracker {
       updatedAt: Date.now(),
     };
     this.prekeys.set(body.identityId, stored);
+    await this.state.storage.put(`prekey:${body.identityId}`, stored);
     return jsonResponse({ ok: true, updatedAt: stored.updatedAt });
   }
 
@@ -281,18 +304,21 @@ export class PresenceTracker {
     return jsonResponse(bundle);
   }
 
-  private handlePrekeyRemove(url: URL): Response {
+  private async handlePrekeyRemove(url: URL): Promise<Response> {
     const identityId = url.searchParams.get("identityId");
     if (!identityId) {
       return jsonResponse({ error: "identityId param required" }, 400);
     }
     const removed = this.prekeys.delete(identityId);
+    if (removed) {
+      await this.state.storage.delete(`prekey:${identityId}`);
+    }
     return jsonResponse({ ok: true, removed });
   }
 
   // ── Remove ─────────────────────────────────────────────────────────
 
-  private handleRemove(url: URL): Response {
+  private async handleRemove(url: URL): Promise<Response> {
     const identityId = url.searchParams.get("identityId");
     if (!identityId) {
       return jsonResponse({ error: "identityId param required" }, 400);
@@ -300,6 +326,7 @@ export class PresenceTracker {
 
     const existed = this.leases.delete(identityId);
     if (existed) {
+      await this.state.storage.delete(`lease:${identityId}`);
       this.broadcast({
         type: "presence_update",
         identityId,
@@ -317,11 +344,14 @@ export class PresenceTracker {
   }
 
   private cleanupExpired(): void {
-    let changed = false;
+    void this.cleanupExpiredAsync();
+  }
+
+  private async cleanupExpiredAsync(): Promise<void> {
     for (const [id, lease] of this.leases) {
       if (this.isExpired(lease)) {
         this.leases.delete(id);
-        changed = true;
+        await this.state.storage.delete(`lease:${id}`);
         this.broadcast({
           type: "presence_update",
           identityId: id,

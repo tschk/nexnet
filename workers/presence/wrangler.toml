@@ -7,4 +7,5 @@ name = "PRESENCE"
 class_name = "PresenceTracker"
 
 [[migrations]]
+tag = "v1"
 new_classes = ["PresenceTracker"]

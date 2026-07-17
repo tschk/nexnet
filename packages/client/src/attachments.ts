@@ -1,0 +1,247 @@
+/**
+ * @nettle/client — Encrypted attachment transfer
+ *
+ * AD-20: direct only, no relay storage.
+ * Chunks sent via relay forwarding to recipient.
+ */
+
+import type {
+  CryptoProvider,
+  CborCdeCodec,
+  AttachmentOffer,
+  IdentityId,
+  MessagePayload,
+  MessageId,
+} from "@nettle/types";
+import {
+  DOMAIN_ATTACHMENT_ID,
+  PROTOCOL_VERSION,
+} from "@nettle/types";
+import type { NettleClient } from "./client.js";
+import { sendDirectMessage } from "./dm.js";
+
+/** Default chunk size: 64 KB */
+const DEFAULT_CHUNK_SIZE = 64 * 1024;
+
+export interface AttachmentTransfer {
+  attachmentId: Uint8Array;
+  filename: string;
+  mimeType: string;
+  size: number;
+  encryptedBlob: Uint8Array;
+  key: Uint8Array; // 32-byte XChaCha key
+  contentHash: Uint8Array; // BLAKE3-256 of encrypted blob
+}
+
+/**
+ * Prepare an attachment for sending.
+ * Encrypts the file blob and computes content hash.
+ */
+export function prepareAttachment(
+  crypto: CryptoProvider,
+  codec: CborCdeCodec,
+  file: Uint8Array,
+  filename: string,
+  mimeType: string
+): AttachmentTransfer {
+  // Random 32-byte key for this attachment
+  const key = crypto.randomBytes(32);
+  const nonce = crypto.randomBytes(24);
+
+  // Encrypt blob
+  const ciphertext = crypto.encrypt(key, nonce, new Uint8Array(0), file);
+
+  // Prepend nonce to ciphertext: nonce (24) ‖ ciphertext
+  const encryptedBlob = new Uint8Array(24 + ciphertext.length);
+  encryptedBlob.set(nonce, 0);
+  encryptedBlob.set(ciphertext, 24);
+
+  // Content hash = BLAKE3-256 of encrypted blob
+  const contentHash = crypto.deriveId(DOMAIN_ATTACHMENT_ID, encryptedBlob);
+
+  // Attachment ID = BLAKE3-256 of content hash (unique per blob)
+  const attachmentId = crypto.deriveId(
+    DOMAIN_ATTACHMENT_ID,
+    contentHash
+  );
+
+  return {
+    attachmentId,
+    filename,
+    mimeType,
+    size: file.length,
+    encryptedBlob,
+    key,
+    contentHash,
+  };
+}
+
+/**
+ * Send an attachment offer via DM, then transfer the blob in chunks.
+ */
+export async function sendAttachment(
+  client: NettleClient,
+  recipientId: IdentityId,
+  file: Uint8Array,
+  filename: string,
+  mimeType: string,
+  chunkSize = DEFAULT_CHUNK_SIZE
+): Promise<MessageId> {
+  const transfer = prepareAttachment(
+    client.crypto,
+    client.codec,
+    file,
+    filename,
+    mimeType
+  );
+
+  // Create attachment offer
+  const offer: AttachmentOffer = {
+    attachmentId: transfer.attachmentId,
+    filename: transfer.filename,
+    mimeType: transfer.mimeType,
+    size: transfer.size,
+    encryptedContentHash: transfer.contentHash,
+    transferCapabilities: ["chunked"],
+  };
+
+  // Send DM with attachment offer (key embedded in encrypted payload)
+  const payload: MessagePayload = {
+    contentType: "attachment_offer",
+    text: `[attachment: ${filename} (${formatSize(file.length)})]`,
+    attachmentOffer: offer,
+    clientMetadata: {
+      attachmentKey: Array.from(transfer.key),
+    },
+  };
+
+  const messageId = await sendDirectMessage(
+    client,
+    recipientId,
+    client.codec.encode(payload)
+  );
+
+  // Transfer blob in chunks via relay
+  const recipientHex = Buffer.from(recipientId).toString("hex");
+  await transferBlob(client, recipientHex, transfer, chunkSize);
+
+  return messageId;
+}
+
+/**
+ * Transfer encrypted blob in chunks.
+ */
+async function transferBlob(
+  client: NettleClient,
+  recipientHex: string,
+  transfer: AttachmentTransfer,
+  chunkSize: number
+): Promise<void> {
+  const totalChunks = Math.ceil(transfer.encryptedBlob.length / chunkSize);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const offset = i * chunkSize;
+    const end = Math.min(offset + chunkSize, transfer.encryptedBlob.length);
+    const chunk = transfer.encryptedBlob.slice(offset, end);
+
+    // Send chunk via relay
+    const message = {
+      type: "attachment_chunk",
+      to: recipientHex,
+      attachment_id: Array.from(transfer.attachmentId),
+      chunk_index: i,
+      total_chunks: totalChunks,
+      data: Array.from(chunk),
+    };
+
+    // Use WebSocket if available
+    if (client.online) {
+      (client as any).ws?.send(JSON.stringify(message));
+    }
+
+    // Small delay between chunks to avoid flooding
+    if (i < totalChunks - 1) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+}
+
+/**
+ * Handle incoming attachment chunks.
+ * Reassembles chunks and calls callback with complete attachment.
+ */
+export class AttachmentReceiver {
+  private transfers = new Map<
+    string,
+    {
+      chunks: Map<number, Uint8Array>;
+      totalChunks: number;
+      receivedAt: number;
+    }
+  >;
+
+  constructor(private crypto: CryptoProvider) {}
+
+  /**
+   * Process an incoming chunk.
+   * Returns the complete blob when all chunks received, or null if more needed.
+   */
+  receiveChunk(
+    attachmentId: Uint8Array,
+    chunkIndex: number,
+    totalChunks: number,
+    data: Uint8Array
+): Uint8Array | null {
+    const idHex = Buffer.from(attachmentId).toString("hex");
+
+    if (!this.transfers.has(idHex)) {
+      this.transfers.set(idHex, {
+        chunks: new Map(),
+        totalChunks,
+        receivedAt: Date.now(),
+      });
+    }
+
+    const transfer = this.transfers.get(idHex)!;
+    transfer.chunks.set(chunkIndex, data);
+
+    // Check if complete
+    if (transfer.chunks.size === transfer.totalChunks) {
+      // Reassemble
+      const sorted = Array.from(transfer.chunks.entries()).sort(
+        (a, b) => a[0] - b[0]
+      );
+      const totalSize = sorted.reduce((sum, [, chunk]) => sum + chunk.length, 0);
+      const blob = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const [, chunk] of sorted) {
+        blob.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      this.transfers.delete(idHex);
+      return blob;
+    }
+
+    return null;
+  }
+
+  /**
+   * Decrypt a reassembled attachment blob.
+   */
+  decryptAttachment(
+    encryptedBlob: Uint8Array,
+    key: Uint8Array
+  ): Uint8Array {
+    // Extract nonce (first 24 bytes)
+    const nonce = encryptedBlob.slice(0, 24);
+    const ciphertext = encryptedBlob.slice(24);
+    return this.crypto.decrypt(key, nonce, new Uint8Array(0), ciphertext);
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

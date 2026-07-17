@@ -25,3 +25,18 @@ export {
 
 export { QueueManager } from "./queue-manager.js";
 export { DevChainClient } from "./chain-stub.js";
+
+export {
+  deriveGroupKey,
+  deriveEpoch,
+  encryptGroupMessage,
+  decryptGroupMessage,
+} from "./group-crypto.js";
+export type { EncryptedGroupPayload } from "./group-crypto.js";
+
+export {
+  prepareAttachment,
+  sendAttachment,
+  AttachmentReceiver,
+} from "./attachments.js";
+export type { AttachmentTransfer } from "./attachments.js";

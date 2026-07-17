@@ -12,8 +12,8 @@ Use established primitives. **Do not invent custom crypto.**
 | AEAD | **XChaCha20-Poly1305** (AD-5) |
 | Direct messages | Double Ratchet |
 | Private groups | MLS (OpenMLS) |
-| Content hashing | BLAKE3 or SHA-256 |
-| Message IDs | secure random ≥128-bit |
+| Content hashing | **BLAKE3-256** (AD-8); SHA-256 only at explicit external boundaries |
+| Object IDs | **BLAKE3-256** derived IDs (AD-8); random nonces still used where needed |
 
 ## Direct messages
 
@@ -79,9 +79,52 @@ strong pure-software performance; common in modern messaging stacks.
 
 AES-GCM not required. Do not dual-stack without a real interop need.
 
+## Hashing (AD-8)
+
+**Locked: BLAKE3-256** for all internal Nettle hashes.
+
+```text
+mandatory hash: BLAKE3-256
+output:         32 bytes
+uses:           event IDs, room IDs, attachment digests,
+                content addressing, Merkle trees / chunk trees
+```
+
+### Domain separation
+
+Use BLAKE3 **derive_key** mode with fixed context strings — not ad-hoc string
+concatenation as the primary API:
+
+```text
+blake3_derive_key("nettle event id v1", encoded_event)
+blake3_derive_key("nettle room id v1", room_descriptor)
+blake3_derive_key("nettle attachment id v1", encrypted_blob)
+```
+
+Equivalent conceptual form (if derive_key unavailable in a test harness):
+
+```text
+event_id      = BLAKE3("nettle/event/v1" || cde_bytes)
+room_id       = BLAKE3("nettle/room/v1" || normalized_room_descriptor)
+attachment_id = BLAKE3("nettle/attachment/v1" || encrypted_blob)
+```
+
+Production code should prefer **derive_key**.
+
+### SHA-256
+
+Only at **explicit interoperability boundaries** (foreign wallet/chain/API
+that requires it). Do not dual-hash everything preemptively.
+
+### Forbidden
+
+- custom hash designs
+- using BLAKE3 without domain separation for typed object IDs
+- treating username strings as content-address IDs
+
 ## Non-goals
 
-- custom hash constructions for "uniqueness"
+- custom hash constructions
 - home-grown ratchets
 - rolling own group key schedule when MLS fits
 - putting long-term decryption keys on relays

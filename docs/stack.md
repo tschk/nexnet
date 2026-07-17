@@ -19,7 +19,7 @@ Coding agents may adjust, but this is the strong default.
 
 - ed25519-dalek
 - x25519-dalek
-- blake3
+- blake3 (BLAKE3-256 + derive_key — AD-8)
 - chacha20poly1305 (XChaCha20-Poly1305 — AD-5)
 - hkdf
 - established Double Ratchet implementation

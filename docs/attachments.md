@@ -26,7 +26,7 @@ attachment_offer {
   filename
   mime_type
   size
-  encrypted_content_hash
+  encrypted_content_hash  // BLAKE3-256 (AD-8)
   transfer_capabilities
   expires_at?
 }

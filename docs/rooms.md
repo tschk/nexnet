@@ -6,10 +6,14 @@ Public rooms resemble Usenet groups or IRC channels.
 
 ## Room identity
 
-Deterministic ID from canonical name:
+Deterministic ID from canonical name (AD-8):
 
 ```text
-room_id = hash("nettle://chat/software.rust")
+room_id = blake3_derive_key(
+  "nettle room id v1",
+  normalized_room_descriptor  // e.g. nettle://chat/software.rust
+)
+// 32-byte BLAKE3-256 output
 ```
 
 ## Naming hierarchy

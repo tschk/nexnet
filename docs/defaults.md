@@ -39,4 +39,6 @@ wire encoding: CBOR
 cbor determinism: CDE (RFC 8949 §4.2)
 schema language: CDDL
 aead: XChaCha20-Poly1305
+hash: BLAKE3-256 (derive_key domain separation)
+sha-256: external interop boundaries only
 ```

@@ -65,3 +65,13 @@ export {
   AttachmentReceiver,
 } from "./attachments.js";
 export type { AttachmentTransfer } from "./attachments.js";
+
+export { PeerManager } from "./webrtc.js";
+export type {
+  PeerManagerOptions,
+  PeerSession,
+  PeerConnectionFactory,
+  PeerConnectionLike,
+  DataChannelLike,
+  PeerMessageHandler,
+} from "./webrtc.js";

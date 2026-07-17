@@ -26,7 +26,7 @@ grep -r "nettle" --include='*.ts' --include='*.tsx' --include='*.json' --include
 
 Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nettle→Nexnet, NETTLE→NEXNET, @nettle/→@nexnet/).
 
-## Current state (149 tests passing)
+## Current state (169 tests passing)
 
 | Package | What | Status |
 |---|---|---|
@@ -79,50 +79,21 @@ Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nett
 
 ## What to implement next (priority order)
 
-### 1. Double Ratchet for DM forward secrecy
+### 1. Double Ratchet for DM forward secrecy — ✅ done
 
-Currently DMs use a static HKDF-derived conversation key. Implement Signal-style Double Ratchet:
+`packages/client/src/double-ratchet.ts` wired into `dm.ts`. X25519 + HKDF + XChaCha20. In-memory sessions; persist later.
 
-- Per-message keys with DH ratchet
-- Forward secrecy (compromised key doesn't reveal past)
-- Post-compromise security (ratchet heals)
-- Use existing @nexnet/crypto primitives (X25519, HKDF, XChaCha20)
-- Create `packages/client/src/double-ratchet.ts`
-- Wire into `dm.ts` replacing static conversation key
-- See docs/cryptography.md for requirements
+### 2. MLS for group encryption — ✅ simplified epoch secrets
 
-**Recommended approach:** Implement the Double Ratchet algorithm from the spec (https://signal.org/docs/specifications/doubleratchet/). Use X25519 for DH, HKDF for KDF, XChaCha20-Poly1305 for AEAD. Store ratchet state in @nexnet/storage.
+Not full MLS. Random epoch secrets + X25519 wrap to members. Membership rotate → new secret. `group-crypto.ts` + encrypted `groups.ts` path.
 
-### 2. MLS for group encryption
+### 3. WebRTC direct peer connections — ✅ PeerManager (injectable PC)
 
-Replace the simple shared-key group encryption with Messaging Layer Security:
+`packages/client/src/webrtc.ts` — offer/answer/ICE via relay signalling, data channel send. No WebRTC npm dep; inject `RTCPeerConnection` factory (browser native / later wrtc).
 
-- Forward secrecy for group messages
-- Efficient membership updates
-- Epoch-based key rotation (already partially implemented in group-crypto.ts)
-- See docs/cryptography.md and docs/groups.md
+### 4. Integration tests — ✅ done
 
-**Recommended approach:** Check if there's a TypeScript MLS implementation. If not, implement a simplified version using the existing epoch-tracking in group-crypto.ts, adding DH-based key agreement between members.
-
-### 3. WebRTC direct peer connections
-
-Currently all messages go through the relay. Implement direct peer connections:
-
-- Use WebRTC data channels for DMs and attachments
-- Relay only used for signalling (session offers/answers/ICE candidates)
-- Fallback to relay if direct connection fails
-- See docs/transport.md for connection modes
-
-**Recommended approach:** Use `wrtc` or `werift` npm package for WebRTC. The relay already handles signalling. Implement ICE candidate exchange and data channel setup.
-
-### 4. Integration tests
-
-Create end-to-end tests proving:
-- Two clients exchange encrypted DMs through relay
-- Room messages broadcast correctly
-- Group encryption works across members
-- Attachment transfer completes
-- Moderation (cooldown, votekick) works
+`packages/client/src/__tests__/integration.test.ts`: encrypted DM, group epoch crypto, attachments, room cooldown+votekick.
 
 ### 5. Chain .in state machine
 
@@ -140,7 +111,7 @@ bun install
 bun test --workspace
 ```
 
-Expected: 149+ tests passing.
+Expected: 169+ tests passing.
 
 ## Key files
 

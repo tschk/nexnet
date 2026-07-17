@@ -31,6 +31,31 @@ export type { NetworkPrekeyBundle } from "./prekey-network.js";
 export { setDirectTransport, getDirectTransport, trySendDirect } from "./transport.js";
 
 export {
+  generateMlsMember,
+  mlsCreateGroup,
+  mlsAddMember,
+  mlsRemoveMember,
+  mlsJoin,
+  mlsEncrypt,
+  mlsDecrypt,
+  encodeKeyPackage,
+  decodeKeyPackage,
+  encodeWelcome,
+  decodeWelcome,
+  encodeCommit,
+  mlsProcessCommit,
+  mlsCiphersuite,
+} from "./mls.js";
+export type {
+  MlsMemberKeys,
+  ClientState as MlsClientState,
+  KeyPackage as MlsKeyPackage,
+  Welcome as MlsWelcome,
+} from "./mls.js";
+
+export { createWeriftPeerConnection, RTCPeerConnection } from "./werift-factory.js";
+
+export {
   initInitiator,
   initResponder,
   seal as ratchetSeal,

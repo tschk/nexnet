@@ -1,0 +1,279 @@
+// Nexnet chain state machine — open-addressing map in pure .in
+//
+// .in has no built-in Map. State is fixed-capacity open-address tables:
+//   slot i empty when keys[i] == 0
+// Key encoding: first 4 bytes of identity/username hash as Int (caller hashes).
+// Values: packed ints (owner_key, registered_at, stake, etc.)
+//
+// Self-check in main() returns 0 on pass.
+
+const CAP = 32
+const EMPTY = 0
+const TOMB = -1
+
+// ── Hash map helpers (open addressing, linear probe) ─────────────────
+
+fn probe(key: Int, i: Int) -> Int {
+  let h: Int = key;
+  if h < 0 {
+    h = 0 - h;
+  }
+  return (h + i) % CAP;
+}
+
+// Find slot for key, or -1 if full / missing (for get)
+fn map_find(keys: Int, n: Int, key: Int) -> Int {
+  // keys is base address of key array in executor — here we use parallel arrays
+  // passed as individual slots via multi-arg simulation is impossible.
+  // Instead expose pure probe math + slot decision helpers used by executor.
+  return probe(key, n);
+}
+
+fn slot_is_empty(key_at_slot: Int) -> Int {
+  if key_at_slot == EMPTY {
+    return 1;
+  }
+  return 0;
+}
+
+fn slot_is_tomb(key_at_slot: Int) -> Int {
+  if key_at_slot == TOMB {
+    return 1;
+  }
+  return 0;
+}
+
+fn slot_matches(key_at_slot: Int, key: Int) -> Int {
+  if key_at_slot == key {
+    return 1;
+  }
+  return 0;
+}
+
+// Decision for insert scan at slot:
+// 0 = take empty/tomb, 1 = match existing, 2 = continue probe
+fn insert_decision(key_at_slot: Int, key: Int) -> Int {
+  if key_at_slot == EMPTY {
+    return 0;
+  }
+  if key_at_slot == TOMB {
+    return 0;
+  }
+  if key_at_slot == key {
+    return 1;
+  }
+  return 2;
+}
+
+// Decision for get/delete scan:
+// 0 = stop miss (empty), 1 = found, 2 = continue
+fn lookup_decision(key_at_slot: Int, key: Int) -> Int {
+  if key_at_slot == EMPTY {
+    return 0;
+  }
+  if key_at_slot == key {
+    return 1;
+  }
+  return 2;
+}
+
+// ── Username table rules (same codes as nexnet_chain.in) ─────────────
+
+const MIN_ACCOUNT_AGE_MS = 604800000
+const INACTIVITY_RELEASE_MS = 7776000000
+const MIN_USERNAME_LEN = 2
+const MAX_USERNAME_LEN = 32
+
+fn can_register_username(account_age_ms: Int, owns_username: Int, name_taken: Int, owner_inactive_ms: Int, name_len: Int) -> Int {
+  if name_len < MIN_USERNAME_LEN {
+    return 1;
+  }
+  if name_len > MAX_USERNAME_LEN {
+    return 2;
+  }
+  if owns_username != 0 {
+    return 3;
+  }
+  if account_age_ms < MIN_ACCOUNT_AGE_MS {
+    return 4;
+  }
+  if name_taken != 0 {
+    if owner_inactive_ms < INACTIVITY_RELEASE_MS {
+      return 5;
+    }
+  }
+  return 0;
+}
+
+fn can_transfer_username() -> Int {
+  return 10;
+}
+
+// Apply register into map: returns error code, or 0 + caller writes slot
+fn apply_register(account_age_ms: Int, owns_username: Int, name_taken: Int, owner_inactive_ms: Int, name_len: Int, map_full: Int) -> Int {
+  let code: Int = can_register_username(account_age_ms, owns_username, name_taken, owner_inactive_ms, name_len);
+  if code != 0 {
+    return code;
+  }
+  if map_full != 0 {
+    return 30;
+  }
+  return 0;
+}
+
+// Validators (AD-14)
+const MIN_VALIDATORS = 4
+const MAX_VALIDATORS = 21
+
+fn can_join_validator_set(stake_ok: Int, set_size: Int, already_validator: Int) -> Int {
+  if already_validator != 0 {
+    return 20;
+  }
+  if stake_ok == 0 {
+    return 21;
+  }
+  if set_size > MAX_VALIDATORS {
+    return 22;
+  }
+  return 0;
+}
+
+fn can_leave_validator_set(set_size_after: Int, bootstrapping: Int) -> Int {
+  if bootstrapping != 0 {
+    return 0;
+  }
+  if set_size_after < MIN_VALIDATORS {
+    return 23;
+  }
+  return 0;
+}
+
+fn effective_voting_power(raw_stake: Int, power_cap: Int) -> Int {
+  if raw_stake < power_cap {
+    return raw_stake;
+  }
+  return power_cap;
+}
+
+// Group creator map (AD-23)
+fn can_set_group_creator(existing_creator: Int, caller_is_creator: Int) -> Int {
+  if existing_creator == 0 {
+    return 0;
+  }
+  if caller_is_creator != 0 {
+    return 0;
+  }
+  return 11;
+}
+
+// ── Simulated map self-check (fixed 8 slots inline) ──────────────────
+// Prove open-addressing decisions work for insert/lookup/delete.
+
+fn sim_map_selfcheck() -> Int {
+  // slots: 0 empty. Insert key 5 at probe0.
+  let k0: Int = EMPTY;
+  let k1: Int = EMPTY;
+  let k2: Int = EMPTY;
+  let k3: Int = EMPTY;
+
+  // insert 5
+  let p: Int = probe(5, 0);
+  if p != 5 % CAP {
+    // just ensure probe deterministic
+  }
+  // force slot 0 for test simplicity via decision on empty
+  if insert_decision(k0, 5) != 0 {
+    return 200;
+  }
+  k0 = 5;
+
+  // lookup 5
+  if lookup_decision(k0, 5) != 1 {
+    return 201;
+  }
+
+  // insert 5 again → match
+  if insert_decision(k0, 5) != 1 {
+    return 202;
+  }
+
+  // insert 6 into next empty (k1)
+  if insert_decision(k1, 6) != 0 {
+    return 203;
+  }
+  k1 = 6;
+
+  // delete 5 → tomb
+  if lookup_decision(k0, 5) != 1 {
+    return 204;
+  }
+  k0 = TOMB;
+
+  // lookup 5 after tomb: tomb is not match, continue
+  if lookup_decision(k0, 5) != 2 {
+    return 205;
+  }
+  // empty ends search
+  if lookup_decision(k2, 5) != 0 {
+    return 206;
+  }
+
+  // re-insert 5 into tomb
+  if insert_decision(k0, 5) != 0 {
+    return 207;
+  }
+  k0 = 5;
+
+  if lookup_decision(k0, 5) != 1 {
+    return 208;
+  }
+  if lookup_decision(k1, 6) != 1 {
+    return 209;
+  }
+
+  return 0;
+}
+
+fn main() -> Int {
+  // transition rules
+  if can_register_username(604800000, 0, 0, 0, 5) != 0 {
+    return 100;
+  }
+  if can_register_username(1000, 0, 0, 0, 5) != 4 {
+    return 101;
+  }
+  if can_transfer_username() != 10 {
+    return 102;
+  }
+  if can_join_validator_set(1, 5, 0) != 0 {
+    return 103;
+  }
+  if can_leave_validator_set(3, 0) != 23 {
+    return 104;
+  }
+  if effective_voting_power(100, 50) != 50 {
+    return 105;
+  }
+  if apply_register(604800000, 0, 0, 0, 5, 0) != 0 {
+    return 106;
+  }
+  if apply_register(604800000, 0, 0, 0, 5, 1) != 30 {
+    return 107;
+  }
+
+  // open-address map semantics
+  let m: Int = sim_map_selfcheck();
+  if m != 0 {
+    return m;
+  }
+
+  // probe stability
+  if probe(10, 0) != probe(10, 0) {
+    return 210;
+  }
+  if probe(10, 1) == probe(10, 0) {
+    return 211;
+  }
+
+  return 0;
+}

@@ -26,7 +26,7 @@ grep -r "nettle" --include='*.ts' --include='*.tsx' --include='*.json' --include
 
 Fix any remaining occurrences to "nexnet" (case-sensitive: nettle→nexnet, Nettle→Nexnet, NETTLE→NEXNET, @nettle/→@nexnet/).
 
-## Current state (215 tests passing)
+## Current state (218 tests passing)
 
 | Package | What | Status |
 |---|---|---|
@@ -88,13 +88,14 @@ Group `addMember`/`removeMember` rotate epoch + wrap secrets.
 Presence: `POST /prekeys/publish`, `GET /prekeys/:id` (signed SPK verified). Client: `publishBundleRemote` / `fetchBundleRemote`.
 Direct DM: `setDirectTransport(peerManager)` — open data channel preferred over relay; inbound channel → `dm` event.
 
-### 2. MLS for group encryption — ✅ simplified epoch secrets
+### 2. MLS for group encryption — ✅ real ts-mls (RFC 9420)
 
-Not full MLS. Random epoch secrets + X25519 wrap to members. Membership rotate → new secret. `group-crypto.ts` + encrypted `groups.ts` path.
+`packages/client/src/mls.ts` uses **ts-mls** (MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519).
+Create/add/welcome/encrypt/decrypt. Epoch-secret path remains in `group-crypto.ts` for simple rooms.
 
-### 3. WebRTC direct peer connections — ✅ PeerManager (injectable PC)
+### 3. WebRTC — ✅ werift native + PeerManager
 
-`packages/client/src/webrtc.ts` — offer/answer/ICE via relay signalling, data channel send. No WebRTC npm dep; inject `RTCPeerConnection` factory (browser native / later wrtc).
+`createWeriftPeerConnection()` from `werift-factory.ts`. PeerManager e2e with real ICE/DTLS/SCTP.
 
 ### 4. Integration tests — ✅ done
 
@@ -114,7 +115,19 @@ bun install
 bun test --workspace
 ```
 
-Expected: 215+ tests passing.
+Expected: 218+ tests passing.
+
+## Live workers (CF temporary preview — claim within 60m of deploy)
+
+Claim: https://dash.cloudflare.com/claim-preview?claimToken=E4WzmJCcRoseIJwiqo1scJbDy2LsXonrreb0oTclVJE
+
+| Worker | URL |
+|---|---|
+| presence | https://nexnet-presence.lead-zinc.workers.dev |
+| relay | https://nexnet-relay.lead-zinc.workers.dev |
+| discovery | https://nexnet-discovery.lead-zinc.workers.dev |
+
+`ALLOW_UNSIGNED_LEASES=1` on presence for preview. Production needs signed leases + real CF account token.
 
 ## Key files
 

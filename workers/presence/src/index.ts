@@ -28,6 +28,8 @@ interface PresenceLeaseData {
 
 interface Env {
   PRESENCE: DurableObjectNamespace;
+  /** Set "1" to allow unsigned presence leases (preview/dev only). */
+  ALLOW_UNSIGNED_LEASES?: string;
 }
 
 type RouteHandler = (
@@ -52,6 +54,7 @@ interface PrekeyBundleData {
 
 export class PresenceTracker {
   private state: DurableObjectState;
+  private env: Env;
   // identityId -> lease
   private leases = new Map<string, PresenceLeaseData>();
   // identityId -> prekey bundle (no private keys)
@@ -61,8 +64,9 @@ export class PresenceTracker {
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private loaded = false;
 
-  constructor(state: DurableObjectState, _env: Env) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -153,11 +157,13 @@ export class PresenceTracker {
         return jsonResponse({ error: "malformed signature or public key" }, 400);
       }
     } else {
-      // Reject unsigned leases in production
-      // ponytail: env flag, replace with proper env injection when wrangler is used
-      // In tests/dev, DEBUG env is typically set. Without it, reject.
-      const isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
-      if (!isDev) {
+      // Unsigned leases only when explicitly allowed (preview/tests).
+      const allow =
+        this.env.ALLOW_UNSIGNED_LEASES === "1" ||
+        (typeof process !== "undefined" &&
+          process.env?.NODE_ENV !== "production" &&
+          process.env?.ALLOW_UNSIGNED_LEASES !== "0");
+      if (!allow) {
         return jsonResponse({ error: "lease must be signed" }, 403);
       }
     }

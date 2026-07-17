@@ -8,4 +8,4 @@ class_name = "DiscoveryIndex"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["DiscoveryIndex"]
+new_sqlite_classes = ["DiscoveryIndex"]

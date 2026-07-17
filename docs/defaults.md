@@ -45,8 +45,8 @@ license: ISC
 chain: purpose-built Nettle chain
 chain app language: inauguration (.in)
 chain client boundary: nettle-chain-client
-language split: chain app .in; node/relay/messaging/cli Rust
-repo packaging: monorepo (crates/ + chain/)
+language split: chain app .in; client/relay/node/TUI TypeScript (Bun + CF Workers)
+repo packaging: monorepo (packages/ + workers/ + chain/)
 consensus: chained HotStuff three-chain commit (AD-9)
 consensus votes v1: Ed25519 (BLS QC later)
 wire encoding: CBOR

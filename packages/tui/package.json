@@ -1,0 +1,14 @@
+{
+  "name": "@nettle/tui",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.tsx",
+  "scripts": { "dev": "bun run src/index.tsx", "build": "tsc", "build:bundle": "bun run build.ts" },
+  "dependencies": {
+    "@nettle/types": "workspace:*",
+    "@nettle/client": "workspace:*",
+    "@opentui/core": "latest",
+    "@opentui/solid": "latest",
+    "solid-js": "^1"
+  }
+}

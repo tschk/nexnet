@@ -67,18 +67,21 @@ Not using Substrate / Cosmos SDK / foreign L1 as the product chain.
 
 Chain remains isolated behind a clean interface.
 
-## Language split (AD-2)
+## Language split (AD-2 → TS override)
 
-**Locked for now: A — chain app only in `.in`.**
+**Locked originally:** chain app `.in` only; rest Rust.  
+**Override:** TypeScript for client / relay / presence / discovery / TUI / node.  
+Chain app and consensus logic stay in **inauguration `.in`**.
 
 | Component | Language |
 |---|---|
 | Username / identity / treasury / relay-registry transitions | inauguration `.in` |
-| Node, relay, transport, messaging, crypto, storage, CLI | Rust |
-| Chain client API | Rust (`nettle-chain-client`) |
+| Client, relay, presence, discovery, TUI, node | **TypeScript (Bun)** |
+| Cloudflare services | TypeScript (Workers) |
+| Chain client API | TypeScript (`@nettle/chain-client`) |
 
 Expand `.in` into validator host later when networking/stdlib ready. Do not
-migrate messaging to `.in` in the first implementation wave.
+migrate client services back to Rust in the first wave.
 
 ## Repo packaging (AD-3)
 

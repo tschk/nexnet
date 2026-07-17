@@ -82,32 +82,24 @@ and privacy-routed stranger discovery.
 
 ```text
 nettle/
-  Cargo.toml
-  crates/                 # Rust workspace
-    nettle-types/
-    nettle-protocol/
-    nettle-crypto/
-    nettle-identity/
-    nettle-storage/
-    nettle-presence/
-    nettle-discovery/
-    nettle-transport/
-    nettle-routing/
-    nettle-messaging/
-    nettle-groups/
-    nettle-rooms/
-    nettle-attachments/
-    nettle-reputation/
-    nettle-chain-client/
-    nettle-chain-runtime/ # host/executor bridge to chain/
-    nettle-relay/
-    nettle-node/
-    nettle-cli/
+  package.json            # Bun workspace
+  tsconfig.json
+  packages/               # TypeScript packages
+    types/                # @nettle/types — protocol types
+    crypto/               # @nettle/crypto — noble crypto wrappers
+    protocol/             # @nettle/protocol — CBOR CDE, event signing
+    storage/              # @nettle/storage — encrypted local DB
+    client/               # @nettle/client — messaging, rooms, groups
+    tui/                  # @nettle/tui — OpenTUI + SolidJS terminal client
+    chain-client/         # @nettle/chain-client — chain API
+  workers/                # Cloudflare Workers
+    relay/                # signalling, room gossip
+    presence/             # presence leases
+    discovery/            # interests, language, random match
   chain/                  # inauguration .in state machine (AD-3)
   docs/
   test-vectors/
-  deployments/
-  scripts/
+  schemas/
 ```
 
 ## Documentation

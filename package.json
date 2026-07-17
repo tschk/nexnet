@@ -1,0 +1,5 @@
+{
+  "name": "nettle",
+  "private": true,
+  "workspaces": ["packages/*", "workers/*"]
+}

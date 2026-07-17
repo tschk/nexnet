@@ -34,15 +34,16 @@ started.
 
 ## Stack direction
 
-- Rust workspace monorepo for node/relay/cli (default)
-- Tokio, QUIC/WebRTC transports, CBOR+CDE+CDDL (AD-4/4b), encrypted SQLite
-- Ed25519 / X25519 / HKDF / XChaCha20-Poly1305 (AD-5)
-- BLAKE3-256 with derive_key domain separation (AD-8); no custom hashes
-- Double Ratchet for DMs; OpenMLS for groups
+- **TypeScript (Bun)** monorepo for client / relay / presence / discovery / TUI
+- **Cloudflare Workers** for relay, presence, discovery services
+- **OpenTUI + SolidJS** for terminal client
+- Ed25519 / X25519 / XChaCha20-Poly1305 (noble libs — AD-5)
+- BLAKE3-256 with derive_key domain separation (AD-8)
+- Double Ratchet for DMs (TBD lib)
 - **Own chain** — application logic in inauguration `.in`
   (`../inauguration`); clients only via `nettle-chain-client`
-- **AD-2:** chain app `.in` only; node/relay/messaging/crypto/CLI = Rust
-- **AD-3:** monorepo — `chain/` (`.in`) next to `crates/`
+- **AD-2:** chain app `.in` only; client/relay/node/TUI = **TypeScript** (Bun + Cloudflare Workers)
+- **AD-3:** monorepo — `chain/` (`.in`) next to `packages/` + `workers/`
 - **AD-9:** chained HotStuff three-chain commit; see `docs/consensus.md`
 - Chain runtime isolated; single-node executor OK until multi-validator
 

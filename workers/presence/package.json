@@ -1,0 +1,9 @@
+{
+  "name": "@nettle/worker-presence",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "dev": "wrangler dev", "deploy": "wrangler deploy" },
+  "dependencies": { "@nettle/types": "workspace:*" },
+  "devDependencies": { "wrangler": "^3" }
+}

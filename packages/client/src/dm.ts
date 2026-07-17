@@ -18,13 +18,21 @@ import {
 } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 import type { OutboundQueueLike } from "@nexnet/types";
+import {
+  getOrCreateRecvSession,
+  getOrCreateSendSession,
+  open as ratchetOpen,
+  seal as ratchetSeal,
+  sessionStoreKey,
+} from "./double-ratchet.js";
 
 const DOMAIN_CONVERSATION_ID = "nexnet conversation id v1";
 const DOMAIN_CONVERSATION_KEY = "nexnet dm conversation key v1";
 
 /**
- * Derive 32-byte XChaCha key from conversation_id via HKDF.
- * Both sides produce the same key (conversation_id is symmetric).
+ * Derive root shared secret from conversation_id via HKDF.
+ * Both sides produce same SK (conversation_id is symmetric).
+ * Used as Double Ratchet initial root seed (no X3DH yet).
  */
 export function deriveConversationKey(
   crypto: NexnetClient["crypto"],
@@ -70,24 +78,16 @@ export async function sendDirectMessage(
 
   const messageId = client.crypto.deriveId(DOMAIN_EVENT_ID, payloadCde);
 
-  const conversationKey = deriveConversationKey(client.crypto, conversationId);
-
-  const nonce = client.crypto.randomBytes(24);
+  const rootSk = deriveConversationKey(client.crypto, conversationId);
   const aad = client.codec.encode({
     conversationId,
     senderIdentityId: client.identityId,
     recipientIdentityId: recipientId,
   });
-  const rawCiphertext = client.crypto.encrypt(
-    conversationKey,
-    nonce,
-    aad,
-    payloadCde
-  );
-  // Embed nonce: envelope.ciphertext = nonce (24) ‖ ciphertext
-  const ciphertext = new Uint8Array(24 + rawCiphertext.length);
-  ciphertext.set(nonce, 0);
-  ciphertext.set(rawCiphertext, 24);
+  const sessionKey = sessionStoreKey(conversationId, recipientId);
+  const ratchet = getOrCreateSendSession(sessionKey, rootSk, client.crypto);
+  // Wire: version ‖ header ‖ nonce ‖ ciphertext (Double Ratchet)
+  const ciphertext = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
 
   const now = Date.now();
   const envelopePreimage = client.codec.encode({
@@ -188,31 +188,35 @@ export function onDirectMessage(
         if (!valid) return; // invalid signature, drop
       }
 
-      // 2. Extract nonce from ciphertext (first 24 bytes)
-      if (envelope.ciphertext.length < 25) return; // too short
-      const recvNonce = envelope.ciphertext.slice(0, 24);
-      const recvCiphertext = envelope.ciphertext.slice(24);
-
-      // 3. Derive conversation key (same as sender)
-      const conversationKey = deriveConversationKey(
+      // 2. Decrypt via Double Ratchet (wire v1 in ciphertext)
+      if (envelope.ciphertext.length < 2) return;
+      const rootSk = deriveConversationKey(
         client.crypto,
         envelope.conversationId
       );
-
-      // 4. Decrypt
       const aad = client.codec.encode({
         conversationId: envelope.conversationId,
         senderIdentityId: envelope.senderIdentityId,
         recipientIdentityId: envelope.recipientIdentityId,
       });
-      const plaintext = client.crypto.decrypt(
-        conversationKey,
-        recvNonce,
-        aad,
-        recvCiphertext
+      // Session keyed by peer (sender) so send+recv share one state
+      const sessionKey = sessionStoreKey(
+        envelope.conversationId,
+        envelope.senderIdentityId
+      );
+      const ratchet = getOrCreateRecvSession(
+        sessionKey,
+        rootSk,
+        client.crypto
+      );
+      const plaintext = ratchetOpen(
+        client.crypto,
+        ratchet,
+        envelope.ciphertext,
+        aad
       );
 
-      // 4. Parse payload
+      // 3. Parse payload
       const payload = client.codec.decode<MessagePayload>(plaintext);
 
       callback(envelope, payload);

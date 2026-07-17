@@ -5,7 +5,17 @@ export {
   sendDirectMessage,
   onDirectMessage,
   deriveConversationId,
+  deriveConversationKey,
 } from "./dm.js";
+
+export {
+  initInitiator,
+  initResponder,
+  seal as ratchetSeal,
+  open as ratchetOpen,
+  clearSessions as clearRatchetSessions,
+} from "./double-ratchet.js";
+export type { RatchetState, RatchetHeader } from "./double-ratchet.js";
 
 export {
   joinRoom,

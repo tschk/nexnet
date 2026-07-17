@@ -20,6 +20,23 @@ import type { NettleClient } from "./client.js";
 import type { OutboundQueueLike } from "@nettle/types";
 
 const DOMAIN_CONVERSATION_ID = "nettle conversation id v1";
+const DOMAIN_CONVERSATION_KEY = "nettle dm conversation key v1";
+
+/**
+ * Derive 32-byte XChaCha key from conversation_id via HKDF.
+ * Both sides produce the same key (conversation_id is symmetric).
+ */
+export function deriveConversationKey(
+  crypto: NettleClient["crypto"],
+  conversationId: ConversationId
+): Uint8Array {
+  return crypto.hkdf(
+    conversationId,
+    new Uint8Array(0), // no salt
+    new TextEncoder().encode(DOMAIN_CONVERSATION_KEY),
+    32
+  );
+}
 
 export function deriveConversationId(
   crypto: NettleClient["crypto"],
@@ -53,18 +70,24 @@ export async function sendDirectMessage(
 
   const messageId = client.crypto.deriveId(DOMAIN_EVENT_ID, payloadCde);
 
+  const conversationKey = deriveConversationKey(client.crypto, conversationId);
+
   const nonce = client.crypto.randomBytes(24);
   const aad = client.codec.encode({
     conversationId,
     senderIdentityId: client.identityId,
     recipientIdentityId: recipientId,
   });
-  const ciphertext = client.crypto.encrypt(
-    client.crypto.randomBytes(32),
+  const rawCiphertext = client.crypto.encrypt(
+    conversationKey,
     nonce,
     aad,
     payloadCde
   );
+  // Embed nonce: envelope.ciphertext = nonce (24) ‖ ciphertext
+  const ciphertext = new Uint8Array(24 + rawCiphertext.length);
+  ciphertext.set(nonce, 0);
+  ciphertext.set(rawCiphertext, 24);
 
   const now = Date.now();
   const envelopePreimage = client.codec.encode({
@@ -99,16 +122,10 @@ export async function sendDirectMessage(
   };
 
   if (client.online) {
-    try {
-      client.sendWs({
-        type: "send",
-        target: Array.from(recipientId),
-        envelope: Array.from(client.codec.encode(envelope)),
-      });
-      return messageId;
-    } catch {
-      // fall through to queue
-    }
+    const recipientHex = Buffer.from(recipientId).toString("hex");
+    const sent = client.sendDm(recipientHex, Array.from(client.codec.encode(envelope)));
+    if (sent) return messageId;
+    // fall through to queue
   }
 
   if (queue) {
@@ -126,23 +143,81 @@ export async function sendDirectMessage(
   throw new Error("Not connected and no queue provided");
 }
 
+/**
+ * Subscribe to incoming DMs. Verifies signature, decrypts payload,
+ * and calls callback with the parsed MessagePayload + envelope metadata.
+ *
+ * @param getSenderPublicKey - optional resolver: identityId → Ed25519 public key.
+ *   When provided, the envelope signature is verified. Messages with invalid
+ *   or unresolvable signatures are silently dropped.
+ */
 export function onDirectMessage(
   client: NettleClient,
-  callback: (envelope: MessageEnvelope) => void
+  callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
+  getSenderPublicKey?: (identityId: IdentityId) => Uint8Array | undefined
 ): void {
   client.on("dm", (data) => {
     const msg = data as {
       envelope: number[];
-      ciphertext: Uint8Array;
     };
     try {
-      if (msg.envelope) {
-        const bytes = new Uint8Array(msg.envelope);
-        const envelope = client.codec.decode<MessageEnvelope>(bytes);
-        callback(envelope);
+      if (!msg.envelope) return;
+
+      const bytes = new Uint8Array(msg.envelope);
+      const envelope = client.codec.decode<MessageEnvelope>(bytes);
+
+      // 1. Verify Ed25519 signature on envelope preimage
+      const preimage = client.codec.encode({
+        protocolVersion: envelope.protocolVersion,
+        messageId: envelope.messageId,
+        conversationId: envelope.conversationId,
+        senderIdentityId: envelope.senderIdentityId,
+        senderDeviceId: envelope.senderDeviceId,
+        recipientIdentityId: envelope.recipientIdentityId,
+        senderSequence: envelope.senderSequence,
+        parentIds: envelope.parentIds,
+        createdAt: envelope.createdAt,
+        ciphertext: envelope.ciphertext,
+      });
+
+      // Sender public key must be known/looked up externally.
+      if (getSenderPublicKey) {
+        const senderPk = getSenderPublicKey(envelope.senderIdentityId);
+        if (!senderPk) return; // unknown sender, drop
+        const valid = client.crypto.verify(senderPk, preimage, envelope.signature);
+        if (!valid) return; // invalid signature, drop
       }
+
+      // 2. Extract nonce from ciphertext (first 24 bytes)
+      if (envelope.ciphertext.length < 25) return; // too short
+      const recvNonce = envelope.ciphertext.slice(0, 24);
+      const recvCiphertext = envelope.ciphertext.slice(24);
+
+      // 3. Derive conversation key (same as sender)
+      const conversationKey = deriveConversationKey(
+        client.crypto,
+        envelope.conversationId
+      );
+
+      // 4. Decrypt
+      const aad = client.codec.encode({
+        conversationId: envelope.conversationId,
+        senderIdentityId: envelope.senderIdentityId,
+        recipientIdentityId: envelope.recipientIdentityId,
+      });
+      const plaintext = client.crypto.decrypt(
+        conversationKey,
+        recvNonce,
+        aad,
+        recvCiphertext
+      );
+
+      // 4. Parse payload
+      const payload = client.codec.decode<MessagePayload>(plaintext);
+
+      callback(envelope, payload);
     } catch {
-      // malformed envelope — ignore
+      // malformed envelope or decryption failure — ignore
     }
   });
 }

@@ -3,6 +3,7 @@
  *
  * Dependency-injected crypto/codec. WebSocket connection to relay.
  * Event emitter for incoming messages.
+ * Exponential backoff reconnection.
  */
 
 import type {
@@ -15,10 +16,16 @@ import type {
 export type EventType =
   | "dm"
   | "room_message"
+  | "room_event"
   | "group_message"
+  | "session_offer"
+  | "session_answer"
+  | "candidate"
   | "presence"
   | "connected"
-  | "disconnected";
+  | "disconnected"
+  | "reconnecting"
+  | "error";
 
 export type EventHandler = (data: unknown) => void;
 
@@ -30,7 +37,15 @@ export interface NettleClientConfig {
   relayUrl: string;
   storagePath: string;
   signingSecretKey: Uint8Array;
+  /** Max reconnect attempts before giving up. 0 = infinite. Default: 0 */
+  maxReconnectAttempts?: number;
+  /** Base backoff delay in ms. Default: 1000 */
+  reconnectBaseMs?: number;
+  /** Max backoff delay in ms. Default: 30000 */
+  reconnectMaxMs?: number;
 }
+
+// ponytail: single-class client, no abstraction layers. Upgrade if state grows.
 
 export class NettleClient {
   readonly identityId: IdentityId;
@@ -44,6 +59,15 @@ export class NettleClient {
   private _online = false;
   private _ws: WebSocket | null = null;
   private _listeners = new Map<EventType, Set<EventHandler>>();
+  private _reconnectAttempts = 0;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _intentionalClose = false;
+  private _maxReconnectAttempts: number;
+  private _reconnectBaseMs: number;
+  private _reconnectMaxMs: number;
+
+  private readonly _identityHex: string;
+  private readonly _deviceHex: string;
 
   constructor(config: NettleClientConfig) {
     this.identityId = config.identityId;
@@ -53,61 +77,106 @@ export class NettleClient {
     this.relayUrl = config.relayUrl;
     this.storagePath = config.storagePath;
     this.signingSecretKey = config.signingSecretKey;
+    this._maxReconnectAttempts = config.maxReconnectAttempts ?? 0;
+    this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;
+    this._reconnectMaxMs = config.reconnectMaxMs ?? 30_000;
+
+    this._identityHex = Buffer.from(config.identityId).toString("hex");
+    this._deviceHex = Buffer.from(config.deviceId).toString("hex");
   }
 
   get online(): boolean {
     return this._online;
   }
 
+  /** Hex-encoded identity ID for relay protocol */
+  get identityHex(): string {
+    return this._identityHex;
+  }
+
+  /** Hex-encoded device ID for relay protocol */
+  get deviceHex(): string {
+    return this._deviceHex;
+  }
+
+  /**
+   * Connect to relay via WebSocket.
+   * URL: ws[s]://relayUrl/ws?identity=<hex>&device=<hex>
+   */
   async connect(): Promise<void> {
     if (this._online) return;
+    this._intentionalClose = false;
 
-    return new Promise((resolve, reject) => {
-      try {
-        const ws = new WebSocket(this.relayUrl);
-
-        ws.onopen = () => {
-          this._online = true;
-          this._ws = ws;
-          this.emit("connected", null);
-          resolve();
-        };
-
-        ws.onmessage = (event: MessageEvent) => {
-          this.handleMessage(event.data as string);
-        };
-
-        ws.onclose = () => {
-          this._online = false;
-          this._ws = null;
-          this.emit("disconnected", null);
-        };
-
-        ws.onerror = (err: Event) => {
-          if (!this._online) {
-            reject(new Error("WebSocket connection failed"));
-          }
-          this._online = false;
-        };
-      } catch (err) {
-        reject(err);
-      }
-    });
+    return this._connect();
   }
 
   async disconnect(): Promise<void> {
-    if (!this._ws) return;
-    this._ws.close();
-    this._ws = null;
+    this._intentionalClose = true;
+    this._clearReconnectTimer();
+    if (this._ws) {
+      this._ws.close();
+      this._ws = null;
+    }
     this._online = false;
+    this._reconnectAttempts = 0;
   }
 
-  /** Send raw JSON message over WebSocket */
+  /**
+   * Send a JSON message over the WebSocket.
+   * Throws if not connected.
+   */
   sendWs(payload: Record<string, unknown>): void {
     if (!this._ws || !this._online) {
       throw new Error("Not connected");
     }
     this._ws.send(JSON.stringify(payload));
+  }
+
+  /**
+   * Send a signaling message (session_offer, session_answer, candidate)
+   * to a specific peer via the relay.
+   */
+  sendSignaling(
+    type: "session_offer" | "session_answer" | "candidate",
+    toIdentityHex: string,
+    data: Record<string, unknown>
+  ): void {
+    this.sendWs({ type, to: toIdentityHex, ...data });
+  }
+
+  /**
+   * Subscribe to a room on the relay.
+   */
+  subscribeRoom(roomIdHex: string): void {
+    this.sendWs({ type: "room_subscribe", room_id: roomIdHex });
+  }
+
+  /**
+   * Unsubscribe from a room on the relay.
+   */
+  unsubscribeRoom(roomIdHex: string): void {
+    this.sendWs({ type: "room_unsubscribe", room_id: roomIdHex });
+  }
+
+  /**
+   * Send a room event via the relay.
+   */
+  sendRoomEvent(roomIdHex: string, event: Record<string, unknown>): void {
+    this.sendWs({ type: "room_event", room_id: roomIdHex, event });
+  }
+
+  /**
+   * Forward a DM envelope to a recipient via the relay.
+   * Returns true if sent, false if not connected.
+   */
+  sendDm(toIdentityHex: string, envelope: number[]): boolean {
+    if (!this._online) return false;
+    try {
+      this.sendWs({ type: "dm", to: toIdentityHex, envelope });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   on(event: EventType, handler: EventHandler): void {
@@ -136,7 +205,102 @@ export class NettleClient {
     }
   }
 
-  private handleMessage(raw: string): void {
+  // ── Private ────────────────────────────────────────────────────────
+
+  private _connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = this._buildWsUrl();
+
+      let settled = false;
+      let ws: WebSocket;
+
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      ws.onopen = () => {
+        this._online = true;
+        this._ws = ws;
+        this._reconnectAttempts = 0;
+        this.emit("connected", null);
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        this._handleMessage(event.data as string);
+      };
+
+      ws.onclose = () => {
+        this._online = false;
+        this._ws = null;
+        this.emit("disconnected", null);
+        if (!settled) {
+          settled = true;
+          reject(new Error("WebSocket closed before open"));
+        }
+        if (!this._intentionalClose) {
+          this._scheduleReconnect();
+        }
+      };
+
+      ws.onerror = (_err: Event) => {
+        if (!settled) {
+          settled = true;
+          reject(new Error("WebSocket connection failed"));
+        }
+      };
+    });
+  }
+
+  private _buildWsUrl(): string {
+    const base = this.relayUrl.replace(/\/+$/, "");
+    const protocol = base.startsWith("https") ? "wss" : "ws";
+    const host = base.replace(/^https?:\/\//, "");
+    return `${protocol}://${host}/ws?identity=${this._identityHex}&device=${this._deviceHex}`;
+  }
+
+  private _scheduleReconnect(): void {
+    if (this._intentionalClose) return;
+    if (
+      this._maxReconnectAttempts > 0 &&
+      this._reconnectAttempts >= this._maxReconnectAttempts
+    ) {
+      return;
+    }
+
+    const delay = Math.min(
+      this._reconnectBaseMs * Math.pow(2, this._reconnectAttempts),
+      this._reconnectMaxMs
+    );
+    this._reconnectAttempts++;
+
+    this.emit("reconnecting", {
+      attempt: this._reconnectAttempts,
+      delayMs: delay,
+    });
+
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      this._connect().catch(() => {
+        // onclose will schedule next attempt
+      });
+    }, delay);
+  }
+
+  private _clearReconnectTimer(): void {
+    if (this._reconnectTimer !== null) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+  }
+
+  private _handleMessage(raw: string): void {
     let msg: { type?: string; [key: string]: unknown };
     try {
       msg = JSON.parse(raw);
@@ -148,6 +312,18 @@ export class NettleClient {
       case "dm":
         this.emit("dm", msg);
         break;
+      case "session_offer":
+        this.emit("session_offer", msg);
+        break;
+      case "session_answer":
+        this.emit("session_answer", msg);
+        break;
+      case "candidate":
+        this.emit("candidate", msg);
+        break;
+      case "room_event":
+        this.emit("room_event", msg);
+        break;
       case "room_message":
         this.emit("room_message", msg);
         break;
@@ -156,6 +332,9 @@ export class NettleClient {
         break;
       case "presence":
         this.emit("presence", msg);
+        break;
+      case "error":
+        this.emit("error", msg);
         break;
     }
   }

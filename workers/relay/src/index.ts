@@ -48,6 +48,12 @@ interface RoomUnsubscribeMessage {
   room_id: string;
 }
 
+interface DmMessage {
+  type: "dm";
+  to: string;
+  envelope: number[];
+}
+
 interface ErrorMessage {
   type: "error";
   message: string;
@@ -59,7 +65,8 @@ type RelayMessage =
   | CandidateMessage
   | RoomSubscribeMessage
   | RoomEventMessage
-  | RoomUnsubscribeMessage;
+  | RoomUnsubscribeMessage
+  | DmMessage;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -158,6 +165,9 @@ export class RelaySession {
       case "candidate":
         this.forwardSignaling(msg);
         break;
+      case "dm":
+        this.forwardDm(msg);
+        break;
       case "room_subscribe":
         this.subscribeRoom(senderIdentity, msg.room_id);
         break;
@@ -182,6 +192,14 @@ export class RelaySession {
     if (identity) {
       this.removeConnection(identity);
     }
+  }
+
+  // ── DM forwarding ─────────────────────────────────────────────────
+
+  private forwardDm(msg: DmMessage): void {
+    const target = this.connections.get(msg.to);
+    if (!target) return;
+    this.sendWs(target.ws, msg);
   }
 
   // ── Signaling ──────────────────────────────────────────────────────

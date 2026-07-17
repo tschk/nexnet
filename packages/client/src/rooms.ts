@@ -25,11 +25,7 @@ export async function joinRoom(
   const roomId = deriveRoomId(client.crypto, roomName);
   const roomIdHex = Buffer.from(roomId).toString("hex");
 
-  client.sendWs({
-    type: "subscribe",
-    channel: "room",
-    roomId: roomIdHex,
-  });
+  client.subscribeRoom(roomIdHex);
 
   return roomId;
 }
@@ -39,11 +35,7 @@ export async function leaveRoom(
   roomId: RoomId
 ): Promise<void> {
   const roomIdHex = Buffer.from(roomId).toString("hex");
-  client.sendWs({
-    type: "unsubscribe",
-    channel: "room",
-    roomId: roomIdHex,
-  });
+  client.unsubscribeRoom(roomIdHex);
 }
 
 export async function sendRoomMessage(
@@ -65,10 +57,8 @@ export async function sendRoomMessage(
 
   const signature = client.crypto.sign(client.signingSecretKey, eventCde);
 
-  client.sendWs({
-    type: "publish",
-    channel: "room",
-    roomId: Buffer.from(roomId).toString("hex"),
+  const roomIdHex = Buffer.from(roomId).toString("hex");
+  client.sendRoomEvent(roomIdHex, {
     event: Array.from(eventCde),
     signature: Array.from(signature),
   });
@@ -81,11 +71,11 @@ export function onRoomMessage(
 ): void {
   const roomIdHex = Buffer.from(roomId).toString("hex");
 
-  client.on("room_message", (data) => {
-    const msg = data as { roomId?: string; event?: number[] };
-    if (msg.roomId === roomIdHex && msg.event) {
+  client.on("room_event", (data) => {
+    const msg = data as { room_id?: string; event?: { event?: number[] } };
+    if (msg.room_id === roomIdHex && msg.event?.event) {
       try {
-        const bytes = new Uint8Array(msg.event);
+        const bytes = new Uint8Array(msg.event.event);
         const event = client.codec.decode<NettleEvent>(bytes);
         callback(event);
       } catch {

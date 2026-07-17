@@ -54,14 +54,11 @@ export class QueueManager {
     for (const item of pending) {
       if (item.attemptCount >= MAX_ATTEMPTS) continue;
 
-      try {
-        client.sendWs({
-          type: "send",
-          target: Array.from(item.recipientIdentityId),
-          envelope: Array.from(item.encryptedEnvelope),
-        });
+      const recipientHex = Buffer.from(item.recipientIdentityId).toString("hex");
+      const sent = client.sendDm(recipientHex, Array.from(item.encryptedEnvelope));
+      if (sent) {
         this.queue.markDelivered(item.messageId);
-      } catch {
+      } else {
         this.queue.markAttempt(item.messageId);
       }
     }

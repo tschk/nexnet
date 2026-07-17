@@ -30,6 +30,7 @@ started.
 - Double Ratchet for DMs; OpenMLS for groups
 - **Own chain** — application logic in inauguration `.in`
   (`../inauguration`); clients only via `nettle-chain-client`
+- **AD-2:** chain app `.in` only; node/relay/messaging/crypto/CLI = Rust
 - Chain runtime isolated; single-node executor OK until consensus
 
 ## Doc map

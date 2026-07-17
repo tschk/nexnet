@@ -63,6 +63,19 @@ Not using Substrate / Cosmos SDK / foreign L1 as the product chain.
 
 Chain remains isolated behind a clean interface.
 
+## Language split (AD-2)
+
+**Locked for now: A — chain app only in `.in`.**
+
+| Component | Language |
+|---|---|
+| Username / identity / treasury / relay-registry transitions | inauguration `.in` |
+| Node, relay, transport, messaging, crypto, storage, CLI | Rust |
+| Chain client API | Rust (`nettle-chain-client`) |
+
+Expand `.in` into validator host later when networking/stdlib ready. Do not
+migrate messaging to `.in` in the first implementation wave.
+
 ## Non-negotiables
 
 - reviewed cryptographic libraries only

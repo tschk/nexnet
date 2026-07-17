@@ -203,6 +203,9 @@ flowchart TB
 Rule: **chain-runtime is isolated**. Messaging depends on `chain-client`
 interfaces only.
 
+**AD-2:** `nettle-chain-runtime` (and `chain/` `.in` sources) hold state
+transitions in inauguration. All other crates above are Rust for now.
+
 ## Trust sketch
 
 Users trust: own devices, wallet custody, passkey/platform secure storage,

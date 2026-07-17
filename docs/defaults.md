@@ -29,4 +29,5 @@ license: ISC
 chain: purpose-built Nettle chain
 chain app language: inauguration (.in)
 chain client boundary: nettle-chain-client
+language split: chain app .in; node/relay/messaging/cli Rust
 ```

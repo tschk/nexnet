@@ -1,13 +1,9 @@
 :root {
-  --bg: #000000;
-  --fg: #ffffff;
-  --muted: #8a8a8a;
-  --dim: #4a4a4a;
-  --line: #222222;
-  --glow: rgba(255, 255, 255, 0.06);
-  --font: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --max: 72rem;
-  --pad: clamp(1rem, 3vw, 2rem);
+  --bg: #000;
+  --fg: #fff;
+  --muted: #888;
+  --line: #222;
+  --font: "JetBrains Mono", ui-monospace, monospace;
 }
 
 *,
@@ -19,7 +15,6 @@
 html {
   color-scheme: dark;
   background: var(--bg);
-  scroll-behavior: smooth;
 }
 
 body {
@@ -27,13 +22,10 @@ body {
   min-height: 100vh;
   font-family: var(--font);
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.6;
   color: var(--fg);
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, var(--glow), transparent 55%),
-    var(--bg);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  text-rendering: geometricPrecision;
 }
 
 ::selection {
@@ -43,8 +35,6 @@ body {
 
 a {
   color: inherit;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.2em;
 }
 
 a:hover {
@@ -53,32 +43,8 @@ a:hover {
   text-decoration: none;
 }
 
-img {
-  max-width: 100%;
-  display: block;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--fg);
-  cursor: pointer;
-  padding: 0.55rem 1rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  transition: background 120ms ease, color 120ms ease;
-}
-
-button:hover,
-button:focus-visible {
-  background: var(--fg);
-  color: var(--bg);
-  outline: none;
-}
-
 .wrap {
-  width: min(100% - 2 * var(--pad), var(--max));
+  width: min(100% - 2.5rem, 40rem);
   margin-inline: auto;
 }
 
@@ -86,43 +52,11 @@ button:focus-visible {
   color: var(--muted);
 }
 
-.dim {
-  color: var(--dim);
-}
-
-.rule {
-  border: 0;
-  border-top: 1px solid var(--line);
-  margin: 0;
-}
-
-/* CRT scanline — subtle, not gimmicky */
-body::before {
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 2px,
-    rgba(255, 255, 255, 0.015) 2px,
-    rgba(255, 255, 255, 0.015) 3px
-  );
-  mix-blend-mode: soft-light;
-}
-
-/* reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
   }
 }

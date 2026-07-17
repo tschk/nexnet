@@ -1,121 +1,210 @@
 ---
+/**
+ * Spell UI Special Text — https://spell.sh/docs/special-text
+ * Source: https://spell.sh/r/special-text.json
+ * Two-phase scramble: grow random chars, then resolve to target.
+ */
 interface Props {
   text: string;
   as?: keyof HTMLElementTagNameMap;
   class?: string;
-  delay?: number;
+  /** ms between steps (Spell default 20) */
   speed?: number;
-  once?: boolean;
+  /** delay before start in ms */
+  delay?: number;
+  /** wait until in view */
+  inView?: boolean;
 }
 
 const {
   text,
   as: Tag = "span",
   class: className = "",
+  speed = 20,
   delay = 0,
-  speed = 28,
-  once = true,
+  inView = false,
 } = Astro.props;
 ---
 
 <Tag
-  class:list={["scramble", className]}
-  data-scramble
+  class:list={["special-text", className]}
+  data-special-text
   data-text={text}
-  data-delay={String(delay)}
   data-speed={String(speed)}
-  data-once={once ? "1" : "0"}
+  data-delay={String(delay)}
+  data-in-view={inView ? "1" : "0"}
   aria-label={text}
 >
-  <span class="scramble__vis" aria-hidden="true">{text}</span>
+  <span class="special-text__vis" aria-hidden="true"></span>
 </Tag>
 
 <style>
-  .scramble {
-    display: inline;
-    white-space: pre-wrap;
-  }
-  .scramble__vis {
+  .special-text {
+    display: inline-flex;
     font-variant-ligatures: none;
+    white-space: pre;
   }
 </style>
 
 <script>
-  const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*<>/\\|_";
+  // Port of Spell UI SpecialText (special-text.tsx)
+  const RANDOM_CHARS = "_!X$0-+*#";
+
+  function getRandomChar(prevChar?: string): string {
+    let char: string;
+    do {
+      char = RANDOM_CHARS[(Math.random() * RANDOM_CHARS.length) | 0]!;
+    } while (char === prevChar);
+    return char;
+  }
 
   function prefersReducedMotion() {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
-  function scrambleEl(el: HTMLElement) {
-    const target = el.dataset.text ?? "";
-    const speed = Number(el.dataset.speed || 28);
+  function runSpecialText(el: HTMLElement) {
+    const text = el.dataset.text ?? "";
+    const speed = Number(el.dataset.speed || 20);
     const delay = Number(el.dataset.delay || 0);
-    const vis = el.querySelector(".scramble__vis") as HTMLElement | null;
+    const needInView = el.dataset.inView === "1";
+    const vis = el.querySelector(".special-text__vis") as HTMLElement | null;
     if (!vis) return;
 
     if (prefersReducedMotion()) {
-      vis.textContent = target;
+      vis.textContent = text;
       return;
     }
 
-    let frame = 0;
-    const total = Math.max(target.length * 2, 12);
-    let started = false;
+    // nbsp so spaces hold width during phase1 (Spell uses \u00A0)
+    const blank = () => Array.from(text, (ch) => (ch === " " ? " " : "\u00A0")).join("");
 
-    const run = () => {
-      if (!started) {
-        started = true;
-        const start = performance.now() + delay;
-        const tick = (now: number) => {
-          if (now < start) {
-            requestAnimationFrame(tick);
-            return;
-          }
-          frame++;
-          const progress = Math.min(1, frame / total);
-          const revealed = Math.floor(progress * target.length);
-          let out = "";
-          for (let i = 0; i < target.length; i++) {
-            if (target[i] === " " || target[i] === "\n") {
-              out += target[i];
-              continue;
-            }
-            if (i < revealed) out += target[i];
-            else out += CHARS[(Math.random() * CHARS.length) | 0];
-          }
-          vis.textContent = out;
-          if (progress < 1) {
-            setTimeout(() => requestAnimationFrame(tick), speed);
-          } else {
-            vis.textContent = target;
-            el.dataset.done = "1";
-          }
-        };
-        requestAnimationFrame(tick);
+    let hasStarted = false;
+    let phase: "phase1" | "phase2" = "phase1";
+    let animationStep = 0;
+    let intervalId: number | null = null;
+    let startTimeout: number | null = null;
+
+    const clearTimers = () => {
+      if (startTimeout !== null) {
+        window.clearTimeout(startTimeout);
+        startTimeout = null;
+      }
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
       }
     };
+
+    const runPhase1 = () => {
+      const maxSteps = text.length * 2;
+      const currentLength = Math.min(animationStep + 1, text.length);
+      const chars: string[] = [];
+
+      for (let i = 0; i < currentLength; i++) {
+        if (text[i] === " ") {
+          chars.push(" ");
+          continue;
+        }
+        const prevChar = i > 0 ? chars[i - 1] : undefined;
+        chars.push(getRandomChar(prevChar));
+      }
+      for (let i = currentLength; i < text.length; i++) {
+        chars.push(text[i] === " " ? " " : "\u00A0");
+      }
+
+      vis.textContent = chars.join("");
+
+      if (animationStep < maxSteps - 1) {
+        animationStep += 1;
+      } else {
+        phase = "phase2";
+        animationStep = 0;
+      }
+    };
+
+    const runPhase2 = () => {
+      const revealedCount = Math.floor(animationStep / 2);
+      const chars: string[] = [];
+
+      for (let i = 0; i < revealedCount && i < text.length; i++) {
+        chars.push(text[i]!);
+      }
+
+      if (revealedCount < text.length) {
+        if (text[revealedCount] === " ") {
+          chars.push(" ");
+        } else if (animationStep % 2 === 0) {
+          chars.push("_");
+        } else {
+          chars.push(getRandomChar());
+        }
+      }
+
+      for (let i = chars.length; i < text.length; i++) {
+        if (text[i] === " ") chars.push(" ");
+        else chars.push(getRandomChar());
+      }
+
+      vis.textContent = chars.join("");
+
+      if (animationStep < text.length * 2 - 1) {
+        animationStep += 1;
+      } else {
+        vis.textContent = text;
+        clearTimers();
+      }
+    };
+
+    const startAnimation = () => {
+      if (hasStarted) return;
+      hasStarted = true;
+      phase = "phase1";
+      animationStep = 0;
+      vis.textContent = blank();
+      clearTimers();
+      intervalId = window.setInterval(() => {
+        if (phase === "phase1") runPhase1();
+        else runPhase2();
+      }, speed);
+    };
+
+    const schedule = () => {
+      if (delay > 0) {
+        startTimeout = window.setTimeout(startAnimation, delay);
+      } else {
+        startAnimation();
+      }
+    };
+
+    vis.textContent = blank();
+
+    if (!needInView) {
+      schedule();
+      return;
+    }
 
     if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver(
         (entries) => {
           for (const e of entries) {
             if (e.isIntersecting) {
-              run();
-              if (el.dataset.once === "1") io.disconnect();
+              schedule();
+              io.disconnect();
             }
           }
         },
-        { threshold: 0.35 }
+        { threshold: 0.2, rootMargin: "-100px" }
       );
       io.observe(el);
     } else {
-      run();
+      schedule();
     }
   }
 
   function boot() {
-    document.querySelectorAll<HTMLElement>("[data-scramble]").forEach(scrambleEl);
+    document
+      .querySelectorAll<HTMLElement>("[data-special-text]")
+      .forEach(runSpecialText);
   }
 
   boot();

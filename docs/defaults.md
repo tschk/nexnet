@@ -7,6 +7,7 @@ username registration: free, first come first served
 username transfer: on-chain
 account authority: wallet
 login: passkey
+passkey policy: every interactive app open (AD-6)
 recovery: wallet-authorised only
 message history: local only
 offline message location: sender device

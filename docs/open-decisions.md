@@ -14,7 +14,8 @@ implementation.
 | OD-04 | Automatic relay incentives | Deferred; grants first |
 | OD-05 | Username anti-spam proof | Free UX vs tiny PoW/deposit |
 | OD-06 | Passkey-to-wallet recovery flow | Exact ceremony |
-| OD-07 | Device certificate lifetime | Short-lived; pick numbers |
+| OD-07 | Device cert / session policy | **Partial AD-6:** passkey on every interactive app open. Background lifetime still open (OD-07b) |
+| OD-07b | Background device-cert lifetime | While process alive / suspended: 24h? 7d? until process death? |
 | OD-08 | Multi-device DM fanout policy | All devices vs active subset |
 | OD-09 | Public room retention defaults | Relay-defined; recommend baseline |
 | OD-10 | Random reputation formula | Inputs exist; weights open |

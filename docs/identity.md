@@ -107,8 +107,24 @@ device_certificate {
 
 Product direction: no complex user-facing device revocation UI in v1.
 
-Device certificates should be short-lived and require passkey auth to renew.
-A stolen device that cannot reauthenticate eventually loses access.
+### Session policy (AD-6 — partial)
 
-Protocol must still support root-level invalidation of compromised
+**Locked — foreground:** every interactive app open requires a **fresh passkey
+authentication** before messaging keys are usable. No “stay logged in” across
+cold starts without passkey.
+
+Flow on open:
+
+```text
+app open (foreground)
+  -> passkey assertion
+    -> issue/renew short-lived device certificate
+      -> messaging session keys
+```
+
+**Open — background:** certificate lifetime / renew rules while the process
+stays alive without a new interactive open (see OD-07b).
+
+A stolen device that cannot complete passkey reauth must lose the ability to
+renew. Protocol still supports root-level invalidation of compromised
 credentials even if the first client hides that complexity.

@@ -57,6 +57,12 @@ interface DmMessage {
   envelope: number[];
 }
 
+interface DeliveryReceiptMessage {
+  type: "delivery_receipt";
+  to: string;
+  receipt: Record<string, unknown>;
+}
+
 interface ErrorMessage {
   type: "error";
   message: string;
@@ -69,7 +75,8 @@ type RelayMessage =
   | RoomSubscribeMessage
   | RoomEventMessage
   | RoomUnsubscribeMessage
-  | DmMessage;
+  | DmMessage
+  | DeliveryReceiptMessage;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -165,6 +172,9 @@ export class RelaySession {
       case "dm":
         this.forwardDm(msg);
         break;
+      case "delivery_receipt":
+        this.forwardReceipt(senderIdentity, msg);
+        break;
       case "room_subscribe":
         this.subscribeRoom(senderIdentity, msg.room_id);
         break;
@@ -197,6 +207,16 @@ export class RelaySession {
     const target = this.connections.get(msg.to);
     if (!target) return;
     this.sendWs(target.ws, msg);
+  }
+
+  private forwardReceipt(senderIdentity: string, msg: DeliveryReceiptMessage): void {
+    const target = this.connections.get(msg.to);
+    if (!target) return;
+    this.sendWs(target.ws, {
+      type: "delivery_receipt",
+      from: senderIdentity,
+      receipt: msg.receipt,
+    });
   }
 
   // ── Signaling ──────────────────────────────────────────────────────

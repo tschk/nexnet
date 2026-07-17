@@ -127,7 +127,18 @@ export async function sendDirectMessage(
       ? { contentType: "text", text: message }
       : message;
   const payloadCde = client.codec.encode(payload);
-  const messageId = client.crypto.deriveId(DOMAIN_EVENT_ID, payloadCde);
+  const now = Date.now();
+  const messageId = client.crypto.deriveId(
+    DOMAIN_EVENT_ID,
+    client.codec.encode({
+      conversationId,
+      senderIdentityId: client.identityId,
+      recipientIdentityId: recipientId,
+      createdAt: now,
+      nonce: client.crypto.randomBytes(16),
+      payloadCde,
+    })
+  );
 
   const aad = client.codec.encode({
     conversationId,
@@ -176,7 +187,6 @@ export async function sendDirectMessage(
     }
   }
 
-  const now = Date.now();
   const envelopePreimage = client.codec.encode({
     protocolVersion: PROTOCOL_VERSION,
     messageId,
@@ -271,15 +281,12 @@ export function onDirectMessage(
         ciphertext: envelope.ciphertext,
       });
 
-      if (getSenderPublicKey) {
-        const senderPk = getSenderPublicKey(envelope.senderIdentityId);
-        if (!senderPk) return;
-        if (
-          !client.crypto.verify(senderPk, preimage, envelope.signature)
-        ) {
-          return;
-        }
+      const senderPk = getSenderPublicKey?.(envelope.senderIdentityId);
+      if (!senderPk) return;
+      if (!client.crypto.verify(senderPk, preimage, envelope.signature)) {
+        return;
       }
+      if (client.hasIncomingMessage(envelope.messageId)) return;
 
       if (envelope.ciphertext.length < 2) return;
 
@@ -312,23 +319,13 @@ export function onDirectMessage(
           setSession(sessionKey, existing);
           ratchetBlob = x3dh.ratchetBlob;
           // Drop used OTP from published bundle if we know our sign pk
-          if (getSenderPublicKey) {
-            // our own sign pk is not in getSenderPublicKey; refresh if local only
-            const selfBundle = fetchBundle(client.identityId);
-            if (selfBundle) {
-              refreshPublishedBundle(
-                client.identityId,
-                selfBundle.identitySignPublic
-              );
-            }
-          } else {
-            const selfBundle = fetchBundle(client.identityId);
-            if (selfBundle) {
-              refreshPublishedBundle(
-                client.identityId,
-                selfBundle.identitySignPublic
-              );
-            }
+          // our own sign pk is not in getSenderPublicKey; refresh if local only
+          const selfBundle = fetchBundle(client.identityId);
+          if (selfBundle) {
+            refreshPublishedBundle(
+              client.identityId,
+              selfBundle.identitySignPublic
+            );
           }
         } else {
           const rootSk = deriveConversationKey(
@@ -356,7 +353,12 @@ export function onDirectMessage(
       saveSession(sessionKey, existing);
 
       const payload = client.codec.decode<MessagePayload>(plaintext);
+      if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
       callback(envelope, payload);
+      client.sendDeliveryReceipt(
+        Buffer.from(envelope.senderIdentityId).toString("hex"),
+        envelope.messageId
+      );
     } catch {
       // malformed / decrypt fail — drop
     }

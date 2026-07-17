@@ -12,6 +12,10 @@ import type {
   CryptoProvider,
   CborCdeCodec,
 } from "@nexnet/types";
+import { EventLog } from "@nexnet/storage";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { consumePresenceMessage } from "./presence.js";
 
 export type EventType =
   | "dm"
@@ -63,6 +67,7 @@ export class NexnetClient {
   private _reconnectAttempts = 0;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _intentionalClose = false;
+  private _eventLog: EventLog | null = null;
   private _maxReconnectAttempts: number;
   private _reconnectBaseMs: number;
   private _reconnectMaxMs: number;
@@ -174,6 +179,46 @@ export class NexnetClient {
     if (!this._online) return false;
     try {
       this.sendWs({ type: "dm", to: toIdentityHex, envelope });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  persistIncomingMessage(messageId: Uint8Array, envelope: Uint8Array): boolean {
+    const log = this._incomingEventLog();
+    if (log.contains(messageId)) return false;
+    log.append(messageId, envelope);
+    return true;
+  }
+
+  hasIncomingMessage(messageId: Uint8Array): boolean {
+    return this._incomingEventLog().contains(messageId);
+  }
+
+  sendDeliveryReceipt(toIdentityHex: string, messageId: Uint8Array): boolean {
+    if (!this._online) return false;
+    const storedAt = Date.now();
+    const receipt = {
+      messageId,
+      recipientDeviceId: this.deviceId,
+      storedAt,
+    };
+    const signature = this.crypto.sign(
+      this.signingSecretKey,
+      this.codec.encode(receipt)
+    );
+    try {
+      this.sendWs({
+        type: "delivery_receipt",
+        to: toIdentityHex,
+        receipt: {
+          ...receipt,
+          messageId: Array.from(messageId),
+          recipientDeviceId: Array.from(this.deviceId),
+          signature: Array.from(signature),
+        },
+      });
       return true;
     } catch {
       return false;
@@ -335,14 +380,51 @@ export class NexnetClient {
         break;
       case "presence":
       case "presence_update":
-        this.emit("presence", msg);
+      case "presence_snapshot":
+        consumePresenceMessage(this, msg);
         break;
       case "delivery_receipt":
-        this.emit("delivery_receipt", msg);
+        this.emit("delivery_receipt", normalizeDeliveryReceipt(msg));
         break;
       case "error":
         this.emit("error", msg);
         break;
     }
   }
+
+  private _incomingEventLog(): EventLog {
+    if (this._eventLog) return this._eventLog;
+    if (!this.storagePath) throw new Error("storagePath is required for direct messages");
+    mkdirSync(this.storagePath, { recursive: true });
+    const context = new Uint8Array(this.identityId.length + this.deviceId.length);
+    context.set(this.identityId);
+    context.set(this.deviceId, this.identityId.length);
+    const key = this.crypto.hkdf(
+      this.signingSecretKey,
+      context,
+      new TextEncoder().encode("nexnet local event log key v1"),
+      32
+    );
+    this._eventLog = EventLog.open(join(this.storagePath, "events.db"), key, this.crypto);
+    return this._eventLog;
+  }
+}
+
+function normalizeDeliveryReceipt(msg: Record<string, unknown>): Record<string, unknown> {
+  if (typeof msg.receipt !== "object" || msg.receipt === null) return msg;
+  const receipt = msg.receipt as Record<string, unknown>;
+  return {
+    ...msg,
+    ...receipt,
+    messageId: bytes(receipt.messageId),
+    recipientDeviceId: bytes(receipt.recipientDeviceId),
+    signature: bytes(receipt.signature),
+  };
+}
+
+function bytes(value: unknown): Uint8Array | null {
+  if (!Array.isArray(value) || value.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+    return null;
+  }
+  return new Uint8Array(value);
 }

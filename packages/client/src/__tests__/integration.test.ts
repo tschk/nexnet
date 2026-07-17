@@ -201,6 +201,10 @@ describe("integration", () => {
     await bob.connect();
 
     const got: MessagePayload[] = [];
+    const receipts: Array<{ messageId?: Uint8Array }> = [];
+    alice.on("delivery_receipt", (receipt) => {
+      receipts.push(receipt as { messageId?: Uint8Array });
+    });
     onDirectMessage(
       bob,
       (_env, payload) => {
@@ -215,6 +219,23 @@ describe("integration", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(got.length).toBe(1);
     expect(got[0]!.text).toBe("hello bob");
+    expect(bob.hasIncomingMessage(msgId)).toBe(true);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]!.messageId).toEqual(msgId);
+
+    const aliceSocket = MockWebSocket.instances.find(
+      (ws) => identityFromUrl(ws.url) === alice.identityHex
+    )!;
+    const bobSocket = MockWebSocket.instances.find(
+      (ws) => identityFromUrl(ws.url) === bob.identityHex
+    )!;
+    const duplicate = aliceSocket.sent.find(
+      (raw) => JSON.parse(raw).type === "dm"
+    )!;
+    bobSocket.simulateMessage(duplicate);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(got).toHaveLength(1);
+    expect(receipts).toHaveLength(1);
 
     // reply
     const gotA: MessagePayload[] = [];

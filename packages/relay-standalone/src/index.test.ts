@@ -40,6 +40,18 @@ test("local server forwards DM and room events", async () => {
     envelope: [1, 2, 3],
   });
 
+  bob.send(JSON.stringify({
+    type: "delivery_receipt",
+    to: "alice",
+    from: "forged",
+    receipt: { messageId: [1, 2, 3], recipientDeviceId: [4], storedAt: 1, signature: [5] },
+  }));
+  expect(await nextMatching(aliceMessages, (message) => message.type === "delivery_receipt")).toEqual({
+    type: "delivery_receipt",
+    from: "bob",
+    receipt: { messageId: [1, 2, 3], recipientDeviceId: [4], storedAt: 1, signature: [5] },
+  });
+
   alice.send(JSON.stringify({ type: "room_subscribe", room_id: "general" }));
   bob.send(JSON.stringify({ type: "room_subscribe", room_id: "general" }));
   await Promise.all([

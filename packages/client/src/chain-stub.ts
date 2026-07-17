@@ -51,6 +51,7 @@ interface PersistedState {
   accounts: [string, AccountMeta][];
   usernames: PersistedUsernameRecord[];
   history: [string, PersistedUsernameRecord[]][];
+  identityRoots?: [string, string][];
   validators: PersistedValidatorRecord[];
 }
 
@@ -58,6 +59,7 @@ export class DevChainClient implements ChainApiClient {
   private usernames = new Map<string, UsernameRecord>();
   private walletToUsername = new Map<string, string>();
   private history = new Map<string, UsernameRecord[]>();
+  private identityRoots = new Map<string, WalletAddress>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
   private validators = new Map<string, ValidatorRecord>();
 
@@ -119,6 +121,12 @@ export class DevChainClient implements ChainApiClient {
       throw new Error("Wallet already owns a username (AD-10)");
     }
 
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const rootWallet = this.identityRoots.get(identityHex);
+    if (rootWallet && !Buffer.from(rootWallet).equals(Buffer.from(wallet))) {
+      throw new Error("Identity root already bound");
+    }
+
     // Check if username is taken AND release if previous owner inactive
     const existing = this.usernames.get(normalized);
     if (existing) {
@@ -147,6 +155,7 @@ export class DevChainClient implements ChainApiClient {
 
     this.usernames.set(normalized, record);
     this.walletToUsername.set(walletHex, normalized);
+    this.identityRoots.set(identityHex, wallet);
     this.appendHistory(normalized, record);
     this.persist();
 
@@ -170,12 +179,8 @@ export class DevChainClient implements ChainApiClient {
   async getIdentityRoot(
     identityId: IdentityId
   ): Promise<{ wallet: WalletAddress } | null> {
-    for (const record of this.usernames.values()) {
-      if (Buffer.from(record.identityId).equals(Buffer.from(identityId))) {
-        return { wallet: record.ownerWallet };
-      }
-    }
-    return null;
+    const wallet = this.identityRoots.get(Buffer.from(identityId).toString("hex"));
+    return wallet ? { wallet } : null;
   }
 
   private appendHistory(username: string, record: UsernameRecord): void {
@@ -196,6 +201,22 @@ export class DevChainClient implements ChainApiClient {
         records.map((record) => this.usernameRecord(record)),
       ])
     );
+    this.identityRoots = new Map(
+      (state.identityRoots ?? []).map(([identityHex, wallet]) => [
+        identityHex,
+        new Uint8Array(Buffer.from(wallet, "base64")),
+      ])
+    );
+    if (this.identityRoots.size === 0) {
+      for (const records of this.history.values()) {
+        for (const record of records) {
+          this.identityRoots.set(
+            Buffer.from(record.identityId).toString("hex"),
+            record.ownerWallet
+          );
+        }
+      }
+    }
     this.validators = new Map(
       state.validators.map((record) => {
         const validator = this.validatorRecord(record);
@@ -224,6 +245,10 @@ export class DevChainClient implements ChainApiClient {
       history: [...this.history.entries()].map(([username, records]) => [
         username,
         records.map(serializeUsername),
+      ]),
+      identityRoots: [...this.identityRoots.entries()].map(([identityHex, wallet]) => [
+        identityHex,
+        Buffer.from(wallet).toString("base64"),
       ]),
       validators: [...this.validators.values()].map((record) => ({
         wallet: Buffer.from(record.wallet).toString("base64"),

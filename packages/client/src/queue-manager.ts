@@ -8,7 +8,7 @@
  */
 
 import { PRESENCE_POLL_INTERVAL_MS } from "@nexnet/types";
-import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
+import type { IdentityId, OutboundQueueLike, OutboundQueueItem, PublicKey } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 
 const MAX_ATTEMPTS = 10;
@@ -22,7 +22,10 @@ export class QueueManager {
   private presenceHandler: ((data: unknown) => void) | null = null;
   private receiptHandler: ((data: unknown) => void) | null = null;
 
-  constructor(queue: OutboundQueueLike) {
+  constructor(
+    queue: OutboundQueueLike,
+    private readonly getReceiptPublicKey?: (identityId: IdentityId) => PublicKey | undefined
+  ) {
     this.queue = queue;
   }
 
@@ -44,11 +47,29 @@ export class QueueManager {
       }
     };
     this.receiptHandler = (data) => {
-      const msg = data as { messageId?: number[]; message_id?: number[] };
-      const messageId = msg.messageId ?? msg.message_id;
-      if (Array.isArray(messageId) && messageId.length === 32) {
-        this.queue.markDelivered(new Uint8Array(messageId));
-      }
+      const msg = data as {
+        from?: string;
+        messageId?: Uint8Array | number[];
+        recipientDeviceId?: Uint8Array | number[];
+        storedAt?: number;
+        signature?: Uint8Array | number[];
+      };
+      const messageId = toBytes(msg.messageId, 32);
+      const recipientDeviceId = toBytes(msg.recipientDeviceId, 32);
+      const signature = toBytes(msg.signature, 64);
+      if (!messageId || !recipientDeviceId || !signature || typeof msg.storedAt !== "number" ||
+        typeof msg.from !== "string" || !/^[0-9a-f]{64}$/i.test(msg.from)) return;
+      const identityId = new Uint8Array(Buffer.from(msg.from, "hex"));
+      const item = this.queue.pendingForRecipient(identityId).find((pending) =>
+        Buffer.from(pending.messageId).equals(Buffer.from(messageId))
+      );
+      const publicKey = this.getReceiptPublicKey?.(identityId);
+      if (!item || !publicKey || !this.client?.crypto.verify(
+        publicKey,
+        this.client.codec.encode({ messageId, recipientDeviceId, storedAt: msg.storedAt }),
+        signature
+      )) return;
+      this.queue.markDelivered(messageId);
     };
     client.on("presence", this.presenceHandler);
     client.on("delivery_receipt", this.receiptHandler);
@@ -84,12 +105,22 @@ export class QueueManager {
       if (item.attemptCount >= MAX_ATTEMPTS) continue;
 
       const recipientHex = Buffer.from(item.recipientIdentityId).toString("hex");
-      client.sendDm(recipientHex, Array.from(item.encryptedEnvelope));
-      this.queue.markAttempt(item.messageId);
+      if (client.sendDm(recipientHex, Array.from(item.encryptedEnvelope))) {
+        this.queue.markAttempt(item.messageId);
+      }
     }
   }
 
   get pendingCount(): number {
     return this.queue.pending().length;
   }
+}
+
+function toBytes(value: Uint8Array | number[] | undefined, length: number): Uint8Array | null {
+  const bytes = value instanceof Uint8Array
+    ? value
+    : Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
+      ? new Uint8Array(value)
+      : null;
+  return bytes?.length === length ? bytes : null;
 }

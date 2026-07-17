@@ -25,6 +25,14 @@ function createWithAgedAccount(): DevChainClient {
   return chain;
 }
 
+function ageAccount(chain: DevChainClient, wallet: Uint8Array): void {
+  chain.registerAccount(wallet);
+  (chain as unknown as { accounts: Map<string, { createdAt: number; lastActiveAt: number }> }).accounts.set(
+    Buffer.from(wallet).toString("hex"),
+    { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() }
+  );
+}
+
 describe("DevChainClient", () => {
   test("register and resolve username", async () => {
     const chain = new DevChainClient();
@@ -157,6 +165,33 @@ describe("DevChainClient", () => {
       expect(await reopened.getUsernameHistory("alice")).toHaveLength(1);
       expect(await reopened.getIdentityRoot(identity)).toEqual({ wallet });
       expect(await reopened.listValidators()).toHaveLength(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("durably enforces username and identity-root ownership", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nexnet-chain-"));
+    const statePath = join(directory, "state.json");
+    try {
+      const walletA = makeWallet(1);
+      const walletB = makeWallet(2);
+      const identityA = makeIdentity(1);
+      const identityB = makeIdentity(2);
+      const chain = new DevChainClient(statePath);
+      ageAccount(chain, walletA);
+      ageAccount(chain, walletB);
+      await chain.registerUsername("Alice", walletA, identityA);
+
+      await expect(chain.registerUsername("alice", walletB, identityB)).rejects.toThrow("Username already taken");
+      await expect(chain.registerUsername("bob", walletA, identityB)).rejects.toThrow("Wallet already owns");
+      await expect(chain.registerUsername("bob", walletB, identityA)).rejects.toThrow("Identity root already bound");
+
+      const reopened = new DevChainClient(statePath);
+      expect(await reopened.getIdentityRoot(identityA)).toEqual({ wallet: walletA });
+      expect(await reopened.getUsernameHistory("alice")).toEqual([
+        expect.objectContaining({ identityId: identityA, ownerWallet: walletA }),
+      ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

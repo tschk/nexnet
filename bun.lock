@@ -12,6 +12,7 @@
         "@hpke/chacha20poly1305": "1.7.1",
         "@nexnet/crypto": "workspace:*",
         "@nexnet/protocol": "workspace:*",
+        "@nexnet/storage": "workspace:*",
         "@nexnet/types": "workspace:*",
         "@noble/ciphers": "2.1.1",
         "@noble/curves": "2.0.1",

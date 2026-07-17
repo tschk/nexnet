@@ -82,6 +82,10 @@ function handleMessage(state: RelayState, sender: ClientInfo, raw: string): void
       handleDm(state, sender, msg);
       break;
 
+    case "delivery_receipt":
+      handleDeliveryReceipt(state, sender, msg);
+      break;
+
     case "ping":
       send(sender.ws, { type: "pong" });
       break;
@@ -179,6 +183,18 @@ function handleDm(state: RelayState, sender: ClientInfo, msg: RelayMessage): voi
 
   // Forward DM to target
   send(target.ws, { type: "dm", from: sender.identityId, envelope: msg.envelope });
+}
+
+function handleDeliveryReceipt(state: RelayState, sender: ClientInfo, msg: RelayMessage): void {
+  const targetId = msg.to as string;
+  if (!targetId || typeof msg.receipt !== "object" || msg.receipt === null) return;
+  const target = state.clients.get(targetId);
+  if (!target) return;
+  send(target.ws, {
+    type: "delivery_receipt",
+    from: sender.identityId,
+    receipt: msg.receipt,
+  });
 }
 
 function removeClient(state: RelayState, client: ClientInfo): void {

@@ -108,6 +108,7 @@ export {
 } from "./mls-groups.js";
 
 export { QueueManager } from "./queue-manager.js";
+export { consumePresenceMessage } from "./presence.js";
 export { DevChainClient } from "./chain-stub.js";
 
 export {

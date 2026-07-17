@@ -121,6 +121,7 @@ describe("Attachments", () => {
         return true;
       },
     } as unknown as PeerManager);
+    const senderKeys = crypto.generateSigningKeyPair();
     const client = new NexnetClient({
       identityId: new Uint8Array(32).fill(1),
       deviceId: new Uint8Array(32).fill(3),
@@ -128,7 +129,7 @@ describe("Attachments", () => {
       codec,
       relayUrl: "ws://relay.example",
       storagePath: "/tmp/attachments",
-      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+      signingSecretKey: senderKeys.secretKey,
     });
     const recipient = new NexnetClient({
       identityId: recipientId,
@@ -141,9 +142,13 @@ describe("Attachments", () => {
     });
     const file = new Uint8Array([1, 2, 3, 4, 5]);
     let attachmentKey: Uint8Array | undefined;
-    onDirectMessage(recipient, (_envelope, payload) => {
-      attachmentKey = new Uint8Array(payload.clientMetadata?.attachmentKey as number[]);
-    });
+    onDirectMessage(
+      recipient,
+      (_envelope, payload) => {
+        attachmentKey = new Uint8Array(payload.clientMetadata?.attachmentKey as number[]);
+      },
+      () => senderKeys.publicKey
+    );
 
     await sendAttachment(client, recipientId, file, "a.bin", "application/octet-stream", 2);
 

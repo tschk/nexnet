@@ -1,5 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { QueueManager } from "../queue-manager.js";
+import { consumePresenceMessage } from "../presence.js";
+import { cdeEncode } from "@nexnet/protocol";
+import { cryptoProvider } from "@nexnet/crypto";
 import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
 
 function createMockQueue(): OutboundQueueLike & { _items: OutboundQueueItem[] } {
@@ -74,7 +77,8 @@ describe("QueueManager", () => {
 
   test("presence retries only the recipient and receipt marks delivered", () => {
     const queue = createMockQueue();
-    const manager = new QueueManager(queue);
+    const recipientKeys = cryptoProvider.generateSigningKeyPair();
+    const manager = new QueueManager(queue, () => recipientKeys.publicKey);
     const handlers = new Map<string, (data: unknown) => void>();
     const sent: string[] = [];
     const client = {
@@ -85,6 +89,11 @@ describe("QueueManager", () => {
       off(event: string) {
         handlers.delete(event);
       },
+      emit(event: string, data: unknown) {
+        handlers.get(event)?.(data);
+      },
+      crypto: cryptoProvider,
+      codec: { encode: cdeEncode },
       sendDm(to: string) {
         sent.push(to);
         return true;
@@ -112,14 +121,39 @@ describe("QueueManager", () => {
     });
 
     manager.start(client);
-    handlers.get("presence")?.({
-      status: "online",
-      identityId: Buffer.from(recipient).toString("hex"),
+    consumePresenceMessage(client, {
+      type: "presence_snapshot",
+      leases: {
+        [Buffer.from(recipient).toString("hex")]: {
+          status: "online",
+          expiresAt: Date.now() + 60_000,
+        },
+      },
     });
     expect(sent).toEqual([Buffer.from(recipient).toString("hex")]);
     expect(queue._items[0]?.deliveryState).toBe("pending");
 
-    handlers.get("delivery_receipt")?.({ message_id: Array.from(messageId) });
+    const storedAt = Date.now();
+    const recipientDeviceId = new Uint8Array(32).fill(9);
+    handlers.get("delivery_receipt")?.({
+      from: Buffer.from(recipient).toString("hex"),
+      messageId,
+      recipientDeviceId,
+      storedAt,
+      signature: new Uint8Array(64),
+    });
+    expect(queue._items[0]?.deliveryState).toBe("pending");
+    const signature = cryptoProvider.sign(
+      recipientKeys.secretKey,
+      cdeEncode({ messageId, recipientDeviceId, storedAt })
+    );
+    handlers.get("delivery_receipt")?.({
+      from: Buffer.from(recipient).toString("hex"),
+      messageId,
+      recipientDeviceId,
+      storedAt,
+      signature,
+    });
     expect(queue._items[0]?.deliveryState).toBe("delivered");
     manager.stop();
   });

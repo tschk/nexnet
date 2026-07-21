@@ -12,7 +12,7 @@ flowchart TB
     Keys[Device keys + certificates]
     Store[Encrypted local store]
     Queue[Outbound offline queue]
-    UI[CLI / later GUI]
+    UI[OpenTUI client / SSH gateway / later GUI]
   end
 
   subgraph L2[2. P2P transport]

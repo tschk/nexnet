@@ -24,6 +24,7 @@ Coding agents may adjust, but this is the strong default.
 Initial target:
 
 - desktop TUI reference client
+- SSH terminal gateway alongside the local TUI
 - Bun client/networking core
 - later GUI clients
 

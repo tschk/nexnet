@@ -23,7 +23,8 @@ First usable MVP includes:
 - random matching with basic reputation
 - local blocks
 - open-source relay implementation
-- CLI reference client
+- OpenTUI reference client
+- SSH terminal entry point
 
 ## Explicitly not in first MVP
 
@@ -48,7 +49,7 @@ flowchart LR
   DM --> Att[Attachments]
   Pres --> Match[Discovery + random]
   ID --> Relay[Open relay]
-  DM --> CLI[CLI client]
+  DM --> CLI[OpenTUI + SSH clients]
 ```
 
 See [phases.md](phases.md) for build order.

@@ -33,6 +33,7 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-19 | Internal hash | **AD-8** BLAKE3-256 + derive_key |
 | OD-20 | Wallet address format | 32-byte Ed25519 root signing public key; it verifies device certificates |
 | OD-20b | Passkey device authorisation | Wallet-sign a credential commitment bound to credential ID, COSE key, RP ID, and origin; a verified, single-use assertion authorises or renews a device certificate |
+| OD-20c | Client surfaces | OpenTUI remains the local reference client; SSH is an additional hosted terminal entry point; no web app in the MVP |
 
 ## Still open (non-blocking for Phase 1)
 

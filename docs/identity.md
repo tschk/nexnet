@@ -160,3 +160,11 @@ A stolen unlocked device with a live process can use the cert until the
 process dies; cold start still needs passkey. Protocol still supports
 root-level invalidation of compromised credentials even if the first client
 hides that complexity.
+
+### SSH sessions
+
+An SSH public key identifies an SSH device but does not itself authenticate an
+interactive Nexnet session. The SSH gateway creates an approval request for
+that device; a live, passkey-authenticated OpenTUI client approves it. The
+gateway then grants the SSH process a device-scoped session that expires when
+the SSH connection closes.

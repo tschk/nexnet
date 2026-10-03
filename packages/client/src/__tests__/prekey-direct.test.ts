@@ -118,6 +118,7 @@ describe("direct transport DM path", () => {
   });
   afterEach(() => {
     setDirectTransport(null);
+    clearPrekeyDirectory();
     clearSessions();
   });
 
@@ -158,6 +159,8 @@ describe("direct transport DM path", () => {
     });
     const bobId = new Uint8Array(32).fill(0xb2);
     const bobHex = Buffer.from(bobId).toString("hex");
+    setupLocalPrekeys(cryptoProvider, aliceId, kpA.secretKey, kpA.publicKey, 0);
+    setupLocalPrekeys(cryptoProvider, bobId, kpB.secretKey, kpB.publicKey, 0);
 
     const directSent: Uint8Array[] = [];
     setDirectTransport({

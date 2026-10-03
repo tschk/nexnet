@@ -1,3 +1,4 @@
+import { DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import { describe, test, expect } from "bun:test";
 import { QueueManager } from "../queue-manager.js";
 import { consumePresenceMessage } from "../presence.js";
@@ -63,6 +64,7 @@ describe("QueueManager", () => {
       createdAt: Date.now(),
       attemptCount: 0,
       deliveryState: "pending",
+      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
     });
 
     expect(manager.pendingCount).toBe(1);
@@ -110,6 +112,7 @@ describe("QueueManager", () => {
       createdAt: Date.now(),
       attemptCount: 0,
       deliveryState: "pending",
+      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
     });
     manager.enqueue({
       messageId: new Uint8Array(32).fill(4),
@@ -118,6 +121,7 @@ describe("QueueManager", () => {
       createdAt: Date.now(),
       attemptCount: 0,
       deliveryState: "pending",
+      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
     });
 
     manager.start(client);
@@ -157,4 +161,43 @@ describe("QueueManager", () => {
     expect(queue._items[0]?.deliveryState).toBe("delivered");
     manager.stop();
   });
+});
+
+test("legacy custom-queue envelopes never retry or mutate, even with a valid receipt", () => {
+  const queue = createMockQueue();
+  const keys = cryptoProvider.generateSigningKeyPair();
+  const recipient = new Uint8Array(32).fill(2);
+  const handlers = new Map<string, (data: unknown) => void>();
+  let sends = 0;
+  const client = {
+    online: true, crypto: cryptoProvider, codec: { encode: cdeEncode },
+    on(event: string, handler: (data: unknown) => void) { handlers.set(event, handler); },
+    off(event: string) { handlers.delete(event); },
+    sendDm() { sends++; return true; },
+  } as unknown as import("../client.js").NexnetClient;
+  const manager = new QueueManager(queue, () => keys.publicKey);
+  for (const marker of [undefined, null, "unknown-format"]) {
+    queue.enqueue({
+      messageId: new Uint8Array(32).fill(queue._items.length + 1),
+      recipientIdentityId: recipient, encryptedEnvelope: new Uint8Array([2, 1, 3]),
+      createdAt: 123, attemptCount: 0, deliveryState: "pending",
+      encryptionFormat: marker as OutboundQueueItem["encryptionFormat"],
+    });
+  }
+  const before = structuredClone(queue._items);
+  manager.start(client);
+  try {
+    manager.processQueue(client);
+    handlers.get("presence")?.({ status: "online", identityId: Buffer.from(recipient).toString("hex") });
+    for (const item of queue._items) {
+      const receipt = { messageId: item.messageId, recipientDeviceId: new Uint8Array(32).fill(9), storedAt: Date.now() };
+      handlers.get("delivery_receipt")?.({
+        ...receipt, from: Buffer.from(recipient).toString("hex"),
+        signature: cryptoProvider.sign(keys.secretKey, cdeEncode(receipt)),
+      });
+      expect(() => manager.enqueue(item)).toThrow("Queue item lacks X3DH provenance");
+    }
+    expect(manager.pendingCount).toBe(0);
+    expect(sends).toBe(0); expect(queue._items).toEqual(before);
+  } finally { manager.stop(); }
 });

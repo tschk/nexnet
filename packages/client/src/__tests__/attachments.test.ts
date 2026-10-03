@@ -1,4 +1,4 @@
-import { afterEach, describe, test, expect } from "bun:test";
+import { beforeEach, afterEach, describe, test, expect } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import {
@@ -9,6 +9,8 @@ import {
 } from "../attachments.js";
 import { NexnetClient } from "../client.js";
 import { onDirectMessage } from "../dm.js";
+import { setupLocalPrekeys, clearPrekeyDirectory } from "../prekeys.js";
+import { clearSessions } from "../double-ratchet.js";
 import { setDirectTransport } from "../transport.js";
 import type { PeerManager } from "../webrtc.js";
 
@@ -28,7 +30,8 @@ describe("Attachments", () => {
     };
   }
 
-  afterEach(() => setDirectTransport(null));
+  beforeEach(() => { clearSessions(); clearPrekeyDirectory(); });
+  afterEach(() => { setDirectTransport(null); clearSessions(); clearPrekeyDirectory(); });
 
   test("prepareAttachment encrypts and hashes", () => {
     const file = new TextEncoder().encode("Hello, this is a test file!");
@@ -149,6 +152,9 @@ describe("Attachments", () => {
       deviceCertificate: issueDeviceCert(rootKeys.secretKey, senderKeys.publicKey, senderKeys.publicKey, senderDeviceId, senderIdentityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
       rootPublicKey: rootKeys.publicKey,
     });
+    const recipientKeys = crypto.generateSigningKeyPair();
+    setupLocalPrekeys(crypto, senderIdentityId, senderKeys.secretKey, senderKeys.publicKey, 0);
+    setupLocalPrekeys(crypto, recipientId, recipientKeys.secretKey, recipientKeys.publicKey, 0);
     const recipient = new NexnetClient({
       identityId: recipientId,
       deviceId: new Uint8Array(32).fill(4),
@@ -156,7 +162,7 @@ describe("Attachments", () => {
       codec,
       relayUrl: "ws://relay.example",
       storagePath: "/tmp/attachments-recipient",
-      signingSecretKey: crypto.generateSigningKeyPair().secretKey,
+      signingSecretKey: recipientKeys.secretKey,
     });
     const file = new Uint8Array([1, 2, 3, 4, 5]);
     let attachmentKey: Uint8Array | undefined;
@@ -264,6 +270,10 @@ describe("Attachments", () => {
       ...deviceConfig(new Uint8Array(32).fill(1), new Uint8Array(32).fill(3)),
     });
 
+    const recipientKeys = crypto.generateSigningKeyPair();
+    setupLocalPrekeys(crypto, client.identityId, client.deviceSigningSecretKey!, client.deviceSigningPublicKey!, 0);
+    setupLocalPrekeys(crypto, recipientId, recipientKeys.secretKey, recipientKeys.publicKey, 0);
+
     await expect(
       sendAttachment(client, recipientId, new Uint8Array([1]), "a.bin", "application/octet-stream")
     ).rejects.toThrow("Direct session is required");
@@ -286,6 +296,10 @@ describe("Attachments", () => {
       storagePath: "/tmp/attachments",
       ...deviceConfig(new Uint8Array(32).fill(1), new Uint8Array(32).fill(3)),
     });
+
+    const recipientKeys = crypto.generateSigningKeyPair();
+    setupLocalPrekeys(crypto, client.identityId, client.deviceSigningSecretKey!, client.deviceSigningPublicKey!, 0);
+    setupLocalPrekeys(crypto, recipientId, recipientKeys.secretKey, recipientKeys.publicKey, 0);
 
     await expect(
       sendAttachment(client, recipientId, new Uint8Array([1, 2]), "a.bin", "application/octet-stream", 1)

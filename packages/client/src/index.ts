@@ -5,7 +5,6 @@ export {
   sendDirectMessage,
   onDirectMessage,
   deriveConversationId,
-  deriveConversationKey,
   DM_WIRE_X3DH,
 } from "./dm.js";
 

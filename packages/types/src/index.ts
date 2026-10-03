@@ -431,7 +431,13 @@ export const DEFAULT_REPUTATION_THRESHOLD = 0.25;
 
 export type DeliveryState = "pending" | "sent" | "delivered" | "failed";
 
+/** Trusted-local metadata, never inferred from an envelope or accepted from a peer.
+ * Wire v1 alone cannot distinguish X3DH sessions from obsolete public-root ones. */
+export const DM_X3DH_QUEUE_FORMAT = "nexnet-dm-x3dh-v1" as const;
+
 export interface OutboundQueueItem {
+  /** Missing/null marks legacy unknown-origin ciphertext, ineligible for retry. */
+  encryptionFormat?: typeof DM_X3DH_QUEUE_FORMAT | null;
   messageId: MessageId;
   recipientIdentityId: IdentityId;
   encryptedEnvelope: Uint8Array;

@@ -325,6 +325,18 @@ export function sessionStoreKey(
   return `${Buffer.from(conversationId).toString("hex")}:${Buffer.from(peerId).toString("hex")}`;
 }
 
+/**
+ * DM-only, trusted-local X3DH provenance namespace. Never migrate unversioned
+ * records: their root origin is unknown, even if some used X3DH historically.
+ * Those records remain untouched; both endpoints need a fresh X3DH bootstrap.
+ * Mixed old/new peers retaining old state may not reconnect automatically;
+ * this is deliberately not a transparent session migration.
+ * Generic ratchet helpers must not write to this namespace.
+ */
+export function x3dhSessionStoreKey(conversationId: Uint8Array, peerId: Uint8Array): string {
+  return `nexnet-dm-x3dh-v1:${sessionStoreKey(conversationId, peerId)}`;
+}
+
 interface SerializedRatchet {
   DHs: { secretKey: number[]; publicKey: number[] };
   DHr: number[] | null;

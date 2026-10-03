@@ -207,7 +207,7 @@ describe("X3DH-wired DMs", () => {
     await bob.disconnect();
   });
 
-  test("fallback HKDF path still works without prekeys", async () => {
+  test("new sessions fail closed without prekeys", async () => {
     const kpA = cryptoProvider.generateSigningKeyPair();
     const kpB = cryptoProvider.generateSigningKeyPair();
     const alice = makeClient(0xc1, kpA);
@@ -223,9 +223,9 @@ describe("X3DH-wired DMs", () => {
       (id) => pubs.get(Buffer.from(id).toString("hex"))
     );
 
-    await sendDirectMessage(alice, bob.identityId, "plain path");
-    await new Promise((r) => setTimeout(r, 40));
-    expect(got).toEqual(["plain path"]);
+    await expect(sendDirectMessage(alice, bob.identityId, "plain path")).rejects.toThrow("X3DH prekeys are required");
+    expect(got).toEqual([]);
+    expect(MockWebSocket.instances.flatMap((ws) => ws.sent).some((raw) => JSON.parse(raw).type === "dm")).toBe(false);
 
     await alice.disconnect();
     await bob.disconnect();
@@ -234,6 +234,9 @@ describe("X3DH-wired DMs", () => {
   test("accepts a passkey-authorized certificate only when the chain resolves the same certificate", async () => {
     const alice = makeClient(0xc3, cryptoProvider.generateSigningKeyPair(), true);
     const bob = makeClient(0xc4, cryptoProvider.generateSigningKeyPair(), true);
+    for (const peer of [alice, bob]) {
+      setupLocalPrekeys(cryptoProvider, peer.identityId, peer.deviceSigningSecretKey!, peer.deviceSigningPublicKey!, 0);
+    }
 
     await alice.connect();
     await bob.connect();
@@ -261,6 +264,9 @@ describe("X3DH-wired DMs", () => {
   test("drops a passkey-authorized certificate that differs from the chain record", async () => {
     const alice = makeClient(0xc5, cryptoProvider.generateSigningKeyPair(), true);
     const bob = makeClient(0xc6, cryptoProvider.generateSigningKeyPair(), true);
+    for (const peer of [alice, bob]) {
+      setupLocalPrekeys(cryptoProvider, peer.identityId, peer.deviceSigningSecretKey!, peer.deviceSigningPublicKey!, 0);
+    }
 
     await alice.connect();
     await bob.connect();

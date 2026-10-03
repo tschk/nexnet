@@ -7,6 +7,7 @@ import {
   onDirectMessage,
   deriveConversationId,
 } from "../dm.js";
+import { setupLocalPrekeys, clearPrekeyDirectory } from "../prekeys.js";
 import { clearSessions as clearRatchetSessions } from "../double-ratchet.js";
 import {
   createGroup,
@@ -182,12 +183,14 @@ describe("integration", () => {
     MockWebSocket.instances = [];
     MockWebSocket.autoConnect = true;
     clearRatchetSessions();
+    clearPrekeyDirectory();
     clearGroupSessions();
     pubkeys.clear();
     rootKeys.clear();
   });
 
   afterEach(() => {
+    clearPrekeyDirectory();
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = origWs;
   });
 
@@ -228,6 +231,8 @@ describe("integration", () => {
       rootPublicKey: rootB.publicKey,
     });
 
+    setupLocalPrekeys(cryptoProvider, alice.identityId, kpA.secretKey, kpA.publicKey, 0);
+    setupLocalPrekeys(cryptoProvider, bob.identityId, kpB.secretKey, kpB.publicKey, 0);
     registerKey(alice, kpA.publicKey);
     registerKey(bob, kpB.publicKey);
     rootKeys.set(alice.identityHex, rootA.publicKey);

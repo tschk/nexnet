@@ -2,7 +2,7 @@
  * @nexnet/client — Direct messaging
  *
  * Flow: payload → CDE → Double Ratchet seal → envelope sign → send/queue
- * First message may use X3DH when peer bundle + local prekeys exist.
+ * New sessions require X3DH with a peer bundle and local prekeys.
  * Wire v1: ratchet only. Wire v2: X3DH handshake ‖ ratchet.
  */
 
@@ -16,19 +16,19 @@ import type {
   DeviceCertificate,
   DeviceCertificateResolver,
 } from "@nexnet/types";
-import { DOMAIN_EVENT_ID, PROTOCOL_VERSION } from "@nexnet/types";
+import { DOMAIN_EVENT_ID, PROTOCOL_VERSION, DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import { verifyDeviceCert } from "@nexnet/protocol";
 import type { NexnetClient } from "./client.js";
 import {
-  getOrCreateRecvSession,
-  getOrCreateSendSession,
+  deserializeState,
+  serializeState,
   getSession,
   initInitiator,
   initResponder,
   open as ratchetOpen,
   saveSession,
   seal as ratchetSeal,
-  sessionStoreKey,
+  x3dhSessionStoreKey,
   setSession,
 } from "./double-ratchet.js";
 import {
@@ -40,7 +40,6 @@ import { x3dhInitiate, x3dhRespond } from "./x3dh.js";
 import { trySendDirect } from "./transport.js";
 
 const DOMAIN_CONVERSATION_ID = "nexnet conversation id v1";
-const DOMAIN_CONVERSATION_KEY = "nexnet dm conversation key v1";
 
 /** Wire v2: X3DH first-message prefix before ratchet blob */
 export const DM_WIRE_X3DH = 2;
@@ -118,64 +117,47 @@ function handleAuthorizedDirectMessage(
       senderIdentityId: envelope.senderIdentityId,
       recipientIdentityId: envelope.recipientIdentityId,
     });
-    const sessionKey = sessionStoreKey(
+    const sessionKey = x3dhSessionStoreKey(
       envelope.conversationId,
       envelope.senderIdentityId
     );
 
     let ratchetBlob = envelope.ciphertext;
-    let existing = getSession(sessionKey);
+    const stored = getSession(sessionKey);
+    // Stage ratchet/OTP changes: a signed but unauthenticatable first message
+    // must neither install a session nor consume the recipient's one-time key.
+    let existing = stored ? deserializeState(serializeState(stored)) : undefined;
+    let consumedOtp: { material: NonNullable<ReturnType<typeof getLocalPrekeys>>; id: number } | undefined;
 
     if (!existing) {
       const x3dh = decodeX3dhPrefix(envelope.ciphertext);
       const local = getLocalPrekeys(client.identityId);
-
-      if (x3dh && local) {
-        const resp = x3dhRespond(
-          client.crypto,
-          local,
-          x3dh.identityDhPublic,
-          x3dh.ekPublic,
-          x3dh.otpId
-        );
-        existing = initResponder(resp.sk, client.crypto);
-        setSession(sessionKey, existing);
-        ratchetBlob = x3dh.ratchetBlob;
-        // Drop used OTP from published bundle if we know our sign pk
-        // our own sign pk is not in getSenderPublicKey; refresh if local only
-        const selfBundle = fetchBundle(client.identityId);
-        if (selfBundle) {
-          refreshPublishedBundle(
-            client.identityId,
-            selfBundle.identitySignPublic
-          );
-        }
-      } else {
-        const rootSk = deriveConversationKey(
-          client.crypto,
-          envelope.conversationId
-        );
-        existing = getOrCreateRecvSession(
-          sessionKey,
-          rootSk,
-          client.crypto
-        );
-      }
+      if (!x3dh || !local) return;
+      const resp = x3dhRespond(
+        client.crypto,
+        { ...local, oneTime: new Map(local.oneTime) },
+        x3dh.identityDhPublic,
+        x3dh.ekPublic,
+        x3dh.otpId
+      );
+      existing = initResponder(resp.sk, client.crypto);
+      ratchetBlob = x3dh.ratchetBlob;
+      if (x3dh.otpId !== undefined) consumedOtp = { material: local, id: x3dh.otpId };
     } else if (envelope.ciphertext[0] === DM_WIRE_X3DH) {
-      // Session already exists; strip accidental v2 prefix if re-delivered
+      // An established X3DH session can receive a delayed first-message prefix.
       const x3dh = decodeX3dhPrefix(envelope.ciphertext);
-      if (x3dh) ratchetBlob = x3dh.ratchetBlob;
+      if (!x3dh) return;
+      ratchetBlob = x3dh.ratchetBlob;
     }
 
-    const plaintext = ratchetOpen(
-      client.crypto,
-      existing,
-      ratchetBlob,
-      aad
-    );
-    saveSession(sessionKey, existing);
-
+    const plaintext = ratchetOpen(client.crypto, existing, ratchetBlob, aad);
     const payload = client.codec.decode<MessagePayload>(plaintext);
+    saveSession(sessionKey, existing);
+    if (consumedOtp) {
+      consumedOtp.material.oneTime.delete(consumedOtp.id);
+      const selfBundle = fetchBundle(client.identityId);
+      if (selfBundle) refreshPublishedBundle(client.identityId, selfBundle.identitySignPublic);
+    }
     if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
     callback(envelope, payload);
     client.sendDeliveryReceipt(
@@ -184,21 +166,6 @@ function handleAuthorizedDirectMessage(
     );
   } catch {
   }
-}
-
-/**
- * Fallback root SK from conversation_id (no prekeys).
- */
-export function deriveConversationKey(
-  crypto: NexnetClient["crypto"],
-  conversationId: ConversationId
-): Uint8Array {
-  return crypto.hkdf(
-    conversationId,
-    new Uint8Array(0),
-    new TextEncoder().encode(DOMAIN_CONVERSATION_KEY),
-    32
-  );
 }
 
 export function deriveConversationId(
@@ -285,7 +252,7 @@ export async function sendDirectMessage(
     senderIdentityId: client.identityId,
     recipientIdentityId: recipientId,
   });
-  const sessionKey = sessionStoreKey(conversationId, recipientId);
+  const sessionKey = x3dhSessionStoreKey(conversationId, recipientId);
 
   let ciphertext: Uint8Array;
   const existing = getSession(sessionKey);
@@ -294,37 +261,23 @@ export async function sendDirectMessage(
     ciphertext = ratchetSeal(client.crypto, existing, payloadCde, aad);
     saveSession(sessionKey, existing);
   } else {
-    // Prefer X3DH when peer bundle (local cache or prior fetch) + our material exist
     const local = getLocalPrekeys(client.identityId);
     const remote = fetchBundle(recipientId);
-
-    if (local && remote) {
-      const init = x3dhInitiate(
-        client.crypto,
-        local.identityDh.secretKey,
-        remote
-      );
-      const ratchet = initInitiator(init.sk, client.crypto);
-      const sealed = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
-      setSession(sessionKey, ratchet);
-      const prefix = encodeX3dhPrefix(
-        local.identityDh.publicKey,
-        init.ekPublic,
-        init.usedOneTimePrekeyId
-      );
-      ciphertext = new Uint8Array(prefix.length + sealed.length);
-      ciphertext.set(prefix, 0);
-      ciphertext.set(sealed, prefix.length);
-    } else {
-      const rootSk = deriveConversationKey(client.crypto, conversationId);
-      const ratchet = getOrCreateSendSession(
-        sessionKey,
-        rootSk,
-        client.crypto
-      );
-      ciphertext = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
-      saveSession(sessionKey, ratchet);
+    if (!local || !remote) {
+      throw new Error("X3DH prekeys are required for a new DM session");
     }
+    const init = x3dhInitiate(client.crypto, local.identityDh.secretKey, remote);
+    const ratchet = initInitiator(init.sk, client.crypto);
+    const sealed = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
+    setSession(sessionKey, ratchet);
+    const prefix = encodeX3dhPrefix(
+      local.identityDh.publicKey,
+      init.ekPublic,
+      init.usedOneTimePrekeyId
+    );
+    ciphertext = new Uint8Array(prefix.length + sealed.length);
+    ciphertext.set(prefix, 0);
+    ciphertext.set(sealed, prefix.length);
   }
 
   const envelopePreimage = client.codec.encode({
@@ -382,6 +335,7 @@ export async function sendDirectMessage(
       messageId,
       recipientIdentityId: recipientId,
       encryptedEnvelope: client.codec.encode(envelope),
+      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
       createdAt: now,
       attemptCount: 0,
       deliveryState: "pending",

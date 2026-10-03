@@ -8,6 +8,7 @@
  */
 
 import { Database } from "bun:sqlite";
+import { DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import type {
   MessageId,
   IdentityId,
@@ -34,23 +35,26 @@ export class OutboundQueue implements OutboundQueueLike {
     this.enqueueStmt = this.db.prepare(
       `INSERT OR REPLACE INTO outbound
        (message_id, recipient_identity, encrypted_envelope, created_at,
-        last_attempt_at, next_attempt_at, attempt_count, delivery_state)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        last_attempt_at, next_attempt_at, attempt_count, delivery_state, encryption_format)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     this.pendingStmt = this.db.prepare(
       `SELECT * FROM outbound
        WHERE delivery_state = 'pending'
+         AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'
          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
        ORDER BY created_at ASC`
     );
     this.pendingForRecipientStmt = this.db.prepare(
       `SELECT * FROM outbound
        WHERE delivery_state = 'pending'
+         AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'
          AND recipient_identity = ?
        ORDER BY created_at ASC`
     );
     this.markDeliveredStmt = this.db.prepare(
-      "UPDATE outbound SET delivery_state = 'delivered' WHERE message_id = ?"
+      `UPDATE outbound SET delivery_state = 'delivered' WHERE message_id = ?
+       AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`
     );
     this.markAttemptStmt = this.db.prepare(
       `UPDATE outbound
@@ -58,7 +62,7 @@ export class OutboundQueue implements OutboundQueueLike {
            last_attempt_at = ?,
            next_attempt_at = ?,
            delivery_state = CASE WHEN attempt_count + 1 >= 10 THEN 'failed' ELSE 'pending' END
-       WHERE message_id = ?`
+       WHERE message_id = ? AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`
     );
     this.getByIdStmt = this.db.prepare(
       "SELECT * FROM outbound WHERE message_id = ?"
@@ -81,20 +85,37 @@ export class OutboundQueue implements OutboundQueueLike {
       )
     `);
 
+    // Additive migration: never relabel or remove old ciphertext. Unknown-origin
+    // rows remain in SQLite, but cannot be retried or marked delivered.
+    db.transaction(() => {
+      const columns = db.query("PRAGMA table_info(outbound)").all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "encryption_format")) {
+        db.exec("ALTER TABLE outbound ADD COLUMN encryption_format TEXT");
+      }
+    }).immediate();
     return new OutboundQueue(db);
   }
 
   enqueue(item: OutboundQueueItem): void {
-    this.enqueueStmt.run(
-      item.messageId,
-      item.recipientIdentityId,
-      item.encryptedEnvelope,
-      item.createdAt,
-      item.lastAttemptAt ?? null,
-      item.nextAttemptAt ?? null,
-      item.attemptCount,
-      item.deliveryState
-    );
+    const encryptionFormat = item.encryptionFormat;
+    if (encryptionFormat !== DM_X3DH_QUEUE_FORMAT) throw new Error("Queue item lacks X3DH provenance");
+    this.db.transaction(() => {
+      const existing = this.getByIdStmt.get(item.messageId) as { encryption_format: unknown } | null;
+      if (existing && existing.encryption_format !== DM_X3DH_QUEUE_FORMAT) {
+        throw new Error("Cannot replace a legacy queue item");
+      }
+      this.enqueueStmt.run(
+        item.messageId,
+        item.recipientIdentityId,
+        item.encryptedEnvelope,
+        item.createdAt,
+        item.lastAttemptAt ?? null,
+        item.nextAttemptAt ?? null,
+        item.attemptCount,
+        item.deliveryState,
+        encryptionFormat
+      );
+    }).immediate();
   }
 
   pending(): OutboundQueueItem[] {
@@ -115,8 +136,10 @@ export class OutboundQueue implements OutboundQueueLike {
       next_attempt_at: number | null;
       attempt_count: number;
       delivery_state: string;
+      encryption_format: typeof DM_X3DH_QUEUE_FORMAT;
     }>).map((row) => ({
       messageId: new Uint8Array(row.message_id),
+      encryptionFormat: row.encryption_format,
       recipientIdentityId: new Uint8Array(row.recipient_identity),
       encryptedEnvelope: new Uint8Array(row.encrypted_envelope),
       createdAt: row.created_at,

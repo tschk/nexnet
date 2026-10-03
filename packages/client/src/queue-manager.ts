@@ -7,7 +7,7 @@
  * - Bounded exponential backoff on failure
  */
 
-import { PRESENCE_POLL_INTERVAL_MS } from "@nexnet/types";
+import { PRESENCE_POLL_INTERVAL_MS, DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import type { IdentityId, OutboundQueueLike, OutboundQueueItem, PublicKey } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 
@@ -64,7 +64,7 @@ export class QueueManager {
         Buffer.from(pending.messageId).equals(Buffer.from(messageId))
       );
       const publicKey = this.getReceiptPublicKey?.(identityId);
-      if (!item || !publicKey || !this.client?.crypto.verify(
+      if (!item || item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT || !publicKey || !this.client?.crypto.verify(
         publicKey,
         this.client.codec.encode({ messageId, recipientDeviceId, storedAt: msg.storedAt }),
         signature
@@ -92,6 +92,7 @@ export class QueueManager {
   }
 
   enqueue(item: OutboundQueueItem): void {
+    if (item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT) throw new Error("Queue item lacks X3DH provenance");
     this.queue.enqueue(item);
   }
 
@@ -102,7 +103,7 @@ export class QueueManager {
       ? this.queue.pendingForRecipient(Buffer.from(recipientHex, "hex"))
       : this.queue.pending();
     for (const item of pending) {
-      if (item.attemptCount >= MAX_ATTEMPTS) continue;
+      if (item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT || item.attemptCount >= MAX_ATTEMPTS) continue;
 
       const recipientHex = Buffer.from(item.recipientIdentityId).toString("hex");
       if (client.sendDm(recipientHex, Array.from(item.encryptedEnvelope))) {
@@ -112,7 +113,7 @@ export class QueueManager {
   }
 
   get pendingCount(): number {
-    return this.queue.pending().length;
+    return this.queue.pending().filter((item) => item.encryptionFormat === DM_X3DH_QUEUE_FORMAT).length;
   }
 }
 

@@ -2,9 +2,11 @@ use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::protocol::{MAX_LINE_BYTES, SERIAL_PREFIX};
 
@@ -66,16 +68,19 @@ impl Link {
             let _ = child.wait();
             return Err(io::Error::other("agent pipes unavailable"));
         };
-        let tail = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let tail = Arc::new(StderrTail::default());
         if let Some(mut err) = stderr {
             let tail = Arc::clone(&tail);
             thread::spawn(move || {
                 let mut chunk = [0u8; 1024];
                 loop {
                     match err.read(&mut chunk) {
-                        Ok(0) | Err(_) => break,
+                        Ok(0) | Err(_) => {
+                            tail.done.store(true, Ordering::SeqCst);
+                            break;
+                        }
                         Ok(n) => {
-                            if let Ok(mut buf) = tail.lock() {
+                            if let Ok(mut buf) = tail.buf.lock() {
                                 buf.extend_from_slice(&chunk[..n]);
                                 if buf.len() > STDERR_KEEP {
                                     let cut = buf.len() - STDERR_KEEP;
@@ -114,7 +119,7 @@ impl Link {
         writer: Box<dyn Write + Send>,
         prefixed: bool,
         child: Option<Child>,
-        stderr_tail: Option<Arc<Mutex<Vec<u8>>>>,
+        stderr_tail: Option<Arc<StderrTail>>,
     ) -> Link {
         let (msg_tx, rx) = mpsc::channel::<LinkMsg>();
         let (out, out_rx) = mpsc::channel::<String>();
@@ -212,11 +217,22 @@ impl Drop for Link {
     }
 }
 
-fn close_reason(tail: &Option<Arc<Mutex<Vec<u8>>>>) -> String {
+#[derive(Default)]
+pub struct StderrTail {
+    buf: Mutex<Vec<u8>>,
+    done: AtomicBool,
+}
+
+fn close_reason(tail: &Option<Arc<StderrTail>>) -> String {
     let Some(tail) = tail else {
         return String::from("link closed");
     };
+    let waited = Instant::now();
+    while !tail.done.load(Ordering::SeqCst) && waited.elapsed() < Duration::from_millis(300) {
+        thread::sleep(Duration::from_millis(5));
+    }
     let text = tail
+        .buf
         .lock()
         .map(|b| String::from_utf8_lossy(&b).into_owned())
         .unwrap_or_default();

@@ -17,3 +17,5 @@ Cargo.lock
 /deployments/local/
 /tmp/
 node_modules/
+/terminal/target/
+!/terminal/Cargo.lock

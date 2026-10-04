@@ -34,12 +34,27 @@
         "@noble/hashes": "^1.7.0",
       },
     },
+    "packages/gateway": {
+      "name": "@nexnet/gateway",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexnet/client": "workspace:*",
+        "@nexnet/crypto": "workspace:*",
+        "@nexnet/protocol": "workspace:*",
+        "@nexnet/types": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "cbor2": "^1.7.0",
+      },
+    },
     "packages/protocol": {
       "name": "@nexnet/protocol",
       "version": "0.0.1",
       "dependencies": {
         "@nexnet/crypto": "workspace:*",
         "@nexnet/types": "workspace:*",
+        "@noble/hashes": "^1.7.0",
         "cbor2": "^1.7.0",
       },
     },
@@ -359,6 +374,8 @@
 
     "@nexnet/crypto": ["@nexnet/crypto@workspace:packages/crypto"],
 
+    "@nexnet/gateway": ["@nexnet/gateway@workspace:packages/gateway"],
+
     "@nexnet/protocol": ["@nexnet/protocol@workspace:packages/protocol"],
 
     "@nexnet/relay-standalone": ["@nexnet/relay-standalone@workspace:packages/relay-standalone"],
@@ -587,7 +604,7 @@
 
     "bun-ffi-structs": ["bun-ffi-structs@0.2.4", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-AJzsqoVFs1KBbJbWHIYrVZLDC3NhTqqh25awRXqzoLzmBAKr5oqk6+CwuYHAekKx+VBCYVohBoKuRq40dV+TYg=="],
 
-    "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
+    "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "camelcase": ["camelcase@8.0.0", "", {}, "sha512-8WB3Jcas3swSvjIeA2yvCJ+Miyz5l1ZmB6HFb9R1317dt9LCQoswg/BGrmAmkWVEszSrrg4RwmO46qIm2OEnSA=="],
 

@@ -1,0 +1,21 @@
+{
+  "name": "@nexnet/gateway",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nexnet/client": "workspace:*",
+    "@nexnet/crypto": "workspace:*",
+    "@nexnet/protocol": "workspace:*",
+    "@nexnet/types": "workspace:*"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "cbor2": "^1.7.0"
+  }
+}

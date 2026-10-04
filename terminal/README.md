@@ -35,10 +35,10 @@ LTO, `panic = "abort"`, stripped).
 nexnet [--agent <cmd...> | --serial <path>]
 ```
 
-| Option | Env | Transport |
-|---|---|---|
-| `--agent <cmd...>` | `NEXNET_AGENT` | Spawn the agent, use its stdin/stdout. Must be the last option. The env value is split on whitespace (no quoting). The agent's stderr is never shown; the last line of it is appended to the `disconnected` message when the agent exits. |
-| `--serial <path>` | `NEXNET_SERIAL` | Open a character device read+write. Every line sent and received carries the prefix `@@nexnet `; received lines without it (console noise) are ignored. The device is switched to raw mode (no echo, no line editing) when opened, because some console drivers reset termios on close. |
+| Option             | Env             | Transport                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--agent <cmd...>` | `NEXNET_AGENT`  | Spawn the agent, use its stdin/stdout. Must be the last option. The env value is split on whitespace (no quoting). The agent's stderr is never shown; the last line of it is appended to the `disconnected` message when the agent exits.                                               |
+| `--serial <path>`  | `NEXNET_SERIAL` | Open a character device read+write. Every line sent and received carries the prefix `@@nexnet `; received lines without it (console noise) are ignored. The device is switched to raw mode (no echo, no line editing) when opened, because some console drivers reset termios on close. |
 
 Command-line options win over the environment. Giving both transports is an
 error. With neither, the UI starts in a "no agent configured" state with
@@ -57,21 +57,21 @@ Drafts and cached messages survive reconnects. Malformed, oversize
 
 ## Keys
 
-| Key | Action |
-|---|---|
-| `1` `2` `3` | Updates, Public chat, Identity |
-| `Tab` / `Shift+Tab` | Next / previous page |
-| `Up` `Down` `PageUp` `PageDown` `Home` `End` | Scroll the message pane (`End` jumps to newest) |
-| `e` or `Enter` | Open the editor (Public; Updates only when `state.owner` is true) |
-| `Enter` (editing) | Post; the draft clears only on success |
-| `Esc` (editing) | Leave the editor, keep the draft |
-| `Ctrl+U` / `Ctrl+A` / `Ctrl+E` (editing) | Clear draft / home / end |
-| `c` (Identity) | Create identity (only when none exists) |
-| `s` (Identity) | Cycle the sign-in method among those the agent offers (default `wallet`) |
-| `Enter` (Identity) | Sign in with the selected method |
-| `o` (Identity) | Sign out |
-| `q` | Quit (plain text while editing) |
-| `Ctrl+C` | Quit from anywhere |
+| Key                                          | Action                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `1` `2` `3`                                  | Updates, Public chat, Identity                                           |
+| `Tab` / `Shift+Tab`                          | Next / previous page                                                     |
+| `Up` `Down` `PageUp` `PageDown` `Home` `End` | Scroll the message pane (`End` jumps to newest)                          |
+| `e` or `Enter`                               | Open the editor (Public; Updates only when `state.owner` is true)        |
+| `Enter` (editing)                            | Post; the draft clears only on success                                   |
+| `Esc` (editing)                              | Leave the editor, keep the draft                                         |
+| `Ctrl+U` / `Ctrl+A` / `Ctrl+E` (editing)     | Clear draft / home / end                                                 |
+| `c` (Identity)                               | Create identity (only when none exists)                                  |
+| `s` (Identity)                               | Cycle the sign-in method among those the agent offers (default `wallet`) |
+| `Enter` (Identity)                           | Sign in with the selected method                                         |
+| `o` (Identity)                               | Sign out                                                                 |
+| `q`                                          | Quit (plain text while editing)                                          |
+| `Ctrl+C`                                     | Quit from anywhere                                                       |
 
 Posting while signed out does not fail silently: the status line points to
 Identity (3) and the draft is kept. The same holds for `rate_limited`,

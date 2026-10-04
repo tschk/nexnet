@@ -1,17 +1,10 @@
 export type ErrorCode =
-  | "unconfigured"
-  | "offline"
-  | "unauthenticated"
-  | "forbidden"
-  | "revoked"
-  | "rate_limited"
-  | "invalid"
-  | "internal";
+  "unconfigured" | "offline" | "unauthenticated" | "forbidden" | "revoked" | "rate_limited" | "invalid" | "internal";
 
 export class AgentError extends Error {
   constructor(
     readonly code: ErrorCode,
-    message: string
+    message: string,
   ) {
     super(message);
   }

@@ -3,7 +3,7 @@ import { AgentError, codeForStatus } from "./errors.js";
 export class GatewayApi {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetcher?: typeof fetch
+    private readonly fetcher?: typeof fetch,
   ) {}
 
   get url(): string {
@@ -36,7 +36,7 @@ export class GatewayApi {
     if (!response.ok) {
       throw new AgentError(
         codeForStatus(response.status, parsed?.error?.code),
-        typeof parsed?.error?.message === "string" ? parsed.error.message : `Gateway returned ${response.status}`
+        typeof parsed?.error?.message === "string" ? parsed.error.message : `Gateway returned ${response.status}`,
       );
     }
     return parsed as T;

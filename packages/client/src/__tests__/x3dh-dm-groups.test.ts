@@ -2,18 +2,9 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
-import {
-  sendDirectMessage,
-  onDirectMessage,
-} from "../dm.js";
-import {
-  setupLocalPrekeys,
-  clearPrekeyDirectory,
-  fetchBundle,
-} from "../prekeys.js";
-import {
-  clearSessions as clearRatchet,
-} from "../double-ratchet.js";
+import { sendDirectMessage, onDirectMessage } from "../dm.js";
+import { setupLocalPrekeys, clearPrekeyDirectory, fetchBundle } from "../prekeys.js";
+import { clearSessions as clearRatchet } from "../double-ratchet.js";
 import {
   createGroup,
   addMember,
@@ -25,12 +16,7 @@ import {
   clearGroupMembership,
   listGroupMembers,
 } from "../groups.js";
-import {
-  clearGroupSessions,
-  getGroupSession,
-  initGroupSession,
-  rotateEpoch,
-} from "../group-crypto.js";
+import { clearGroupSessions, getGroupSession, initGroupSession, rotateEpoch } from "../group-crypto.js";
 import { generateKeyPair as genDh } from "@nexnet/crypto";
 import type { CborCdeCodec } from "@nexnet/types";
 
@@ -94,9 +80,7 @@ class MockWebSocket {
                   : msg.groupId,
               }
             : msg;
-        queueMicrotask(() =>
-          ws.onmessage?.({ data: JSON.stringify(out) })
-        );
+        queueMicrotask(() => ws.onmessage?.({ data: JSON.stringify(out) }));
       }
     }
   }
@@ -109,13 +93,22 @@ class MockWebSocket {
 function makeClient(
   fill: number,
   keys: { secretKey: Uint8Array; publicKey: Uint8Array },
-  passkeyAuthorized = false
+  passkeyAuthorized = false,
 ): NexnetClient {
   const identityId = new Uint8Array(32).fill(fill);
   const deviceId = new Uint8Array(32).fill(fill ^ 0x55);
   const root = cryptoProvider.generateSigningKeyPair();
   pubs.set(Buffer.from(identityId).toString("hex"), root.publicKey);
-  const certificate = issueDeviceCert(root.secretKey, keys.publicKey, keys.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1);
+  const certificate = issueDeviceCert(
+    root.secretKey,
+    keys.publicKey,
+    keys.publicKey,
+    deviceId,
+    identityId,
+    Date.now(),
+    Number.MAX_SAFE_INTEGER,
+    1,
+  );
   if (passkeyAuthorized) certificate.rootSignature = new Uint8Array(64);
   return new NexnetClient({
     identityId,
@@ -130,8 +123,7 @@ function makeClient(
     deviceCertificate: certificate,
     deviceCertificateResolver: passkeyAuthorized
       ? async (identity, device) =>
-          Buffer.from(identity).equals(Buffer.from(identityId)) &&
-          Buffer.from(device).equals(Buffer.from(deviceId))
+          Buffer.from(identity).equals(Buffer.from(identityId)) && Buffer.from(device).equals(Buffer.from(deviceId))
             ? structuredClone(certificate)
             : null
       : undefined,
@@ -163,20 +155,8 @@ describe("X3DH-wired DMs", () => {
     const alice = makeClient(0xa1, kpA);
     const bob = makeClient(0xb2, kpB);
 
-    setupLocalPrekeys(
-      cryptoProvider,
-      alice.identityId,
-      kpA.secretKey,
-      kpA.publicKey,
-      0
-    );
-    setupLocalPrekeys(
-      cryptoProvider,
-      bob.identityId,
-      kpB.secretKey,
-      kpB.publicKey,
-      3
-    );
+    setupLocalPrekeys(cryptoProvider, alice.identityId, kpA.secretKey, kpA.publicKey, 0);
+    setupLocalPrekeys(cryptoProvider, bob.identityId, kpB.secretKey, kpB.publicKey, 3);
     expect(fetchBundle(bob.identityId)?.oneTimePrekeyId).toBeDefined();
 
     await alice.connect();
@@ -186,7 +166,7 @@ describe("X3DH-wired DMs", () => {
     onDirectMessage(
       bob,
       (_e, p) => got.push(p.text),
-      (id) => pubs.get(Buffer.from(id).toString("hex"))
+      (id) => pubs.get(Buffer.from(id).toString("hex")),
     );
 
     await sendDirectMessage(alice, bob.identityId, "x3dh hello");
@@ -220,7 +200,7 @@ describe("X3DH-wired DMs", () => {
     onDirectMessage(
       bob,
       (_e, p) => got.push(p.text),
-      (id) => pubs.get(Buffer.from(id).toString("hex"))
+      (id) => pubs.get(Buffer.from(id).toString("hex")),
     );
 
     await expect(sendDirectMessage(alice, bob.identityId, "plain path")).rejects.toThrow("X3DH prekeys are required");
@@ -250,7 +230,7 @@ describe("X3DH-wired DMs", () => {
         Buffer.from(identity).equals(Buffer.from(alice.identityId)) &&
         Buffer.from(device).equals(Buffer.from(alice.deviceId))
           ? structuredClone(alice.deviceCertificate!)
-          : null
+          : null,
     );
 
     await sendDirectMessage(alice, bob.identityId, "passkey hello");
@@ -276,7 +256,7 @@ describe("X3DH-wired DMs", () => {
       bob,
       (_e, p) => got.push(p.text),
       (id) => pubs.get(Buffer.from(id).toString("hex")),
-      async () => ({ ...structuredClone(alice.deviceCertificate!), capabilities: 2 })
+      async () => ({ ...structuredClone(alice.deviceCertificate!), capabilities: 2 }),
     );
 
     await sendDirectMessage(alice, bob.identityId, "reject me");
@@ -303,9 +283,7 @@ describe("group membership epoch rotate", () => {
     const kp = cryptoProvider.generateSigningKeyPair();
     const client = makeClient(0xd1, kp);
     // offline create still inits session
-    const groupId = await createGroup(client, "crew-rot", [
-      new Uint8Array(32).fill(0xee),
-    ]);
+    const groupId = await createGroup(client, "crew-rot", [new Uint8Array(32).fill(0xee)]);
     const session = getGroupSession(groupId)!;
     const secret0 = new Uint8Array(session.secret);
     const epoch0 = session.epoch;
@@ -317,10 +295,7 @@ describe("group membership epoch rotate", () => {
   });
 
   test("epoch wrap delivers secret to peer with registered DH", () => {
-    const groupId = cryptoProvider.deriveId(
-      "nexnet group id v1",
-      new TextEncoder().encode("wrap-test")
-    );
+    const groupId = cryptoProvider.deriveId("nexnet group id v1", new TextEncoder().encode("wrap-test"));
     const bobId = new Uint8Array(32).fill(0x02);
     const bobDh = genDh();
 
@@ -340,12 +315,7 @@ describe("group membership epoch rotate", () => {
       crypto: cryptoProvider,
     } as unknown as NexnetClient;
 
-    const ok = applyGroupEpochMessage(
-      bobClient,
-      groupId,
-      epoch.epoch,
-      wraps
-    );
+    const ok = applyGroupEpochMessage(bobClient, groupId, epoch.epoch, wraps);
     expect(ok).toBe(true);
     expect(getGroupSession(groupId)!.secret).toEqual(aliceSecret);
   });

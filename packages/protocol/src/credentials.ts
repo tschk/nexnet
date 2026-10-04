@@ -55,7 +55,7 @@ export function verifyIdentityProof(wallet: WalletAddress, proof: Signature): bo
 
 function sshCommitmentPreimage(
   accountId: IdentityId,
-  commitment: Pick<SshKeyCommitment, "algorithm" | "publicKey">
+  commitment: Pick<SshKeyCommitment, "algorithm" | "publicKey">,
 ): Uint8Array {
   return cdeEncode({
     domain: SSH_COMMITMENT_DOMAIN,
@@ -68,7 +68,7 @@ function sshCommitmentPreimage(
 export function signSshCommitment(
   rootSk: Uint8Array,
   accountId: IdentityId,
-  commitment: Pick<SshKeyCommitment, "algorithm" | "publicKey">
+  commitment: Pick<SshKeyCommitment, "algorithm" | "publicKey">,
 ): Signature {
   return sign(rootSk, sshCommitmentPreimage(accountId, commitment));
 }
@@ -77,13 +77,13 @@ export function verifySshCommitment(
   rootPk: PublicKey,
   accountId: IdentityId,
   commitment: Pick<SshKeyCommitment, "algorithm" | "publicKey">,
-  rootSignature: Signature
+  rootSignature: Signature,
 ): boolean {
   return verify(rootPk, sshCommitmentPreimage(accountId, commitment), rootSignature);
 }
 
 function revocationPreimage(
-  revocation: Pick<Revocation, "accountId" | "kind" | "credentialId" | "sequence">
+  revocation: Pick<Revocation, "accountId" | "kind" | "credentialId" | "sequence">,
 ): Uint8Array {
   return cdeEncode({
     domain: REVOCATION_DOMAIN,
@@ -94,10 +94,7 @@ function revocationPreimage(
   });
 }
 
-export function signRevocation(
-  rootSk: Uint8Array,
-  revocation: Omit<Revocation, "rootSignature">
-): Revocation {
+export function signRevocation(rootSk: Uint8Array, revocation: Omit<Revocation, "rootSignature">): Revocation {
   return { ...revocation, rootSignature: sign(rootSk, revocationPreimage(revocation)) };
 }
 

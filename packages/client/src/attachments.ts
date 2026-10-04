@@ -13,10 +13,7 @@ import type {
   MessagePayload,
   MessageId,
 } from "@nexnet/types";
-import {
-  DOMAIN_ATTACHMENT_ID,
-  PROTOCOL_VERSION,
-} from "@nexnet/types";
+import { DOMAIN_ATTACHMENT_ID, PROTOCOL_VERSION } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 import { sendDirectMessage } from "./dm.js";
 import { trySendDirect } from "./transport.js";
@@ -51,7 +48,7 @@ export function prepareAttachment(
   codec: CborCdeCodec,
   file: Uint8Array,
   filename: string,
-  mimeType: string
+  mimeType: string,
 ): AttachmentTransfer {
   // Random 32-byte key for this attachment
   const key = crypto.randomBytes(32);
@@ -69,10 +66,7 @@ export function prepareAttachment(
   const contentHash = crypto.deriveId(DOMAIN_ATTACHMENT_ID, encryptedBlob);
 
   // Attachment ID = BLAKE3-256 of content hash (unique per blob)
-  const attachmentId = crypto.deriveId(
-    DOMAIN_ATTACHMENT_ID,
-    contentHash
-  );
+  const attachmentId = crypto.deriveId(DOMAIN_ATTACHMENT_ID, contentHash);
 
   return {
     attachmentId,
@@ -94,15 +88,9 @@ export async function sendAttachment(
   file: Uint8Array,
   filename: string,
   mimeType: string,
-  chunkSize = DEFAULT_CHUNK_SIZE
+  chunkSize = DEFAULT_CHUNK_SIZE,
 ): Promise<MessageId> {
-  const transfer = prepareAttachment(
-    client.crypto,
-    client.codec,
-    file,
-    filename,
-    mimeType
-  );
+  const transfer = prepareAttachment(client.crypto, client.codec, file, filename, mimeType);
 
   // Create attachment offer
   const offer: AttachmentOffer = {
@@ -124,13 +112,7 @@ export async function sendAttachment(
     },
   };
 
-  const messageId = await sendDirectMessage(
-    client,
-    recipientId,
-    payload,
-    undefined,
-    { directOnly: true }
-  );
+  const messageId = await sendDirectMessage(client, recipientId, payload, undefined, { directOnly: true });
 
   // Transfer blob in chunks via relay
   const recipientHex = Buffer.from(recipientId).toString("hex");
@@ -146,7 +128,7 @@ async function transferBlob(
   client: NexnetClient,
   recipientHex: string,
   transfer: AttachmentTransfer,
-  chunkSize: number
+  chunkSize: number,
 ): Promise<void> {
   const totalChunks = Math.ceil(transfer.encryptedBlob.length / chunkSize);
 
@@ -185,7 +167,7 @@ export class AttachmentReceiver {
       receivedAt: number;
       contentHash: Uint8Array;
     }
-  >;
+  >();
 
   constructor(private crypto: CryptoProvider) {}
 
@@ -198,8 +180,8 @@ export class AttachmentReceiver {
     chunkIndex: number,
     totalChunks: number,
     data: Uint8Array,
-    contentHash: Uint8Array
-): Uint8Array | null {
+    contentHash: Uint8Array,
+  ): Uint8Array | null {
     if (
       attachmentId.length !== 32 ||
       contentHash.length !== 32 ||
@@ -212,10 +194,7 @@ export class AttachmentReceiver {
       throw new Error("Invalid attachment chunk");
     }
 
-    const expectedAttachmentId = this.crypto.deriveId(
-      DOMAIN_ATTACHMENT_ID,
-      contentHash
-    );
+    const expectedAttachmentId = this.crypto.deriveId(DOMAIN_ATTACHMENT_ID, contentHash);
     if (!equalBytes(attachmentId, expectedAttachmentId)) {
       throw new Error("Attachment offer does not match content hash");
     }
@@ -232,10 +211,7 @@ export class AttachmentReceiver {
     }
 
     const transfer = this.transfers.get(idHex)!;
-    if (
-      transfer.totalChunks !== totalChunks ||
-      !equalBytes(transfer.contentHash, contentHash)
-    ) {
+    if (transfer.totalChunks !== totalChunks || !equalBytes(transfer.contentHash, contentHash)) {
       throw new Error("Attachment chunk metadata changed during transfer");
     }
 
@@ -248,9 +224,7 @@ export class AttachmentReceiver {
     // Check if complete
     if (transfer.chunks.size === transfer.totalChunks) {
       // Reassemble
-      const sorted = Array.from(transfer.chunks.entries()).sort(
-        (a, b) => a[0] - b[0]
-      );
+      const sorted = Array.from(transfer.chunks.entries()).sort((a, b) => a[0] - b[0]);
       const totalSize = sorted.reduce((sum, [, chunk]) => sum + chunk.length, 0);
       const blob = new Uint8Array(totalSize);
       let offset = 0;
@@ -273,10 +247,7 @@ export class AttachmentReceiver {
   /**
    * Decrypt a reassembled attachment blob.
    */
-  decryptAttachment(
-    encryptedBlob: Uint8Array,
-    key: Uint8Array
-  ): Uint8Array {
+  decryptAttachment(encryptedBlob: Uint8Array, key: Uint8Array): Uint8Array {
     // Extract nonce (first 24 bytes)
     const nonce = encryptedBlob.slice(0, 24);
     const ciphertext = encryptedBlob.slice(24);

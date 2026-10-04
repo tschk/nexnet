@@ -59,9 +59,9 @@ export class Store {
   }
 
   lastSequence(device: string): number {
-    const row = this.db
-      .query("SELECT last_sequence AS value FROM device_sequences WHERE device = ?")
-      .get(device) as { value: number } | null;
+    const row = this.db.query("SELECT last_sequence AS value FROM device_sequences WHERE device = ?").get(device) as {
+      value: number;
+    } | null;
     return row?.value ?? 0;
   }
 
@@ -76,7 +76,7 @@ export class Store {
       const result = this.db
         .query(
           `INSERT INTO messages (channel, event_id, identity, device, created_at, received_at, device_sequence, body)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.channel,
@@ -86,12 +86,12 @@ export class Store {
           message.createdAt,
           message.receivedAt,
           deviceSequence,
-          message.body
+          message.body,
         );
       this.db
         .query(
           `INSERT INTO device_sequences (device, last_sequence) VALUES (?, ?)
-           ON CONFLICT(device) DO UPDATE SET last_sequence = excluded.last_sequence`
+           ON CONFLICT(device) DO UPDATE SET last_sequence = excluded.last_sequence`,
         )
         .run(message.device, deviceSequence);
       return { ...message, seq: Number(result.lastInsertRowid) };
@@ -105,16 +105,16 @@ export class Store {
         `SELECT seq, channel, event_id AS eventId, identity, device, created_at AS createdAt,
                 received_at AS receivedAt, body
          FROM messages WHERE channel = ? AND (? IS NULL OR seq < ?)
-         ORDER BY seq DESC LIMIT ?`
+         ORDER BY seq DESC LIMIT ?`,
       )
       .all(channel, beforeSeq, beforeSeq, limit) as StoredMessage[];
     return rows.reverse();
   }
 
   lastMessageAt(channel: string): number | null {
-    const row = this.db
-      .query("SELECT MAX(received_at) AS value FROM messages WHERE channel = ?")
-      .get(channel) as { value: number | null } | null;
+    const row = this.db.query("SELECT MAX(received_at) AS value FROM messages WHERE channel = ?").get(channel) as {
+      value: number | null;
+    } | null;
     return row?.value ?? null;
   }
 
@@ -131,7 +131,7 @@ export class Store {
   getSession(tokenHash: string): StoredSession | null {
     const row = this.db
       .query(
-        "SELECT token_hash AS tokenHash, identity, device, method, expires_at AS expiresAt FROM sessions WHERE token_hash = ?"
+        "SELECT token_hash AS tokenHash, identity, device, method, expires_at AS expiresAt FROM sessions WHERE token_hash = ?",
       )
       .get(tokenHash) as StoredSession | null;
     return row;
@@ -144,7 +144,7 @@ export class Store {
   sessionsForIdentity(identity: string): StoredSession[] {
     return this.db
       .query(
-        "SELECT token_hash AS tokenHash, identity, device, method, expires_at AS expiresAt FROM sessions WHERE identity = ?"
+        "SELECT token_hash AS tokenHash, identity, device, method, expires_at AS expiresAt FROM sessions WHERE identity = ?",
       )
       .all(identity) as StoredSession[];
   }

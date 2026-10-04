@@ -1,15 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { signEvent, cdeEncode } from "@nexnet/protocol";
-import {
-  api,
-  createIdentity,
-  makeDevice,
-  makeWallet,
-  post,
-  postEvent,
-  signInWallet,
-  startHarness,
-} from "./testkit.js";
+import { api, createIdentity, makeDevice, makeWallet, post, postEvent, signInWallet, startHarness } from "./testkit.js";
 import type { Harness } from "./testkit.js";
 import { eventToJson } from "../wire.js";
 
@@ -129,9 +120,15 @@ describe("wrong identities and forged events", () => {
         parentIds: [],
         payload: cdeEncode({ channel: "public", body: "as bob" }),
       },
-      alice.device.signingSecretKey
+      alice.device.signingSecretKey,
     );
-    const result = await api(h.url, "POST", "/v1/channels/public/messages", { event: eventToJson(forged) }, alice.token);
+    const result = await api(
+      h.url,
+      "POST",
+      "/v1/channels/public/messages",
+      { event: eventToJson(forged) },
+      alice.token,
+    );
     expect(result.status).toBe(403);
   });
 
@@ -153,7 +150,13 @@ describe("wrong identities and forged events", () => {
     const alice = await member();
     const event = postEvent(alice, "public", "original");
     const tampered = { ...event, payload: cdeEncode({ channel: "public", body: "tampered" }) };
-    const result = await api(h.url, "POST", "/v1/channels/public/messages", { event: eventToJson(tampered) }, alice.token);
+    const result = await api(
+      h.url,
+      "POST",
+      "/v1/channels/public/messages",
+      { event: eventToJson(tampered) },
+      alice.token,
+    );
     expect(result.status).toBe(401);
   });
 
@@ -161,7 +164,13 @@ describe("wrong identities and forged events", () => {
     const alice = await member();
     const event = postEvent(alice, "public", "ids");
     const forged = { ...event, eventId: new Uint8Array(32).fill(7) };
-    const result = await api(h.url, "POST", "/v1/channels/public/messages", { event: eventToJson(forged) }, alice.token);
+    const result = await api(
+      h.url,
+      "POST",
+      "/v1/channels/public/messages",
+      { event: eventToJson(forged) },
+      alice.token,
+    );
     expect(result.status).toBe(401);
   });
 
@@ -182,10 +191,10 @@ describe("wrong identities and forged events", () => {
         parentIds: [],
         payload: cdeEncode({ channel: "public", body: "x" }),
       },
-      alice.device.signingSecretKey
+      alice.device.signingSecretKey,
     );
     expect(
-      (await api(h.url, "POST", "/v1/channels/public/messages", { event: eventToJson(wrongType) }, alice.token)).status
+      (await api(h.url, "POST", "/v1/channels/public/messages", { event: eventToJson(wrongType) }, alice.token)).status,
     ).toBe(400);
   });
 });
@@ -227,7 +236,13 @@ describe("replays", () => {
     await createIdentity(h.url, h.owner);
     const owner = await signInWallet(h, h.owner);
     const event = postEvent(owner, "public", "public only");
-    const result = await api(h.url, "POST", "/v1/channels/updates/messages", { event: eventToJson(event) }, owner.token);
+    const result = await api(
+      h.url,
+      "POST",
+      "/v1/channels/updates/messages",
+      { event: eventToJson(event) },
+      owner.token,
+    );
     expect(result.status).toBe(400);
   });
 

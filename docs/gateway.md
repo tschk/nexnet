@@ -3,10 +3,10 @@
 The gateway is the first networked Nexnet service that authenticates a caller
 before it accepts a post. It serves two channels:
 
-| Channel | Read | Write |
-|---|---|---|
-| `updates` | any caller | only the configured owner identity |
-| `public` | any caller | any registered identity with a live session |
+| Channel   | Read       | Write                                       |
+| --------- | ---------- | ------------------------------------------- |
+| `updates` | any caller | only the configured owner identity          |
+| `public`  | any caller | any registered identity with a live session |
 
 Wallet and chain are the primary identity. Passkeys and SSH keys are additional
 sign-in methods that must first be authorised by the wallet.
@@ -15,14 +15,14 @@ sign-in methods that must first be authorised by the wallet.
 
 Nothing is defaulted that names an operator, owner or checkpoint.
 
-| Variable | Meaning |
-|---|---|
-| `NEXNET_OWNER_IDENTITY` | 64-hex identity id allowed to post to `updates`. Unset: `updates` is closed to every writer. |
-| `NEXNET_MODE` | `dev-chain` (explicit in-memory development chain) or `chain`. |
+| Variable                                           | Meaning                                                                                                                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NEXNET_OWNER_IDENTITY`                            | 64-hex identity id allowed to post to `updates`. Unset: `updates` is closed to every writer.                                                                 |
+| `NEXNET_MODE`                                      | `dev-chain` (explicit in-memory development chain) or `chain`.                                                                                               |
 | `NEXNET_CHAIN_ENDPOINT`, `NEXNET_CHAIN_CHECKPOINT` | Required for `chain`. The gateway refuses to start in `chain` mode without both, and no chain client exists yet, so `chain` mode currently refuses to start. |
-| `NEXNET_RP_ID`, `NEXNET_ORIGINS` | WebAuthn relying party and comma-separated allowed origins. Passkey sign-in is disabled when unset. |
-| `NEXNET_STATE_DIR` | Directory for chain state and the message log. |
-| `PORT` | Listen port. |
+| `NEXNET_RP_ID`, `NEXNET_ORIGINS`                   | WebAuthn relying party and comma-separated allowed origins. Passkey sign-in is disabled when unset.                                                          |
+| `NEXNET_STATE_DIR`                                 | Directory for chain state and the message log.                                                                                                               |
+| `PORT`                                             | Listen port.                                                                                                                                                 |
 
 ## Credentials
 

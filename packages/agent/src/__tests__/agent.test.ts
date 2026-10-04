@@ -72,11 +72,15 @@ function makeGateway(): Gateway {
       sessionMaxMs: 43_200_000,
       wsAuthTimeoutMs: 2000,
     },
-    new DevChainClient(join(dir, "chain.json"))
+    new DevChainClient(join(dir, "chain.json")),
   );
 }
 
-function platform(wallet: MemoryWallet, extra: Partial<Platform> = {}, url: string | null = `http://127.0.0.1:${port}`): Platform {
+function platform(
+  wallet: MemoryWallet,
+  extra: Partial<Platform> = {},
+  url: string | null = `http://127.0.0.1:${port}`,
+): Platform {
   return {
     gatewayUrl: url,
     wallet,
@@ -86,7 +90,11 @@ function platform(wallet: MemoryWallet, extra: Partial<Platform> = {}, url: stri
   };
 }
 
-async function client(wallet = new MemoryWallet(), extra: Partial<Platform> = {}, url?: string | null): Promise<Client> {
+async function client(
+  wallet = new MemoryWallet(),
+  extra: Partial<Platform> = {},
+  url?: string | null,
+): Promise<Client> {
   const c = new Client(platform(wallet, extra, url));
   await c.core.init();
   clients.push(c);
@@ -273,7 +281,10 @@ describe("ssh sign-in", () => {
           identityId: toHex(identityId),
           publicKey: line.trim(),
           rootSignature: toBase64Url(
-            signSshCommitment(secret.secretKey, identityId, { algorithm: "ssh-ed25519", publicKey: parseSshPublicKey(line) })
+            signSshCommitment(secret.secretKey, identityId, {
+              algorithm: "ssh-ed25519",
+              publicKey: parseSshPublicKey(line),
+            }),
           ),
         }),
       });
@@ -312,7 +323,10 @@ describe("ssh sign-in", () => {
       const keyPath = join(keyDir, "id_ed25519");
       Bun.spawnSync(["ssh-keygen", "-q", "-t", "ed25519", "-N", "secret", "-f", keyPath]);
       const env = { NEXNET_SSH_KEY: keyPath };
-      const c = await client(new MemoryWallet(), { methods: () => ["wallet", "ssh"], signSsh: sshSigner(locateSshKey(env)!, env) });
+      const c = await client(new MemoryWallet(), {
+        methods: () => ["wallet", "ssh"],
+        signSsh: sshSigner(locateSshKey(env)!, env),
+      });
       await c.send("identity.create");
       const reply = await c.send("signin", { method: "ssh" });
       expect(reply.error.code).toBe("unauthenticated");
@@ -415,4 +429,3 @@ describe("file wallet", () => {
     await expect(new FileWalletStore(path).load()).rejects.toThrow(/format/);
   });
 });
-

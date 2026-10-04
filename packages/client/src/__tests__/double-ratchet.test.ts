@@ -1,12 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import {
-  clearSessions,
-  initInitiator,
-  initResponder,
-  open,
-  seal,
-} from "../double-ratchet.js";
+import { clearSessions, initInitiator, initResponder, open, seal } from "../double-ratchet.js";
 
 const crypto = cryptoProvider;
 const te = new TextEncoder();
@@ -87,13 +81,9 @@ describe("Double Ratchet", () => {
 
     for (let i = 0; i < 4; i++) {
       const aMsg = te.encode(`a-${i}`);
-      expect(
-        open(crypto, bob, seal(crypto, alice, aMsg, aad()), aad())
-      ).toEqual(aMsg);
+      expect(open(crypto, bob, seal(crypto, alice, aMsg, aad()), aad())).toEqual(aMsg);
       const bMsg = te.encode(`b-${i}`);
-      expect(
-        open(crypto, alice, seal(crypto, bob, bMsg, aad()), aad())
-      ).toEqual(bMsg);
+      expect(open(crypto, alice, seal(crypto, bob, bMsg, aad()), aad())).toEqual(bMsg);
     }
   });
 });

@@ -72,7 +72,11 @@ async function runSshKeygen(args: string[], input: Uint8Array): Promise<string |
     stderr: "pipe",
     env: { ...process.env, SSH_ASKPASS: "/usr/bin/false", SSH_ASKPASS_REQUIRE: "force" },
   });
-  const [stdout, , code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  const [stdout, , code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
   return code === 0 && stdout.includes("BEGIN SSH SIGNATURE") ? stdout : null;
 }
 
@@ -82,7 +86,8 @@ export function sshSigner(location: SshKeyLocation, env: Record<string, string |
     const base = ["-Y", "sign", "-n", SSH_SIGNATURE_NAMESPACE];
     let signature: string | null = null;
     if (env.SSH_AUTH_SOCK) signature = await runSshKeygen([...base, "-U", "-f", location.publicPath], preimage);
-    if (!signature && location.privatePath) signature = await runSshKeygen([...base, "-f", location.privatePath], preimage);
+    if (!signature && location.privatePath)
+      signature = await runSshKeygen([...base, "-f", location.privatePath], preimage);
     if (!signature) {
       throw new AgentError("unauthenticated", "Could not sign with the SSH key; load it into ssh-agent first");
     }

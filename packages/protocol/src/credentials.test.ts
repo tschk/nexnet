@@ -38,7 +38,12 @@ describe("ssh commitments", () => {
     const signature = signSshCommitment(root.secretKey, accountId, commitment);
     expect(verifySshCommitment(root.publicKey, accountId, commitment, signature)).toBe(true);
     expect(
-      verifySshCommitment(root.publicKey, accountId, { ...commitment, publicKey: new Uint8Array(32).fill(1) }, signature)
+      verifySshCommitment(
+        root.publicKey,
+        accountId,
+        { ...commitment, publicKey: new Uint8Array(32).fill(1) },
+        signature,
+      ),
     ).toBe(false);
     expect(verifySshCommitment(root.publicKey, new Uint8Array(32), commitment, signature)).toBe(false);
   });
@@ -48,7 +53,12 @@ describe("revocations", () => {
   test("bind kind, credential id and sequence", () => {
     const root = generateSigningKeyPair();
     const accountId = identityIdFromWallet(root.publicKey);
-    const revocation = signRevocation(root.secretKey, { accountId, kind: "ssh", credentialId: "SHA256:x", sequence: 3 });
+    const revocation = signRevocation(root.secretKey, {
+      accountId,
+      kind: "ssh",
+      credentialId: "SHA256:x",
+      sequence: 3,
+    });
     expect(verifyRevocation(root.publicKey, revocation)).toBe(true);
     expect(verifyRevocation(root.publicKey, { ...revocation, sequence: 4 })).toBe(false);
     expect(verifyRevocation(root.publicKey, { ...revocation, kind: "passkey" })).toBe(false);

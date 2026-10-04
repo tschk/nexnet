@@ -85,7 +85,7 @@ export class AgentCore {
   constructor(
     private readonly platform: Platform,
     private readonly emit: (output: Outbound) => void,
-    fetcher?: typeof fetch
+    fetcher?: typeof fetch,
   ) {
     this.api = platform.gatewayUrl ? new GatewayApi(platform.gatewayUrl, fetcher) : null;
     this.status = this.api ? "offline" : "unconfigured";
@@ -279,7 +279,7 @@ export class AgentCore {
             accountId,
             issuedAt,
             expiresAt,
-            1
+            1,
           )
         : {
             accountId,
@@ -367,7 +367,10 @@ export class AgentCore {
     if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 200) {
       throw new AgentError("invalid", "limit must be 1 to 200");
     }
-    const result = await this.call<{ messages: WireMessage[] }>("GET", `/v1/channels/${channel}/messages?limit=${count}`);
+    const result = await this.call<{ messages: WireMessage[] }>(
+      "GET",
+      `/v1/channels/${channel}/messages?limit=${count}`,
+    );
     for (const message of result.messages) this.noteSeq(channel, message.seq);
     return { channel, messages: result.messages.map(strip) };
   }
@@ -402,14 +405,14 @@ export class AgentCore {
           parentIds: [],
           payload: cdeEncode({ channel, body }),
         },
-        device.signingSecretKey
+        device.signingSecretKey,
       );
       try {
         const result = await this.call<{ message: WireMessage }>(
           "POST",
           `/v1/channels/${channel}/messages`,
           { event: eventToJson(event) },
-          session.token
+          session.token,
         );
         session.nextSequence = event.sequence + 1;
         this.noteSeq(channel, result.message.seq);
@@ -479,7 +482,7 @@ export class AgentCore {
         JSON.stringify({
           ...(this.session ? { token: this.session.token } : {}),
           channels: [...this.channels],
-        })
+        }),
       );
     };
     socket.onmessage = (event) => {
@@ -536,7 +539,7 @@ export class AgentCore {
       try {
         const result = await this.call<{ messages: WireMessage[] }>(
           "GET",
-          `/v1/channels/${channel}/messages?limit=${HISTORY_FETCH}`
+          `/v1/channels/${channel}/messages?limit=${HISTORY_FETCH}`,
         );
         if (generation !== this.streamGeneration) return;
         for (const wire of result.messages) {

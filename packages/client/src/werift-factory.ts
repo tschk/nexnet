@@ -4,12 +4,7 @@
  * Real RTCPeerConnection implementation for PeerManager.
  */
 
-import {
-  RTCPeerConnection,
-  type RTCDataChannel,
-  type RTCIceCandidate,
-  type RTCSessionDescription,
-} from "werift";
+import { RTCPeerConnection, type RTCDataChannel, type RTCIceCandidate, type RTCSessionDescription } from "werift";
 import type {
   DataChannelLike,
   IceCandidateLike,
@@ -148,7 +143,7 @@ function adaptPc(pc: RTCPeerConnection): PeerConnectionLike {
 
 /** Factory for PeerManager — real werift RTCPeerConnection. */
 export function createWeriftPeerConnection(
-  config?: ConstructorParameters<typeof RTCPeerConnection>[0]
+  config?: ConstructorParameters<typeof RTCPeerConnection>[0],
 ): PeerConnectionFactory {
   return () => adaptPc(new RTCPeerConnection(config));
 }

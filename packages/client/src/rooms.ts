@@ -28,10 +28,7 @@ const SPAM_DUPLICATE_THRESHOLD = 3;
 
 // ── Room ID ──────────────────────────────────────────────────────────
 
-export function deriveRoomId(
-  crypto: NexnetClient["crypto"],
-  roomName: string
-): RoomId {
+export function deriveRoomId(crypto: NexnetClient["crypto"], roomName: string): RoomId {
   const normalized = roomName.trim().toLowerCase();
   const encoded = new TextEncoder().encode(normalized);
   return crypto.deriveId(DOMAIN_ROOM_ID, encoded);
@@ -74,10 +71,7 @@ function getMod(roomIdHex: string, rateLimit = DEFAULT_RATE_LIMIT): RoomModerati
 
 // ── Rate limiting / cooldown ─────────────────────────────────────────
 
-function checkCooldown(
-  mod: RoomModeration,
-  userHex: string
-): { allowed: boolean; reason?: string } {
+function checkCooldown(mod: RoomModeration, userHex: string): { allowed: boolean; reason?: string } {
   // Check ban
   const banUntil = mod.bans.get(userHex);
   if (banUntil && Date.now() < banUntil) {
@@ -106,11 +100,7 @@ function checkCooldown(
   return { allowed: true };
 }
 
-function recordMessage(
-  mod: RoomModeration,
-  userHex: string,
-  text: string
-): void {
+function recordMessage(mod: RoomModeration, userHex: string, text: string): void {
   const state = mod.userStates.get(userHex) ?? { timestamps: [], recentTexts: [] };
   state.timestamps.push(Date.now());
   state.recentTexts.push(text);
@@ -125,11 +115,7 @@ function recordMessage(
 
 // ── Automod (spam detection) ─────────────────────────────────────────
 
-function automodCheck(
-  mod: RoomModeration,
-  userHex: string,
-  text: string
-): { blocked: boolean; reason?: string } {
+function automodCheck(mod: RoomModeration, userHex: string, text: string): { blocked: boolean; reason?: string } {
   const state = mod.userStates.get(userHex);
   if (!state) return { blocked: false };
 
@@ -174,7 +160,7 @@ function automodCheck(
 export function startVotekick(
   roomIdHex: string,
   targetHex: string,
-  initiatorHex: string
+  initiatorHex: string,
 ): { success: boolean; message: string } {
   const mod = getMod(roomIdHex);
 
@@ -203,11 +189,7 @@ export function startVotekick(
 /**
  * Vote on an active votekick.
  */
-export function voteKick(
-  roomIdHex: string,
-  targetHex: string,
-  voterHex: string
-): { kicked: boolean; message: string } {
+export function voteKick(roomIdHex: string, targetHex: string, voterHex: string): { kicked: boolean; message: string } {
   const mod = getMod(roomIdHex);
   const votekick = mod.votekicks.get(targetHex);
 
@@ -247,10 +229,7 @@ export function isBanned(roomIdHex: string, userHex: string): boolean {
 
 // ── Room operations ──────────────────────────────────────────────────
 
-export async function joinRoom(
-  client: NexnetClient,
-  roomName: string
-): Promise<RoomId> {
+export async function joinRoom(client: NexnetClient, roomName: string): Promise<RoomId> {
   const roomId = deriveRoomId(client.crypto, roomName);
   const roomIdHex = Buffer.from(roomId).toString("hex");
 
@@ -259,10 +238,7 @@ export async function joinRoom(
   return roomId;
 }
 
-export async function leaveRoom(
-  client: NexnetClient,
-  roomId: RoomId
-): Promise<void> {
+export async function leaveRoom(client: NexnetClient, roomId: RoomId): Promise<void> {
   const roomIdHex = Buffer.from(roomId).toString("hex");
   client.unsubscribeRoom(roomIdHex);
 }
@@ -274,7 +250,7 @@ export async function leaveRoom(
 export async function sendRoomMessage(
   client: NexnetClient,
   roomId: RoomId,
-  text: string
+  text: string,
 ): Promise<{ sent: boolean; reason?: string }> {
   const roomIdHex = Buffer.from(roomId).toString("hex");
   const userHex = Buffer.from(client.identityId).toString("hex");
@@ -327,7 +303,7 @@ export function onRoomMessage(
   client: NexnetClient,
   roomId: RoomId,
   callback: (event: NexnetEvent) => void,
-  getSenderPublicKey?: (identityId: Uint8Array) => PublicKey | undefined
+  getSenderPublicKey?: (identityId: Uint8Array) => PublicKey | undefined,
 ): void {
   const roomIdHex = Buffer.from(roomId).toString("hex");
 

@@ -40,12 +40,14 @@ test("local server forwards DM and room events", async () => {
     envelope: [1, 2, 3],
   });
 
-  bob.send(JSON.stringify({
-    type: "delivery_receipt",
-    to: "alice",
-    from: "forged",
-    receipt: { messageId: [1, 2, 3], recipientDeviceId: [4], storedAt: 1, signature: [5] },
-  }));
+  bob.send(
+    JSON.stringify({
+      type: "delivery_receipt",
+      to: "alice",
+      from: "forged",
+      receipt: { messageId: [1, 2, 3], recipientDeviceId: [4], storedAt: 1, signature: [5] },
+    }),
+  );
   expect(await nextMatching(aliceMessages, (message) => message.type === "delivery_receipt")).toEqual({
     type: "delivery_receipt",
     from: "bob",
@@ -87,11 +89,12 @@ function collect(socket: WebSocket): AsyncIterableIterator<unknown> {
     else messages.push(message);
   });
   return {
-    next: () => new Promise((resolve) => {
-      const message = messages.shift();
-      if (message !== undefined) resolve({ done: false, value: message });
-      else waiters.push((value) => resolve({ done: false, value }));
-    }),
+    next: () =>
+      new Promise((resolve) => {
+        const message = messages.shift();
+        if (message !== undefined) resolve({ done: false, value: message });
+        else waiters.push((value) => resolve({ done: false, value }));
+      }),
     [Symbol.asyncIterator]() {
       return this;
     },
@@ -103,7 +106,7 @@ async function nextMatching(
   predicate: (message: { type?: string }) => boolean,
 ): Promise<unknown> {
   for (;;) {
-    const message = await messages.next().then(({ value }) => value) as { type?: string };
+    const message = (await messages.next().then(({ value }) => value)) as { type?: string };
     if (predicate(message)) return message;
   }
 }

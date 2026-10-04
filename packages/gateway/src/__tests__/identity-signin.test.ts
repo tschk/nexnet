@@ -259,11 +259,22 @@ describe("ssh sign-in", () => {
         identityId: wallet.identityHex,
         publicKey: attackerKey.publicKeyLine,
         rootSignature: toBase64Url(
-          signSshCommitment(wallet.secretKey, wallet.identityId, { algorithm: "ssh-ed25519", publicKey: key.publicKey })
+          signSshCommitment(wallet.secretKey, wallet.identityId, {
+            algorithm: "ssh-ed25519",
+            publicKey: key.publicKey,
+          }),
         ),
       });
       expect(mismatched.status).toBe(403);
-      expect((await api(h.url, "POST", "/v1/credentials/ssh", { identityId: wallet.identityHex, publicKey: "ssh-rsa AAAA", rootSignature: "AA" })).status).toBe(400);
+      expect(
+        (
+          await api(h.url, "POST", "/v1/credentials/ssh", {
+            identityId: wallet.identityHex,
+            publicKey: "ssh-rsa AAAA",
+            rootSignature: "AA",
+          })
+        ).status,
+      ).toBe(400);
     } finally {
       key.cleanup();
       attackerKey.cleanup();
@@ -296,7 +307,7 @@ describe("ssh sign-in", () => {
       const replay = await api(h.url, "POST", "/v1/auth/verify", {
         challengeId: secondChallenge.body.challengeId,
         deviceSignature: toBase64Url(
-          sign(device.signingSecretKey, preimageFor("ssh", secondChallenge.body, certificate))
+          sign(device.signingSecretKey, preimageFor("ssh", secondChallenge.body, certificate)),
         ),
         ssh: { publicKey: key.publicKeyLine, signature: stale },
       });
@@ -349,9 +360,7 @@ describe("passkey sign-in", () => {
     const stale = (await import("./testkit.js")).assertion(authenticator, first.challenge.passkeyChallenge!);
     const replay = await api(h.url, "POST", "/v1/auth/verify", {
       challengeId: challenge.body.challengeId,
-      deviceSignature: toBase64Url(
-        sign(device.signingSecretKey, preimageFor("passkey", challenge.body, certificate))
-      ),
+      deviceSignature: toBase64Url(sign(device.signingSecretKey, preimageFor("passkey", challenge.body, certificate))),
       passkey: stale,
     });
     expect(replay.status).toBe(401);
@@ -362,7 +371,13 @@ describe("passkey sign-in", () => {
     await createIdentity(h.url, wallet);
     const authenticator = makeAuthenticator();
     const { authorizePasskeyCredential } = await import("@nexnet/protocol");
-    const credential = { credentialId: authenticator.credentialId, publicKey: authenticator.coseKey, counter: 0, rpId: "evil.test", origin: "https://evil.test" };
+    const credential = {
+      credentialId: authenticator.credentialId,
+      publicKey: authenticator.coseKey,
+      counter: 0,
+      rpId: "evil.test",
+      origin: "https://evil.test",
+    };
     const result = await api(h.url, "POST", "/v1/credentials/passkey", {
       identityId: wallet.identityHex,
       credential: { ...credential, publicKey: toBase64Url(credential.publicKey) },

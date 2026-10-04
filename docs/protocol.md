@@ -32,13 +32,13 @@ nexnet_event {
 
 **Locked: H2 — CBOR wire + CDDL schemas + CDE determinism (AD-4 / AD-4b).**
 
-| Layer | Choice |
-|---|---|
-| Wire bytes | CBOR |
-| Determinism | **CDE** (RFC 8949 §4.2 Concise Deterministic Encoding) |
-| Human/schema | CDDL describing event shapes |
-| Debug tooling | Optional CBOR → diagnostic JSON (not a second protocol) |
-| Attachment bodies | Opaque encrypted blobs — not CBOR structure |
+| Layer             | Choice                                                  |
+| ----------------- | ------------------------------------------------------- |
+| Wire bytes        | CBOR                                                    |
+| Determinism       | **CDE** (RFC 8949 §4.2 Concise Deterministic Encoding)  |
+| Human/schema      | CDDL describing event shapes                            |
+| Debug tooling     | Optional CBOR → diagnostic JSON (not a second protocol) |
+| Attachment bodies | Opaque encrypted blobs — not CBOR structure             |
 
 Rejected for the signed path: Protobuf (non-canonical encodings), dual
 MessagePack+CBOR hybrid, FlatBuffers for events, dCBOR-as-required-profile

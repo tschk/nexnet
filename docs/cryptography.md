@@ -4,16 +4,16 @@ Use established primitives. **Do not invent custom crypto.**
 
 ## Baseline
 
-| Role | Primitive |
-|---|---|
-| Signatures | Ed25519 |
-| Key agreement | X25519 |
-| KDF | HKDF |
-| AEAD | **XChaCha20-Poly1305** (AD-5) |
-| Direct messages | Double Ratchet |
-| Private groups | MLS (OpenMLS) |
-| Content hashing | **BLAKE3-256** (AD-8); SHA-256 only at explicit external boundaries |
-| Object IDs | **BLAKE3-256** derived IDs (AD-8); random nonces still used where needed |
+| Role            | Primitive                                                                |
+| --------------- | ------------------------------------------------------------------------ |
+| Signatures      | Ed25519                                                                  |
+| Key agreement   | X25519                                                                   |
+| KDF             | HKDF                                                                     |
+| AEAD            | **XChaCha20-Poly1305** (AD-5)                                            |
+| Direct messages | Double Ratchet                                                           |
+| Private groups  | MLS (OpenMLS)                                                            |
+| Content hashing | **BLAKE3-256** (AD-8); SHA-256 only at explicit external boundaries      |
+| Object IDs      | **BLAKE3-256** derived IDs (AD-8); random nonces still used where needed |
 
 ## Direct messages
 

@@ -75,7 +75,7 @@ describe("validateEventLimits", () => {
       validateEventLimits({
         ...okEvent,
         payload: new Uint8Array(MAX_PAYLOAD_BYTES + 1),
-      })
+      }),
     ).toThrow();
   });
 
@@ -83,10 +83,8 @@ describe("validateEventLimits", () => {
     expect(() =>
       validateEventLimits({
         ...okEvent,
-        parentIds: Array.from({ length: MAX_PARENT_IDS + 1 }, () =>
-          new Uint8Array(32)
-        ),
-      })
+        parentIds: Array.from({ length: MAX_PARENT_IDS + 1 }, () => new Uint8Array(32)),
+      }),
     ).toThrow();
   });
 
@@ -95,7 +93,7 @@ describe("validateEventLimits", () => {
       validateEventLimits({
         ...okEvent,
         eventType: "x".repeat(MAX_EVENT_TYPE_LEN + 1),
-      })
+      }),
     ).toThrow();
   });
 });

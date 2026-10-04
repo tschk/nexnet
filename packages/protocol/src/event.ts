@@ -15,20 +15,13 @@ import type {
   Signature,
   PublicKey,
 } from "@nexnet/types";
-import {
-  DOMAIN_EVENT_ID,
-  MAX_PAYLOAD_BYTES,
-  MAX_PARENT_IDS,
-  MAX_EVENT_TYPE_LEN,
-} from "@nexnet/types";
+import { DOMAIN_EVENT_ID, MAX_PAYLOAD_BYTES, MAX_PARENT_IDS, MAX_EVENT_TYPE_LEN } from "@nexnet/types";
 import { deriveId } from "@nexnet/crypto";
 import { sign, verify } from "@nexnet/crypto";
 import { cdeEncode } from "./cde.js";
 
 /** Build the ID preimage (everything except signature and eventId). */
-function toIdPreimage(
-  event: Omit<NexnetEvent, "eventId" | "signature">
-): NexnetEventIdPreimage {
+function toIdPreimage(event: Omit<NexnetEvent, "eventId" | "signature">): NexnetEventIdPreimage {
   return {
     protocolVersion: event.protocolVersion,
     eventType: event.eventType,
@@ -59,27 +52,18 @@ function toSigningPreimage(event: NexnetEvent): NexnetEventPreimage {
 /** Validate event size limits. */
 export function validateEventLimits(event: NexnetEvent): void {
   if (event.payload.length > MAX_PAYLOAD_BYTES) {
-    throw new Error(
-      `Payload ${event.payload.length} exceeds max ${MAX_PAYLOAD_BYTES}`
-    );
+    throw new Error(`Payload ${event.payload.length} exceeds max ${MAX_PAYLOAD_BYTES}`);
   }
   if (event.parentIds.length > MAX_PARENT_IDS) {
-    throw new Error(
-      `ParentIds ${event.parentIds.length} exceeds max ${MAX_PARENT_IDS}`
-    );
+    throw new Error(`ParentIds ${event.parentIds.length} exceeds max ${MAX_PARENT_IDS}`);
   }
   if (event.eventType.length > MAX_EVENT_TYPE_LEN) {
-    throw new Error(
-      `EventType "${event.eventType}" exceeds max ${MAX_EVENT_TYPE_LEN}`
-    );
+    throw new Error(`EventType "${event.eventType}" exceeds max ${MAX_EVENT_TYPE_LEN}`);
   }
 }
 
 /** Sign an event: compute eventId then sign. Returns complete NexnetEvent. */
-export function signEvent(
-  preimage: Omit<NexnetEvent, "eventId" | "signature">,
-  secretKey: Uint8Array
-): NexnetEvent {
+export function signEvent(preimage: Omit<NexnetEvent, "eventId" | "signature">, secretKey: Uint8Array): NexnetEvent {
   // Compute eventId from id preimage (no signature, no eventId)
   const idBytes = cdeEncode(toIdPreimage(preimage));
   const eventId = deriveId(DOMAIN_EVENT_ID, idBytes) as EventId;
@@ -99,18 +83,12 @@ export function signEvent(
 }
 
 /** Verify an event's signature against a public key. */
-export function verifyEvent(
-  event: NexnetEvent,
-  publicKey: PublicKey
-): boolean {
+export function verifyEvent(event: NexnetEvent, publicKey: PublicKey): boolean {
   const signBytes = cdeEncode(toSigningPreimage(event));
   return verify(publicKey, signBytes, event.signature);
 }
 
 export function verifyEventId(event: NexnetEvent): boolean {
   const expected = deriveId(DOMAIN_EVENT_ID, cdeEncode(toIdPreimage(event)));
-  return (
-    expected.length === event.eventId.length &&
-    expected.every((byte, index) => byte === event.eventId[index])
-  );
+  return expected.length === event.eventId.length && expected.every((byte, index) => byte === event.eventId[index]);
 }

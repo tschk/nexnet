@@ -119,7 +119,7 @@ export function verifySshSignature(
   armoredSignature: string,
   message: Uint8Array,
   expectedPublicKey: PublicKey,
-  namespace: string = SSH_SIGNATURE_NAMESPACE
+  namespace: string = SSH_SIGNATURE_NAMESPACE,
 ): boolean {
   try {
     const reader = new Reader(dearmor(armoredSignature));
@@ -131,8 +131,7 @@ export function verifySshSignature(
     if (reader.text() !== namespace) return false;
     if (reader.string().length !== 0) return false;
     const hashAlgorithm = reader.text();
-    const digest =
-      hashAlgorithm === "sha512" ? sha512(message) : hashAlgorithm === "sha256" ? sha256(message) : null;
+    const digest = hashAlgorithm === "sha512" ? sha512(message) : hashAlgorithm === "sha256" ? sha256(message) : null;
     if (!digest) return false;
     const signatureBlob = new Reader(reader.string());
     if (reader.remaining() !== 0) return false;
@@ -144,7 +143,7 @@ export function verifySshSignature(
       sshText(namespace),
       sshString(new Uint8Array(0)),
       sshText(hashAlgorithm),
-      sshString(digest)
+      sshString(digest),
     );
     return verify(publicKey, signed, new Uint8Array(signature));
   } catch {

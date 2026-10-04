@@ -26,15 +26,9 @@ export class EventLog {
     this.key = key;
     this.crypto = crypto;
 
-    this.insertStmt = this.db.prepare(
-      "INSERT OR IGNORE INTO events (event_id, nonce, ciphertext) VALUES (?, ?, ?)"
-    );
-    this.getPlainStmt = this.db.prepare(
-      "SELECT nonce, ciphertext FROM events WHERE event_id = ?"
-    );
-    this.existsStmt = this.db.prepare(
-      "SELECT 1 FROM events WHERE event_id = ?"
-    );
+    this.insertStmt = this.db.prepare("INSERT OR IGNORE INTO events (event_id, nonce, ciphertext) VALUES (?, ?, ?)");
+    this.getPlainStmt = this.db.prepare("SELECT nonce, ciphertext FROM events WHERE event_id = ?");
+    this.existsStmt = this.db.prepare("SELECT 1 FROM events WHERE event_id = ?");
     this.countStmt = this.db.prepare("SELECT COUNT(*) as cnt FROM events");
   }
 
@@ -63,12 +57,7 @@ export class EventLog {
 
   append(eventId: EventId, eventCde: Uint8Array): void {
     const nonce = this.deriveNonce(eventId);
-    const ciphertext = this.crypto.encrypt(
-      this.key,
-      nonce,
-      new Uint8Array(0),
-      eventCde
-    );
+    const ciphertext = this.crypto.encrypt(this.key, nonce, new Uint8Array(0), eventCde);
     this.insertStmt.run(eventId, nonce, ciphertext);
   }
 
@@ -82,12 +71,7 @@ export class EventLog {
       ciphertext: Uint8Array;
     } | null;
     if (!row) return null;
-    return this.crypto.decrypt(
-      this.key,
-      new Uint8Array(row.nonce),
-      new Uint8Array(0),
-      new Uint8Array(row.ciphertext)
-    );
+    return this.crypto.decrypt(this.key, new Uint8Array(row.nonce), new Uint8Array(0), new Uint8Array(row.ciphertext));
   }
 
   listByConversation(conversationId: ConversationId): Uint8Array[] {
@@ -97,9 +81,7 @@ export class EventLog {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("") +
       "%";
-    const stmt = this.db.prepare(
-      "SELECT ciphertext FROM events WHERE hex(event_id) LIKE ? ORDER BY created_at"
-    );
+    const stmt = this.db.prepare("SELECT ciphertext FROM events WHERE hex(event_id) LIKE ? ORDER BY created_at");
     const rows = stmt.all(hex) as { ciphertext: Uint8Array }[];
     return rows.map((r) => new Uint8Array(r.ciphertext));
   }

@@ -71,12 +71,7 @@ function wrapFromWire(raw: {
   };
 }
 
-function broadcastEpoch(
-  client: NexnetClient,
-  groupId: GroupId,
-  epoch: number,
-  wraps: EpochSecretWrap[]
-): void {
+function broadcastEpoch(client: NexnetClient, groupId: GroupId, epoch: number, wraps: EpochSecretWrap[]): void {
   if (!client.online) return;
   try {
     client.sendWs({
@@ -91,21 +86,13 @@ function broadcastEpoch(
   }
 }
 
-function rotateAndBroadcast(
-  client: NexnetClient,
-  groupId: GroupId,
-  session: GroupSession
-): void {
+function rotateAndBroadcast(client: NexnetClient, groupId: GroupId, session: GroupSession): void {
   const members = listGroupMembers(groupId);
   const { epoch, wraps } = rotateEpoch(client.crypto, session, members);
   broadcastEpoch(client, groupId, epoch.epoch, wraps);
 }
 
-export async function createGroup(
-  client: NexnetClient,
-  name: string,
-  members: IdentityId[]
-): Promise<GroupId> {
+export async function createGroup(client: NexnetClient, name: string, members: IdentityId[]): Promise<GroupId> {
   const nameBytes = new TextEncoder().encode(name.trim());
   const groupId = client.crypto.deriveId(DOMAIN_GROUP_ID, nameBytes);
 
@@ -130,11 +117,7 @@ export async function createGroup(
 /**
  * Register peer's group DH public (for epoch wraps).
  */
-export function registerMemberDh(
-  groupId: GroupId,
-  memberId: IdentityId,
-  dhPublic: Uint8Array
-): void {
+export function registerMemberDh(groupId: GroupId, memberId: IdentityId, dhPublic: Uint8Array): void {
   const session = getGroupSession(groupId);
   if (!session) return;
   setMemberDh(session, memberId, dhPublic);
@@ -144,7 +127,7 @@ export async function addMember(
   client: NexnetClient,
   groupId: GroupId,
   identityId: IdentityId,
-  memberDhPublic?: Uint8Array
+  memberDhPublic?: Uint8Array,
 ): Promise<void> {
   let session = getGroupSession(groupId);
   if (!session) {
@@ -170,11 +153,7 @@ export async function addMember(
   rotateAndBroadcast(client, groupId, session);
 }
 
-export async function removeMember(
-  client: NexnetClient,
-  groupId: GroupId,
-  identityId: IdentityId
-): Promise<void> {
+export async function removeMember(client: NexnetClient, groupId: GroupId, identityId: IdentityId): Promise<void> {
   let session = getGroupSession(groupId);
   if (!session) {
     session = initGroupSession(client.crypto, groupId);
@@ -196,11 +175,7 @@ export async function removeMember(
   rotateAndBroadcast(client, groupId, session);
 }
 
-export async function sendGroupMessage(
-  client: NexnetClient,
-  groupId: GroupId,
-  text: string
-): Promise<void> {
+export async function sendGroupMessage(client: NexnetClient, groupId: GroupId, text: string): Promise<void> {
   let session = getGroupSession(groupId);
   if (!session) {
     session = initGroupSession(client.crypto, groupId);
@@ -213,7 +188,7 @@ export async function sendGroupMessage(
     session.epoch,
     session.secret,
     payload,
-    client.signingSecretKey
+    client.signingSecretKey,
   );
 
   if (client.online) {
@@ -237,7 +212,7 @@ export function applyGroupEpochMessage(
   client: NexnetClient,
   groupId: GroupId,
   epoch: number,
-  wraps: EpochSecretWrap[]
+  wraps: EpochSecretWrap[],
 ): boolean {
   let session = getGroupSession(groupId);
   if (!session) {
@@ -259,7 +234,7 @@ export function onGroupMessage(
   client: NexnetClient,
   groupId: GroupId,
   callback: (data: { text: string; senderId: IdentityId }) => void,
-  getSenderPublicKey?: (identityId: IdentityId) => PublicKey | undefined
+  getSenderPublicKey?: (identityId: IdentityId) => PublicKey | undefined,
 ): void {
   const groupIdHex = gHex(groupId);
 
@@ -292,21 +267,11 @@ export function onGroupMessage(
     try {
       // Epoch distribution
       if (msg.wraps && msg.epoch != null) {
-        applyGroupEpochMessage(
-          client,
-          groupId,
-          msg.epoch,
-          msg.wraps.map(wrapFromWire)
-        );
+        applyGroupEpochMessage(client, groupId, msg.epoch, msg.wraps.map(wrapFromWire));
         return;
       }
 
-      if (
-        msg.ciphertext &&
-        msg.nonce &&
-        msg.signature != null &&
-        msg.epoch != null
-      ) {
+      if (msg.ciphertext && msg.nonce && msg.signature != null && msg.epoch != null) {
         const session = getGroupSession(groupId);
         if (!session) return;
 
@@ -321,13 +286,7 @@ export function onGroupMessage(
           signature: new Uint8Array(msg.signature),
         };
 
-        const plain = decryptGroupMessage(
-          client.crypto,
-          groupId,
-          session.secret,
-          encrypted,
-          senderPk
-        );
+        const plain = decryptGroupMessage(client.crypto, groupId, session.secret, encrypted, senderPk);
         if (!plain) return;
 
         const payload = client.codec.decode<{ text: string }>(plain);
@@ -336,9 +295,7 @@ export function onGroupMessage(
       }
 
       if (msg.payload) {
-        const payload = client.codec.decode<{ text: string }>(
-          new Uint8Array(msg.payload)
-        );
+        const payload = client.codec.decode<{ text: string }>(new Uint8Array(msg.payload));
         callback({
           text: payload.text,
           senderId: new Uint8Array(msg.sender ?? []),

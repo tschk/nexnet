@@ -16,20 +16,14 @@ export class SessionStore {
 
   private constructor(db: Database) {
     this.db = db;
-    this.getStmt = this.db.prepare(
-      "SELECT blob FROM ratchet_sessions WHERE session_key = ?"
-    );
+    this.getStmt = this.db.prepare("SELECT blob FROM ratchet_sessions WHERE session_key = ?");
     this.putStmt = this.db.prepare(
       `INSERT OR REPLACE INTO ratchet_sessions (session_key, blob, updated_at)
-       VALUES (?, ?, ?)`
+       VALUES (?, ?, ?)`,
     );
-    this.delStmt = this.db.prepare(
-      "DELETE FROM ratchet_sessions WHERE session_key = ?"
-    );
+    this.delStmt = this.db.prepare("DELETE FROM ratchet_sessions WHERE session_key = ?");
     this.clearStmt = this.db.prepare("DELETE FROM ratchet_sessions");
-    this.keysStmt = this.db.prepare(
-      "SELECT session_key FROM ratchet_sessions"
-    );
+    this.keysStmt = this.db.prepare("SELECT session_key FROM ratchet_sessions");
   }
 
   static open(path: string): SessionStore {

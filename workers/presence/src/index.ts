@@ -144,7 +144,7 @@ export class PresenceTracker {
         const pk = hexToBytes(lease.publicKey);
         const sig = hexToBytes(lease.signature);
         const msg = new TextEncoder().encode(
-          `nexnet presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`
+          `nexnet presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`,
         );
         if (!ed25519.verify(sig, msg, pk)) {
           return jsonResponse({ error: "invalid lease signature" }, 403);
@@ -261,10 +261,9 @@ export class PresenceTracker {
     ) {
       return jsonResponse(
         {
-          error:
-            "identityId, identityDhPublic, signedPrekeyPublic, signedPrekeySig, identitySignPublic required",
+          error: "identityId, identityDhPublic, signedPrekeyPublic, signedPrekeySig, identitySignPublic required",
         },
-        400
+        400,
       );
     }
     // Verify signed prekey over SPK bytes
@@ -397,11 +396,14 @@ export class PresenceTracker {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("*", cors({
-  origin: "*",
-  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(
+  "*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.post("/presence/publish", (c) => handlePublish(c.req.raw, c.env));
 app.get("/presence/subscribe", (c) => handleSubscribe(c.req.raw, c.env));
@@ -415,10 +417,7 @@ app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "in
 
 export default app;
 
-async function handlePublish(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handlePublish(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getPresenceStub(env);
   return stub.fetch("https://presence/do/publish", {
@@ -428,34 +427,22 @@ async function handlePublish(
   });
 }
 
-async function handleQueryIdentity(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handleQueryIdentity(identityId: string, env: Env): Promise<Response> {
   const stub = getPresenceStub(env);
   return stub.fetch(`https://presence/do/query?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handleSubscribe(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleSubscribe(request: Request, env: Env): Promise<Response> {
   const stub = getPresenceStub(env);
   return stub.fetch(request);
 }
 
-async function handleRemoveIdentity(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handleRemoveIdentity(identityId: string, env: Env): Promise<Response> {
   const stub = getPresenceStub(env);
   return stub.fetch(`https://presence/do/remove?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handlePrekeyPublishHttp(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handlePrekeyPublishHttp(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getPresenceStub(env);
   return stub.fetch("https://presence/do/prekeys/publish", {
@@ -465,24 +452,14 @@ async function handlePrekeyPublishHttp(
   });
 }
 
-async function handlePrekeyGetHttp(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handlePrekeyGetHttp(identityId: string, env: Env): Promise<Response> {
   const stub = getPresenceStub(env);
-  return stub.fetch(
-    `https://presence/do/prekeys/get?identityId=${encodeURIComponent(identityId)}`
-  );
+  return stub.fetch(`https://presence/do/prekeys/get?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handlePrekeyRemoveHttp(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handlePrekeyRemoveHttp(identityId: string, env: Env): Promise<Response> {
   const stub = getPresenceStub(env);
-  return stub.fetch(
-    `https://presence/do/prekeys/remove?identityId=${encodeURIComponent(identityId)}`
-  );
+  return stub.fetch(`https://presence/do/prekeys/remove?identityId=${encodeURIComponent(identityId)}`);
 }
 
 function getPresenceStub(env: Env): DurableObjectStub {

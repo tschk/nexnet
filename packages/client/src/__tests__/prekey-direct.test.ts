@@ -2,26 +2,10 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
-import {
-  setupLocalPrekeys,
-  clearPrekeyDirectory,
-  fetchBundle,
-  getLocalPrekeys,
-} from "../prekeys.js";
-import {
-  publishBundleRemote,
-  fetchBundleRemote,
-  bundleToNetwork,
-  bundleFromNetwork,
-} from "../prekey-network.js";
-import {
-  setDirectTransport,
-  trySendDirect,
-} from "../transport.js";
-import {
-  sendDirectMessage,
-  onDirectMessage,
-} from "../dm.js";
+import { setupLocalPrekeys, clearPrekeyDirectory, fetchBundle, getLocalPrekeys } from "../prekeys.js";
+import { publishBundleRemote, fetchBundleRemote, bundleToNetwork, bundleFromNetwork } from "../prekey-network.js";
+import { setDirectTransport, trySendDirect } from "../transport.js";
+import { sendDirectMessage, onDirectMessage } from "../dm.js";
 import { clearSessions } from "../double-ratchet.js";
 import type { PeerManager } from "../webrtc.js";
 import type { CborCdeCodec } from "@nexnet/types";
@@ -35,13 +19,7 @@ describe("prekey network helpers", () => {
   test("bundleToNetwork/fromNetwork roundtrip", () => {
     const kp = cryptoProvider.generateSigningKeyPair();
     const id = new Uint8Array(32).fill(1);
-    const mat = setupLocalPrekeys(
-      cryptoProvider,
-      id,
-      kp.secretKey,
-      kp.publicKey,
-      2
-    );
+    const mat = setupLocalPrekeys(cryptoProvider, id, kp.secretKey, kp.publicKey, 2);
     const bundle = {
       identityDhPublic: mat.identityDh.publicKey,
       signedPrekeyPublic: mat.signedPrekey.publicKey,
@@ -77,13 +55,7 @@ describe("prekey network helpers", () => {
 
     const kp = cryptoProvider.generateSigningKeyPair();
     const id = new Uint8Array(32).fill(0xab);
-    const mat = setupLocalPrekeys(
-      cryptoProvider,
-      id,
-      kp.secretKey,
-      kp.publicKey,
-      1
-    );
+    const mat = setupLocalPrekeys(cryptoProvider, id, kp.secretKey, kp.publicKey, 1);
     const bundle = {
       identityDhPublic: mat.identityDh.publicKey,
       signedPrekeyPublic: mat.signedPrekey.publicKey,
@@ -98,11 +70,7 @@ describe("prekey network helpers", () => {
     clearPrekeyDirectory();
     // re-setup empty local — fetch should re-cache
     const peer = new Uint8Array(32).fill(0xab);
-    const got = await fetchBundleRemote(
-      "https://presence.example",
-      peer,
-      fetchImpl as typeof fetch
-    );
+    const got = await fetchBundleRemote("https://presence.example", peer, fetchImpl as typeof fetch);
     expect(got).not.toBeNull();
     expect(got!.signedPrekeyPublic).toEqual(bundle.signedPrekeyPublic);
     // cached locally
@@ -154,7 +122,16 @@ describe("direct transport DM path", () => {
       signingSecretKey: kpA.secretKey,
       deviceSigningSecretKey: kpA.secretKey,
       deviceSigningPublicKey: kpA.publicKey,
-      deviceCertificate: issueDeviceCert(rootA.secretKey, kpA.publicKey, kpA.publicKey, aliceDeviceId, aliceId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      deviceCertificate: issueDeviceCert(
+        rootA.secretKey,
+        kpA.publicKey,
+        kpA.publicKey,
+        aliceDeviceId,
+        aliceId,
+        Date.now(),
+        Number.MAX_SAFE_INTEGER,
+        1,
+      ),
       rootPublicKey: rootA.publicKey,
     });
     const bobId = new Uint8Array(32).fill(0xb2);
@@ -188,17 +165,24 @@ describe("direct transport DM path", () => {
       signingSecretKey: kpB.secretKey,
       deviceSigningSecretKey: kpB.secretKey,
       deviceSigningPublicKey: kpB.publicKey,
-      deviceCertificate: issueDeviceCert(rootB.secretKey, kpB.publicKey, kpB.publicKey, new Uint8Array(32).fill(2), bobId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      deviceCertificate: issueDeviceCert(
+        rootB.secretKey,
+        kpB.publicKey,
+        kpB.publicKey,
+        new Uint8Array(32).fill(2),
+        bobId,
+        Date.now(),
+        Number.MAX_SAFE_INTEGER,
+        1,
+      ),
       rootPublicKey: rootB.publicKey,
     });
-    const pubs = new Map([
-      [Buffer.from(alice.identityId).toString("hex"), rootA.publicKey],
-    ]);
+    const pubs = new Map([[Buffer.from(alice.identityId).toString("hex"), rootA.publicKey]]);
     const got: string[] = [];
     onDirectMessage(
       bob,
       (_e, p) => got.push(p.text),
-      (id) => pubs.get(Buffer.from(id).toString("hex"))
+      (id) => pubs.get(Buffer.from(id).toString("hex")),
     );
     bob.emit("dm", { envelope: Array.from(directSent[0]!) });
     expect(got).toEqual(["via p2p"]);

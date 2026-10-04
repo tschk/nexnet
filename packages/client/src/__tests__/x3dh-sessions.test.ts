@@ -1,12 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import {
-  createLocalPrekeys,
-  exportBundle,
-  verifyBundle,
-  x3dhInitiate,
-  x3dhRespond,
-} from "../x3dh.js";
+import { createLocalPrekeys, exportBundle, verifyBundle, x3dhInitiate, x3dhRespond } from "../x3dh.js";
 import {
   clearSessions,
   deserializeState,
@@ -61,18 +55,8 @@ describe("X3DH", () => {
     const bundle = exportBundle(bob, bobSign.publicKey);
     expect(bundle.oneTimePrekeyId).toBeDefined();
 
-    const init = x3dhInitiate(
-      cryptoProvider,
-      alice.identityDh.secretKey,
-      bundle
-    );
-    const resp = x3dhRespond(
-      cryptoProvider,
-      bob,
-      alice.identityDh.publicKey,
-      init.ekPublic,
-      init.usedOneTimePrekeyId
-    );
+    const init = x3dhInitiate(cryptoProvider, alice.identityDh.secretKey, bundle);
+    const resp = x3dhRespond(cryptoProvider, bob, alice.identityDh.publicKey, init.ekPublic, init.usedOneTimePrekeyId);
     expect(init.sk).toEqual(resp.sk);
   });
 
@@ -84,17 +68,8 @@ describe("X3DH", () => {
     const bundle = exportBundle(bob, bobSign.publicKey);
     expect(bundle.oneTimePrekeyPublic).toBeUndefined();
 
-    const init = x3dhInitiate(
-      cryptoProvider,
-      alice.identityDh.secretKey,
-      bundle
-    );
-    const resp = x3dhRespond(
-      cryptoProvider,
-      bob,
-      alice.identityDh.publicKey,
-      init.ekPublic
-    );
+    const init = x3dhInitiate(cryptoProvider, alice.identityDh.secretKey, bundle);
+    const resp = x3dhRespond(cryptoProvider, bob, alice.identityDh.publicKey, init.ekPublic);
     expect(init.sk).toEqual(resp.sk);
   });
 
@@ -104,18 +79,8 @@ describe("X3DH", () => {
     const alice = createLocalPrekeys(cryptoProvider, aliceSign.secretKey, 0);
     const bob = createLocalPrekeys(cryptoProvider, bobSign.secretKey, 1);
     const bundle = exportBundle(bob, bobSign.publicKey);
-    const init = x3dhInitiate(
-      cryptoProvider,
-      alice.identityDh.secretKey,
-      bundle
-    );
-    const resp = x3dhRespond(
-      cryptoProvider,
-      bob,
-      alice.identityDh.publicKey,
-      init.ekPublic,
-      init.usedOneTimePrekeyId
-    );
+    const init = x3dhInitiate(cryptoProvider, alice.identityDh.secretKey, bundle);
+    const resp = x3dhRespond(cryptoProvider, bob, alice.identityDh.publicKey, init.ekPublic, init.usedOneTimePrekeyId);
 
     const aState = initInitiator(init.sk, cryptoProvider);
     const bState = initResponder(resp.sk, cryptoProvider);

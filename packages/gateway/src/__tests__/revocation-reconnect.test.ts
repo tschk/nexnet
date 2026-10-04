@@ -162,7 +162,9 @@ describe("revocation authority", () => {
 describe("streaming and reconnects", () => {
   function open(url: string): Promise<{ ws: WebSocket; frames: any[]; closed: Promise<number> }> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url.replace("http", "ws") + "/v1/stream", { headers: { origin: "https://nexnet.test" } } as never);
+      const ws = new WebSocket(url.replace("http", "ws") + "/v1/stream", {
+        headers: { origin: "https://nexnet.test" },
+      } as never);
       const frames: any[] = [];
       let closeResolve: (code: number) => void = () => {};
       const closed = new Promise<number>((r) => (closeResolve = r));
@@ -279,7 +281,7 @@ describe("streaming and reconnects", () => {
           publicRetentionMs: 86_400_000,
           sessionMaxMs: 43_200_000,
         },
-        chain
+        chain,
       );
       const second = gateway.listen(0);
       try {

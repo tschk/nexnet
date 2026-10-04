@@ -46,9 +46,7 @@ export function DmViewScreen() {
       </box>
 
       <box flexDirection="column" flexGrow={1} paddingLeft={0} paddingRight={0} paddingTop={1}>
-        <For each={messages()}>
-          {(msg) => <MessageBubble message={msg} />}
-        </For>
+        <For each={messages()}>{(msg) => <MessageBubble message={msg} />}</For>
         <Show when={messages().length === 0}>
           <text fg={theme.textDim}>No messages yet. Say hello!</text>
         </Show>

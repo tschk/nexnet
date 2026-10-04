@@ -32,11 +32,15 @@ function fakeAuthenticator() {
           challenge: Buffer.from(options.publicKey.challenge as ArrayBuffer).toString("base64url"),
           origin: ORIGIN,
           crossOrigin: false,
-        })
+        }),
       );
       const count = Buffer.alloc(4);
       count.writeUInt32BE(counter);
-      const authData = Buffer.concat([createHash("sha256").update(options.publicKey.rpId).digest(), Buffer.from([0x05]), count]);
+      const authData = Buffer.concat([
+        createHash("sha256").update(options.publicKey.rpId).digest(),
+        Buffer.from([0x05]),
+        count,
+      ]);
       const signer = createSign("SHA256");
       signer.update(Buffer.concat([authData, createHash("sha256").update(clientData).digest()]));
       const signature = signer.sign(privateKey);
@@ -74,7 +78,7 @@ function makeBridge(idb: IDBFactory, credentials?: CredentialsContainer): Bridge
     (frame) => {
       expect(frame.startsWith(FRAME_PREFIX)).toBe(true);
       frames.push(JSON.parse(frame.slice(FRAME_PREFIX.length)));
-    }
+    },
   );
 }
 
@@ -103,7 +107,7 @@ beforeEach(() => {
       sessionMaxMs: 43_200_000,
       wsAuthTimeoutMs: 2000,
     },
-    new DevChainClient(join(dir, "chain.json"))
+    new DevChainClient(join(dir, "chain.json")),
   ).listen(0);
 });
 
@@ -175,10 +179,10 @@ describe("default fetch", () => {
   test("is called unbound, as browsers require", async () => {
     const original = globalThis.fetch;
     let boundTo: unknown = "unset";
-    globalThis.fetch = (function (this: unknown) {
+    globalThis.fetch = function (this: unknown) {
       boundTo = this;
       return Promise.resolve(new Response("{}", { status: 200 }));
-    }) as unknown as typeof fetch;
+    } as unknown as typeof fetch;
     try {
       const { GatewayApi } = await import("../api.js");
       await new GatewayApi("http://127.0.0.1:1").request("GET", "/v1/info");

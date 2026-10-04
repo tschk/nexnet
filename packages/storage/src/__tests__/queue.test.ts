@@ -150,7 +150,8 @@ test("additive migration quarantines old wire v1/v2 rows unchanged across reopen
     const recipient = new Uint8Array(32).fill(7);
     const legacyIds = [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)];
     for (const id of legacyIds) {
-      old.query("INSERT INTO outbound (message_id,recipient_identity,encrypted_envelope,created_at) VALUES (?,?,?,?)")
+      old
+        .query("INSERT INTO outbound (message_id,recipient_identity,encrypted_envelope,created_at) VALUES (?,?,?,?)")
         .run(id, recipient, new Uint8Array([id[0]!, 9, 8]), 123);
     }
     const before = old.query("SELECT * FROM outbound ORDER BY message_id").all() as Array<Record<string, unknown>>;
@@ -159,21 +160,29 @@ test("additive migration quarantines old wire v1/v2 rows unchanged across reopen
     expect(q.pending()).toEqual([]);
     expect(q.pendingForRecipient(recipient)).toEqual([]);
     for (const id of legacyIds) {
-      q.markAttempt(id); q.markDelivered(id);
-      expect(() => q!.enqueue(makeItem({ messageId: id, recipientIdentityId: recipient }))).toThrow("Cannot replace a legacy queue item");
+      q.markAttempt(id);
+      q.markDelivered(id);
+      expect(() => q!.enqueue(makeItem({ messageId: id, recipientIdentityId: recipient }))).toThrow(
+        "Cannot replace a legacy queue item",
+      );
     }
     const fresh = makeItem({ messageId: new Uint8Array(32).fill(3), recipientIdentityId: recipient });
     q.enqueue(fresh);
-    q.close(); q = OutboundQueue.open(path);
+    q.close();
+    q = OutboundQueue.open(path);
     expect(q.pending()).toHaveLength(1);
     expect(q.pending()[0]!.encryptionFormat).toBe(DM_X3DH_QUEUE_FORMAT);
     expect(q.pendingForRecipient(recipient)[0]!.messageId).toEqual(fresh.messageId);
     inspect = new Database(path);
-    const rows = inspect.query("SELECT * FROM outbound WHERE encryption_format IS NULL ORDER BY message_id").all() as Array<Record<string, unknown>>;
+    const rows = inspect
+      .query("SELECT * FROM outbound WHERE encryption_format IS NULL ORDER BY message_id")
+      .all() as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(2);
     expect(rows.map(({ encryption_format: _, ...row }) => row)).toEqual(before);
   } finally {
-    inspect?.close(); q?.close(); rmSync(dir, { recursive: true, force: true });
+    inspect?.close();
+    q?.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -181,8 +190,12 @@ test("enqueue rejects absent/unknown provenance without rows", () => {
   const q = OutboundQueue.open(":memory:");
   try {
     for (const marker of [undefined, null, "unknown-format"]) {
-      expect(() => q.enqueue(makeItem({ encryptionFormat: marker as OutboundQueueItem["encryptionFormat"] }))).toThrow("Queue item lacks X3DH provenance");
+      expect(() => q.enqueue(makeItem({ encryptionFormat: marker as OutboundQueueItem["encryptionFormat"] }))).toThrow(
+        "Queue item lacks X3DH provenance",
+      );
     }
     expect(q.pending()).toEqual([]);
-  } finally { q.close(); }
+  } finally {
+    q.close();
+  }
 });

@@ -127,7 +127,7 @@ export function issueCertificate(
   wallet: Wallet,
   device: Device,
   clock: Clock,
-  lifetimeMs = 60 * 60 * 1000
+  lifetimeMs = 60 * 60 * 1000,
 ): DeviceCertificate {
   const issuedAt = clock.now();
   return issueDeviceCert(
@@ -138,7 +138,7 @@ export function issueCertificate(
     wallet.identityId,
     issuedAt,
     issuedAt + lifetimeMs,
-    1
+    1,
   );
 }
 
@@ -146,7 +146,7 @@ export function unsignedCertificate(
   wallet: Wallet,
   device: Device,
   clock: Clock,
-  lifetimeMs = 60 * 60 * 1000
+  lifetimeMs = 60 * 60 * 1000,
 ): DeviceCertificate {
   const issuedAt = clock.now();
   return {
@@ -172,7 +172,7 @@ export async function api(
   path: string,
   body?: unknown,
   token?: string,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
 ): Promise<ApiResult> {
   const response = await fetch(`${base}${path}`, {
     method,
@@ -205,7 +205,7 @@ export interface Challenge {
 export async function requestChallenge(
   base: string,
   method: SignInMethod,
-  certificate: DeviceCertificate
+  certificate: DeviceCertificate,
 ): Promise<ApiResult> {
   return api(base, "POST", "/v1/auth/challenge", { method, certificate: certificateToJson(certificate) });
 }
@@ -235,7 +235,7 @@ export interface Session {
 export async function signInWallet(
   h: Pick<Harness, "url" | "clock">,
   wallet: Wallet,
-  device = makeDevice()
+  device = makeDevice(),
 ): Promise<Session> {
   const certificate = issueCertificate(wallet, device, h.clock);
   const challenge = await requestChallenge(h.url, "wallet", certificate);
@@ -298,7 +298,7 @@ export async function linkSshKey(base: string, wallet: Wallet, key: SshKey): Pro
     identityId: wallet.identityHex,
     publicKey: key.publicKeyLine,
     rootSignature: toBase64Url(
-      signSshCommitment(wallet.secretKey, wallet.identityId, { algorithm: "ssh-ed25519", publicKey: key.publicKey })
+      signSshCommitment(wallet.secretKey, wallet.identityId, { algorithm: "ssh-ed25519", publicKey: key.publicKey }),
     ),
   });
 }
@@ -307,7 +307,7 @@ export async function signInSsh(
   h: Pick<Harness, "url" | "clock">,
   wallet: Wallet,
   key: SshKey,
-  device = makeDevice()
+  device = makeDevice(),
 ): Promise<{ result: ApiResult; session?: Session; challenge: Challenge; certificate: DeviceCertificate }> {
   const certificate = unsignedCertificate(wallet, device, h.clock);
   const challengeResponse = await requestChallenge(h.url, "ssh", certificate);
@@ -353,8 +353,8 @@ export function makeAuthenticator(): Authenticator {
         [-1, 1],
         [-2, new Uint8Array(Buffer.from(jwk.x!, "base64url"))],
         [-3, new Uint8Array(Buffer.from(jwk.y!, "base64url"))],
-      ])
-    )
+      ]),
+    ),
   );
   return { credentialId: randomBytes(16).toString("base64url"), coseKey, counter: 0, privateKey };
 }
@@ -374,15 +374,21 @@ export async function registerPasskey(base: string, wallet: Wallet, authenticato
   });
 }
 
-export function assertion(authenticator: Authenticator, challenge: string, options: { origin?: string; rpId?: string } = {}) {
+export function assertion(
+  authenticator: Authenticator,
+  challenge: string,
+  options: { origin?: string; rpId?: string } = {},
+) {
   authenticator.counter += 1;
   const clientDataJSON = Buffer.from(
-    JSON.stringify({ type: "webauthn.get", challenge, origin: options.origin ?? ORIGIN, crossOrigin: false })
+    JSON.stringify({ type: "webauthn.get", challenge, origin: options.origin ?? ORIGIN, crossOrigin: false }),
   );
   const counter = Buffer.alloc(4);
   counter.writeUInt32BE(authenticator.counter);
   const authenticatorData = Buffer.concat([
-    createHash("sha256").update(options.rpId ?? RP_ID).digest(),
+    createHash("sha256")
+      .update(options.rpId ?? RP_ID)
+      .digest(),
     Buffer.from([0x05]),
     counter,
   ]);
@@ -407,7 +413,7 @@ export async function signInPasskey(
   wallet: Wallet,
   authenticator: Authenticator,
   device = makeDevice(),
-  assertionOptions: { origin?: string; rpId?: string } = {}
+  assertionOptions: { origin?: string; rpId?: string } = {},
 ): Promise<{ result: ApiResult; session?: Session; challenge: Challenge; certificate: DeviceCertificate }> {
   const certificate = unsignedCertificate(wallet, device, h.clock);
   const challengeResponse = await requestChallenge(h.url, "passkey", certificate);
@@ -441,7 +447,7 @@ export function postEvent(
   session: Session,
   channel: string,
   body: string,
-  options: { createdAt?: number; sequence?: number; signWith?: Uint8Array } = {}
+  options: { createdAt?: number; sequence?: number; signWith?: Uint8Array } = {},
 ) {
   const sequence = options.sequence ?? session.sequence;
   return signEvent(
@@ -455,7 +461,7 @@ export function postEvent(
       parentIds: [],
       payload: cdeEncode({ channel, body }),
     },
-    options.signWith ?? session.device.signingSecretKey
+    options.signWith ?? session.device.signingSecretKey,
   );
 }
 
@@ -464,7 +470,7 @@ export async function post(
   session: Session,
   channel: string,
   body: string,
-  options: { createdAt?: number; sequence?: number; signWith?: Uint8Array; token?: string } = {}
+  options: { createdAt?: number; sequence?: number; signWith?: Uint8Array; token?: string } = {},
 ): Promise<ApiResult> {
   const event = postEvent(session, channel, body, options);
   const result = await api(
@@ -472,7 +478,7 @@ export async function post(
     "POST",
     `/v1/channels/${channel}/messages`,
     { event: eventToJson(event) },
-    options.token ?? session.token
+    options.token ?? session.token,
   );
   if (result.status === 201 && options.sequence === undefined) session.sequence += 1;
   return result;
@@ -482,7 +488,7 @@ export function revocation(
   wallet: Wallet,
   kind: Revocation["kind"],
   credentialId: string,
-  sequence: number
+  sequence: number,
 ): Revocation {
   return signRevocation(wallet.secretKey, { accountId: wallet.identityId, kind, credentialId, sequence });
 }

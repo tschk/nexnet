@@ -36,7 +36,7 @@ export class SlidingWindow {
 
   constructor(
     private readonly limit: number,
-    private readonly windowMs: number
+    private readonly windowMs: number,
   ) {}
 
   allow(key: string, now: number): boolean {
@@ -61,7 +61,7 @@ export class DuplicateGuard {
 
   constructor(
     private readonly threshold: number,
-    private readonly windowMs: number
+    private readonly windowMs: number,
   ) {}
 
   allow(key: string, body: string, now: number): boolean {

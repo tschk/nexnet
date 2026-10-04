@@ -17,12 +17,12 @@
 
 ## Content vs metadata
 
-| Content privacy | Metadata privacy |
-|---|---|
-| E2EE payloads | IPs visible to direct peers / adjacent relays |
-| No relay private history | Timing, sizes, durations observable |
-| Local-only logs | Presence lease patterns |
-| Signed authorship | Discovery lookup patterns |
+| Content privacy          | Metadata privacy                              |
+| ------------------------ | --------------------------------------------- |
+| E2EE payloads            | IPs visible to direct peers / adjacent relays |
+| No relay private history | Timing, sizes, durations observable           |
+| Local-only logs          | Presence lease patterns                       |
+| Signed authorship        | Discovery lookup patterns                     |
 
 Mitigations for metadata:
 

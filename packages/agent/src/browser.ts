@@ -111,8 +111,8 @@ function coseFromSpki(spki: Uint8Array): Uint8Array {
         [-1, 1],
         [-2, point.slice(1, 33)],
         [-3, point.slice(33, 65)],
-      ])
-    )
+      ]),
+    ),
   );
 }
 
@@ -137,7 +137,8 @@ export function createBridge(options: BridgeOptions, send: (frame: string) => vo
   const platform: Platform = {
     gatewayUrl: options.gatewayUrl,
     wallet,
-    methods: () => (passkeyId && supported() ? (["wallet", "passkey"] as SignInMethod[]) : (["wallet"] as SignInMethod[])),
+    methods: () =>
+      passkeyId && supported() ? (["wallet", "passkey"] as SignInMethod[]) : (["wallet"] as SignInMethod[]),
     now,
     assertPasskey: async (challenge: string, rpId: string): Promise<PasskeyAssertionResult> => {
       const credentialId = passkeyId ?? (await keys.get<string>("passkey"));

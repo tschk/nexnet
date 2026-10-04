@@ -63,7 +63,7 @@ class HttpError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    message: string
+    message: string,
   ) {
     super(message);
   }
@@ -122,7 +122,7 @@ export class Gateway {
   constructor(
     private readonly config: GatewayConfig,
     private readonly chain: ChainApiClient,
-    store?: Store
+    store?: Store,
   ) {
     this.store = store ?? new Store(config.stateDir ? `${config.stateDir}/gateway.sqlite` : ":memory:");
     for (const policy of Object.values(CHANNELS)) {
@@ -293,7 +293,7 @@ export class Gateway {
       const created = await this.chain.registerIdentity(wallet, identityId, proof);
       return json(
         { identityId: toHex(created.identityId), createdAt: created.createdAt, existed: existing !== null },
-        existing ? 200 : 201
+        existing ? 200 : 201,
       );
     } catch (error) {
       throw new HttpError(409, "conflict", errorMessage(error));
@@ -326,7 +326,12 @@ export class Gateway {
       fingerprint: sshFingerprint(publicKey),
     };
     try {
-      await this.chain.registerSshKey(wallet, identityId, commitment, base64UrlBytes(input.rootSignature, "rootSignature", 64));
+      await this.chain.registerSshKey(
+        wallet,
+        identityId,
+        commitment,
+        base64UrlBytes(input.rootSignature, "rootSignature", 64),
+      );
     } catch (error) {
       throw new HttpError(403, "forbidden", errorMessage(error));
     }
@@ -359,7 +364,7 @@ export class Gateway {
         wallet,
         identityId,
         credential,
-        base64UrlBytes(input.rootSignature, "rootSignature", 64)
+        base64UrlBytes(input.rootSignature, "rootSignature", 64),
       );
     } catch (error) {
       throw new HttpError(403, "forbidden", errorMessage(error));
@@ -433,7 +438,9 @@ export class Gateway {
     let passkeyChallenge: string | null = null;
     if (method === "passkey") {
       try {
-        passkeyChallenge = (await this.chain.beginPasskeyDeviceCertificateAuthorization(certificate.accountId, certificate)).challenge;
+        passkeyChallenge = (
+          await this.chain.beginPasskeyDeviceCertificateAuthorization(certificate.accountId, certificate)
+        ).challenge;
       } catch (error) {
         throw new HttpError(403, "forbidden", errorMessage(error));
       }
@@ -510,7 +517,12 @@ export class Gateway {
       }
     } else if (challenge.method === "ssh") {
       const ssh = record(input.ssh, "ssh");
-      if (typeof ssh.publicKey !== "string" || ssh.publicKey.length > 1024 || typeof ssh.signature !== "string" || ssh.signature.length > 4096) {
+      if (
+        typeof ssh.publicKey !== "string" ||
+        ssh.publicKey.length > 1024 ||
+        typeof ssh.signature !== "string" ||
+        ssh.signature.length > 4096
+      ) {
         throw new WireError("Invalid ssh");
       }
       let publicKey: Uint8Array;
@@ -540,7 +552,7 @@ export class Gateway {
         await this.chain.authorizeDeviceCertificateWithPasskey(
           certificate.accountId,
           certificate,
-          passkeyAssertionFromJson(assertion)
+          passkeyAssertionFromJson(assertion),
         );
       } catch (error) {
         if (error instanceof WireError) throw error;
@@ -589,7 +601,7 @@ export class Gateway {
     }
     const certificate = await this.chain.resolveDeviceCertificate(
       hexBytes(session.identity, 32, "identity"),
-      hexBytes(session.device, 32, "device")
+      hexBytes(session.device, 32, "device"),
     );
     if (!certificate) {
       this.endSession(tokenHash);
@@ -707,7 +719,7 @@ export class Gateway {
         receivedAt: now,
         body: payload.body,
       },
-      event.sequence
+      event.sequence,
     );
     if (stored === "duplicate") throw new HttpError(409, "duplicate", "Event was already accepted");
     if (stored === "stale_sequence") throw new HttpError(409, "stale_sequence", "Event sequence must increase");
@@ -757,7 +769,11 @@ export class Gateway {
           tokenHash = session.tokenHash;
         }
         const requested = input.channels === undefined ? ["updates", "public"] : input.channels;
-        if (!Array.isArray(requested) || requested.length > 2 || !requested.every((c) => typeof c === "string" && isChannelId(c))) {
+        if (
+          !Array.isArray(requested) ||
+          requested.length > 2 ||
+          !requested.every((c) => typeof c === "string" && isChannelId(c))
+        ) {
           throw new WireError("Invalid channels");
         }
         ws.data.tokenHash = tokenHash;

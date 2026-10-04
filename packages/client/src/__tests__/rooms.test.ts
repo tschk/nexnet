@@ -110,7 +110,12 @@ describe("onRoomMessage", () => {
     const author = cryptoProvider.generateSigningKeyPair();
     const receiver = createRoomClient(new Uint8Array(32).fill(3));
     const received: NexnetEvent[] = [];
-    onRoomMessage(receiver, roomId, (event) => received.push(event), () => author.publicKey);
+    onRoomMessage(
+      receiver,
+      roomId,
+      (event) => received.push(event),
+      () => author.publicKey,
+    );
 
     const signed = signedRoomEvent(new Uint8Array(32).fill(1), author.secretKey);
     signed.signature[0]! ^= 1;

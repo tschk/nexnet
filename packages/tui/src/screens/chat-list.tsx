@@ -45,13 +45,17 @@ export function ChatListScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>Nexnet — chat list</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          Nexnet — chat list
+        </text>
         <text fg={theme.textDim}>n new · Enter open</text>
       </box>
 
       <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1} paddingTop={1}>
         <Show when={conversations().length > 0}>
-          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>Direct Messages</text>
+          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>
+            Direct Messages
+          </text>
           <For each={conversations()}>
             {(conv, idx) => {
               const isSel = () => idx() === selected();
@@ -61,9 +65,7 @@ export function ChatListScreen() {
                   <text fg={isSel() ? theme.textBright : theme.text}>
                     {`${isSel() ? "▸" : " "} ${conv.online ? "●" : "○"} ${truncate(conv.peerName, 20)} ${lastMsg() ? truncate(lastMsg()!.text, 36) : "no messages"}`}
                   </text>
-                  <text fg={theme.textDim}>
-                    {lastMsg() ? formatTime(lastMsg()!.createdAt) : ""}
-                  </text>
+                  <text fg={theme.textDim}>{lastMsg() ? formatTime(lastMsg()!.createdAt) : ""}</text>
                 </box>
               );
             }}
@@ -71,7 +73,9 @@ export function ChatListScreen() {
         </Show>
 
         <Show when={rooms().length > 0}>
-          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>Rooms</text>
+          <text fg={theme.textDim} attributes={createTextAttributes({ bold: true })}>
+            Rooms
+          </text>
           <For each={rooms()}>
             {(room, idx) => {
               const offset = () => conversations().length;

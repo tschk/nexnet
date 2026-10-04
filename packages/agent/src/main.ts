@@ -58,7 +58,7 @@ async function main(argv: string[]): Promise<number> {
         identityId: toHex(identityId),
         publicKey: readFileSync(path, "utf8").trim(),
         rootSignature: toBase64Url(
-          signSshCommitment(wallet.secretKey, identityId, { algorithm: "ssh-ed25519", publicKey })
+          signSshCommitment(wallet.secretKey, identityId, { algorithm: "ssh-ed25519", publicKey }),
         ),
       });
       console.log(`linked ${result.fingerprint ?? sshFingerprint(publicKey)}`);
@@ -88,5 +88,5 @@ main(process.argv.slice(2)).then(
   (error) => {
     console.error(error instanceof Error ? error.message : "failed");
     process.exit(1);
-  }
+  },
 );

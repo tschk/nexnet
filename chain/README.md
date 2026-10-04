@@ -9,32 +9,32 @@ state primitives mature; executor may keep state off-language until then.
 
 ## Rules encoded
 
-| Code | Meaning |
-|------|---------|
-| 0 | ok |
-| 1 | username too short |
-| 2 | username too long |
-| 3 | wallet already owns username (AD-10) |
-| 4 | account younger than 7d |
-| 5 | username taken (owner active) |
-| 10 | transfer disabled |
-| 11 | group creator already set (AD-23) |
-| 12 | relay key empty (AD-22) |
-| 13 | identity root already bound |
-| 20 | already a validator |
-| 21 | insufficient stake |
-| 22 | validator set full (max 21) |
-| 23 | leave would drop below min 4 |
-| 30 | identity id is not derived from the wallet |
-| 31 | identity proof is not signed by the wallet |
-| 32 | too many ssh keys (max 8) |
-| 33 | ssh key already registered |
-| 34 | ssh key revoked |
-| 35 | credential commitment not signed by the wallet |
-| 36 | revocation sequence stale |
-| 37 | revocation not signed by the wallet |
-| 38 | device certificate revoked (itself or its authorising credential) |
-| 39 | device certificate expired |
+| Code | Meaning                                                           |
+| ---- | ----------------------------------------------------------------- |
+| 0    | ok                                                                |
+| 1    | username too short                                                |
+| 2    | username too long                                                 |
+| 3    | wallet already owns username (AD-10)                              |
+| 4    | account younger than 7d                                           |
+| 5    | username taken (owner active)                                     |
+| 10   | transfer disabled                                                 |
+| 11   | group creator already set (AD-23)                                 |
+| 12   | relay key empty (AD-22)                                           |
+| 13   | identity root already bound                                       |
+| 20   | already a validator                                               |
+| 21   | insufficient stake                                                |
+| 22   | validator set full (max 21)                                       |
+| 23   | leave would drop below min 4                                      |
+| 30   | identity id is not derived from the wallet                        |
+| 31   | identity proof is not signed by the wallet                        |
+| 32   | too many ssh keys (max 8)                                         |
+| 33   | ssh key already registered                                        |
+| 34   | ssh key revoked                                                   |
+| 35   | credential commitment not signed by the wallet                    |
+| 36   | revocation sequence stale                                         |
+| 37   | revocation not signed by the wallet                               |
+| 38   | device certificate revoked (itself or its authorising credential) |
+| 39   | device certificate expired                                        |
 
 Constants:
 

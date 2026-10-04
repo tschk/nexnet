@@ -1,12 +1,7 @@
 export { NexnetClient } from "./client.js";
 export type { NexnetClientConfig, EventType, EventHandler } from "./client.js";
 
-export {
-  sendDirectMessage,
-  onDirectMessage,
-  deriveConversationId,
-  DM_WIRE_X3DH,
-} from "./dm.js";
+export { sendDirectMessage, onDirectMessage, deriveConversationId, DM_WIRE_X3DH } from "./dm.js";
 
 export {
   setupLocalPrekeys,
@@ -66,33 +61,12 @@ export {
   saveSession,
   sessionStoreKey,
 } from "./double-ratchet.js";
-export type {
-  RatchetState,
-  RatchetHeader,
-  SessionBackend,
-} from "./double-ratchet.js";
+export type { RatchetState, RatchetHeader, SessionBackend } from "./double-ratchet.js";
 
-export {
-  createLocalPrekeys,
-  exportBundle,
-  verifyBundle,
-  x3dhInitiate,
-  x3dhRespond,
-} from "./x3dh.js";
-export type {
-  PrekeyBundle,
-  LocalPrekeyMaterial,
-  X3dhInitResult,
-  X3dhRecvResult,
-} from "./x3dh.js";
+export { createLocalPrekeys, exportBundle, verifyBundle, x3dhInitiate, x3dhRespond } from "./x3dh.js";
+export type { PrekeyBundle, LocalPrekeyMaterial, X3dhInitResult, X3dhRecvResult } from "./x3dh.js";
 
-export {
-  joinRoom,
-  leaveRoom,
-  sendRoomMessage,
-  onRoomMessage,
-  deriveRoomId,
-} from "./rooms.js";
+export { joinRoom, leaveRoom, sendRoomMessage, onRoomMessage, deriveRoomId } from "./rooms.js";
 
 export {
   createGroup,
@@ -126,18 +100,9 @@ export {
   applyEpochWrap,
   clearGroupSessions,
 } from "./group-crypto.js";
-export type {
-  EncryptedGroupPayload,
-  EpochSecretWrap,
-  GroupEpoch,
-  GroupSession,
-} from "./group-crypto.js";
+export type { EncryptedGroupPayload, EpochSecretWrap, GroupEpoch, GroupSession } from "./group-crypto.js";
 
-export {
-  prepareAttachment,
-  sendAttachment,
-  AttachmentReceiver,
-} from "./attachments.js";
+export { prepareAttachment, sendAttachment, AttachmentReceiver } from "./attachments.js";
 export type { AttachmentTransfer } from "./attachments.js";
 export type { DirectAttachmentChunk } from "./attachments.js";
 

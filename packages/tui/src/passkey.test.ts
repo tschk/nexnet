@@ -3,7 +3,9 @@ import { parsePasskeyBridgeResponse } from "./passkey";
 
 describe("native passkey bridge response", () => {
   test("accepts base64url registration fields", () => {
-    expect(parsePasskeyBridgeResponse('{"credentialId":"AQI","attestationObject":"AwQ","clientDataJSON":"BQY"}', "register")).toEqual({
+    expect(
+      parsePasskeyBridgeResponse('{"credentialId":"AQI","attestationObject":"AwQ","clientDataJSON":"BQY"}', "register"),
+    ).toEqual({
       credentialId: "AQI",
       attestationObject: "AwQ",
       clientDataJSON: "BQY",
@@ -11,6 +13,8 @@ describe("native passkey bridge response", () => {
   });
 
   test("rejects malformed bridge data", () => {
-    expect(() => parsePasskeyBridgeResponse('{"credentialId":"AQI","clientDataJSON":"BQY"}', "assert")).toThrow("authenticatorData");
+    expect(() => parsePasskeyBridgeResponse('{"credentialId":"AQI","clientDataJSON":"BQY"}', "assert")).toThrow(
+      "authenticatorData",
+    );
   });
 });

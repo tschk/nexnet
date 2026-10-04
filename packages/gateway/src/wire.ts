@@ -13,7 +13,12 @@ export function hexBytes(value: unknown, length: number, field: string): Uint8Ar
 }
 
 export function base64UrlBytes(value: unknown, field: string, maxBytes = 8192): Uint8Array {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxBytes * 2 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > maxBytes * 2 ||
+    !/^[A-Za-z0-9_-]+$/.test(value)
+  ) {
     throw new WireError(`Invalid ${field}`);
   }
   const bytes = new Uint8Array(Buffer.from(value, "base64url"));

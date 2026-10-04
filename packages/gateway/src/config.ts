@@ -19,7 +19,7 @@ export function configFromEnv(env: Record<string, string | undefined>): GatewayC
   const mode = env.NEXNET_MODE;
   if (mode === "chain") {
     throw new ConfigError(
-      "NEXNET_MODE=chain needs NEXNET_CHAIN_ENDPOINT and NEXNET_CHAIN_CHECKPOINT and a chain client; no chain client exists yet"
+      "NEXNET_MODE=chain needs NEXNET_CHAIN_ENDPOINT and NEXNET_CHAIN_CHECKPOINT and a chain client; no chain client exists yet",
     );
   }
   if (mode !== "dev-chain") {

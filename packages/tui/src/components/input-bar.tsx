@@ -13,13 +13,7 @@ export function InputBar(props: { onSend: (text: string) => void; placeholder?: 
   }
 
   return (
-    <box
-      flexDirection="row"
-      alignItems="center"
-      backgroundColor={theme.inputBg}
-      paddingLeft={1}
-      paddingRight={1}
-    >
+    <box flexDirection="row" alignItems="center" backgroundColor={theme.inputBg} paddingLeft={1} paddingRight={1}>
       <text fg={theme.accent}>{">"} </text>
       <input
         ref={inputRef}

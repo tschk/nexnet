@@ -21,10 +21,7 @@ export function getDirectTransport(): PeerManager | null {
  * Try send envelope bytes over open data channel.
  * Returns true if delivered on direct path.
  */
-export function trySendDirect(
-  peerIdentityHex: string,
-  envelopeBytes: Uint8Array
-): boolean {
+export function trySendDirect(peerIdentityHex: string, envelopeBytes: Uint8Array): boolean {
   if (!peerManager?.isOpen(peerIdentityHex)) return false;
   return peerManager.send(peerIdentityHex, envelopeBytes);
 }

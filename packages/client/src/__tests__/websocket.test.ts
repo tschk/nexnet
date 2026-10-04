@@ -1,11 +1,6 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
 import { NexnetClient } from "../client.js";
-import type {
-  CryptoProvider,
-  CborCdeCodec,
-  IdentityId,
-  DeviceId,
-} from "@nexnet/types";
+import type { CryptoProvider, CborCdeCodec, IdentityId, DeviceId } from "@nexnet/types";
 
 // ── Mock crypto/codec ────────────────────────────────────────────────
 
@@ -337,7 +332,7 @@ describe("NexnetClient WebSocket", () => {
         from: "cc".repeat(32),
         sdp: "v=0...",
         session_id: "sess1",
-      })
+      }),
     );
 
     expect(received.length).toBe(1);
@@ -358,7 +353,7 @@ describe("NexnetClient WebSocket", () => {
         type: "room_event",
         room_id: "dd".repeat(32),
         event: { text: "hello" },
-      })
+      }),
     );
 
     expect(received.length).toBe(1);
@@ -374,9 +369,7 @@ describe("NexnetClient WebSocket", () => {
     client.on("error", (data) => received.push(data));
 
     const ws = MockWebSocket.instances[0];
-    ws.simulateMessage(
-      JSON.stringify({ type: "error", message: "invalid JSON" })
-    );
+    ws.simulateMessage(JSON.stringify({ type: "error", message: "invalid JSON" }));
 
     expect(received.length).toBe(1);
 
@@ -511,7 +504,7 @@ describe("NexnetClient two-instance DM flow", () => {
       if (msg.type === "dm" && msg.to) {
         // Find B's WebSocket and deliver
         const recipientWs = MockWebSocket.instances.find(
-          (ws) => ws !== sender && ws.url.includes(`identity=${msg.to}`)
+          (ws) => ws !== sender && ws.url.includes(`identity=${msg.to}`),
         );
         if (recipientWs) {
           queueMicrotask(() => {

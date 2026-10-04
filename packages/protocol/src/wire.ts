@@ -11,14 +11,19 @@ export function toBase64Url(bytes: Uint8Array): string {
 }
 
 export function fromBase64Url(value: string): Uint8Array {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const padded = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
   const binary = atob(padded);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
 export function fromHex(value: string): Uint8Array {
   if (value.length % 2 !== 0 || !/^[0-9a-f]*$/.test(value)) throw new Error("Invalid hex");
-  return Uint8Array.from({ length: value.length / 2 }, (_, index) => Number.parseInt(value.slice(index * 2, index * 2 + 2), 16));
+  return Uint8Array.from({ length: value.length / 2 }, (_, index) =>
+    Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
+  );
 }
 
 export function certificateToJson(certificate: DeviceCertificate) {

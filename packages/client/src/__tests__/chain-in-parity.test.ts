@@ -49,7 +49,9 @@ function sshCommitment(seed: number) {
 
 describe.skipIf(!inBinary)("inauguration .in rules agree with the development chain", () => {
   test("the committed self-check passes", () => {
-    expect(Bun.spawnSync([inBinary!, "execute", join(import.meta.dir, "../../../../chain/nexnet_chain.in")]).exitCode).toBe(0);
+    expect(
+      Bun.spawnSync([inBinary!, "execute", join(import.meta.dir, "../../../../chain/nexnet_chain.in")]).exitCode,
+    ).toBe(0);
   });
 
   test("a rule that rejects reports its code", () => {
@@ -61,11 +63,11 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
     const w = wallet();
     const other = wallet();
     await expect(
-      chain.registerIdentity(w.publicKey, other.identityId, signIdentityProof(w.secretKey, w.publicKey))
+      chain.registerIdentity(w.publicKey, other.identityId, signIdentityProof(w.secretKey, w.publicKey)),
     ).rejects.toThrow("does not match");
     expect(runIn("can_register_identity(0, 1, 0)")).toBe(30);
     await expect(
-      chain.registerIdentity(w.publicKey, w.identityId, signIdentityProof(other.secretKey, other.publicKey))
+      chain.registerIdentity(w.publicKey, w.identityId, signIdentityProof(other.secretKey, other.publicKey)),
     ).rejects.toThrow("Invalid identity proof");
     expect(runIn("can_register_identity(1, 0, 0)")).toBe(31);
     await chain.registerIdentity(w.publicKey, w.identityId, signIdentityProof(w.secretKey, w.publicKey));
@@ -89,7 +91,7 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
     }
     const ninth = sshCommitment(99);
     await expect(
-      chain.registerSshKey(w.publicKey, w.identityId, ninth, signSshCommitment(w.secretKey, w.identityId, ninth))
+      chain.registerSshKey(w.publicKey, w.identityId, ninth, signSshCommitment(w.secretKey, w.identityId, ninth)),
     ).rejects.toThrow("Too many");
     expect(runIn("can_register_ssh_key(8, 0, 0, 1)")).toBe(32);
   });
@@ -101,20 +103,20 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(other.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 1 })
-      )
+        signRevocation(other.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 1 }),
+      ),
     ).rejects.toThrow("Invalid revocation");
     expect(runIn("can_revoke_credential(1, 0, 0)")).toBe(37);
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 })
+      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 }),
     );
     expect(runIn("can_revoke_credential(2, 0, 1)")).toBe(0);
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 })
-      )
+        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 }),
+      ),
     ).rejects.toThrow("stale");
     expect(runIn("can_revoke_credential(2, 2, 1)")).toBe(36);
   });
@@ -123,7 +125,12 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
     const chain = new DevChainClient();
     const w = await registered(chain);
     const commitment = sshCommitment(8);
-    await chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment));
+    await chain.registerSshKey(
+      w.publicKey,
+      w.identityId,
+      commitment,
+      signSshCommitment(w.secretKey, w.identityId, commitment),
+    );
     const now = Date.now();
     const device = generateSigningKeyPair();
     const certificate = issueDeviceCert(
@@ -134,14 +141,19 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
       w.identityId,
       now,
       now + 60_000,
-      1
+      1,
     );
     await chain.authorizeDeviceCertificateWithSshKey(w.identityId, certificate, commitment.fingerprint);
     expect(await chain.resolveDeviceCertificate(w.identityId, certificate.deviceId)).not.toBeNull();
     expect(runIn("can_use_device_certificate(0, 0, 0)")).toBe(0);
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "ssh", credentialId: commitment.fingerprint, sequence: 1 })
+      signRevocation(w.secretKey, {
+        accountId: w.identityId,
+        kind: "ssh",
+        credentialId: commitment.fingerprint,
+        sequence: 1,
+      }),
     );
     expect(await chain.resolveDeviceCertificate(w.identityId, certificate.deviceId)).toBeNull();
     expect(runIn("can_use_device_certificate(0, 1, 0)")).toBe(38);

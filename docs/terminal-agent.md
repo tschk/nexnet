@@ -49,9 +49,9 @@ Error codes: `unconfigured`, `offline`, `unauthenticated`, `forbidden`,
 
 ```json
 {
-  "gateway": {"status": "online", "url": "https://..."},
-  "identity": {"id": "64hex", "short": "nx1abcd…wxyz", "username": null},
-  "session": {"method": "ssh", "expiresAt": 1790000000000},
+  "gateway": { "status": "online", "url": "https://..." },
+  "identity": { "id": "64hex", "short": "nx1abcd…wxyz", "username": null },
+  "session": { "method": "ssh", "expiresAt": 1790000000000 },
   "owner": false
 }
 ```
@@ -75,7 +75,12 @@ new `state` object.
 `Message`:
 
 ```json
-{"id": "64hex", "author": {"id": "64hex", "short": "nx1abcd…wxyz", "username": null}, "body": "text", "at": 1790000000000}
+{
+  "id": "64hex",
+  "author": { "id": "64hex", "short": "nx1abcd…wxyz", "username": null },
+  "body": "text",
+  "at": 1790000000000
+}
 ```
 
 ## Rules for the UI

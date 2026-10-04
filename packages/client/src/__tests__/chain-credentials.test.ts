@@ -26,7 +26,16 @@ async function registered(chain: DevChainClient) {
 
 function certificate(w: ReturnType<typeof wallet>, device = generateSigningKeyPair(), id = new Uint8Array(32).fill(5)) {
   const now = Date.now();
-  return issueDeviceCert(w.secretKey, device.publicKey, new Uint8Array(32).fill(2), id, w.identityId, now, now + 60_000, 1);
+  return issueDeviceCert(
+    w.secretKey,
+    device.publicKey,
+    new Uint8Array(32).fill(2),
+    id,
+    w.identityId,
+    now,
+    now + 60_000,
+    1,
+  );
 }
 
 describe("identity registration", () => {
@@ -44,10 +53,10 @@ describe("identity registration", () => {
     const w = wallet();
     const other = wallet();
     await expect(
-      chain.registerIdentity(w.publicKey, other.identityId, signIdentityProof(w.secretKey, w.publicKey))
+      chain.registerIdentity(w.publicKey, other.identityId, signIdentityProof(w.secretKey, w.publicKey)),
     ).rejects.toThrow("does not match");
     await expect(
-      chain.registerIdentity(w.publicKey, w.identityId, signIdentityProof(other.secretKey, other.publicKey))
+      chain.registerIdentity(w.publicKey, w.identityId, signIdentityProof(other.secretKey, other.publicKey)),
     ).rejects.toThrow("Invalid identity proof");
   });
 });
@@ -65,7 +74,12 @@ describe("ssh keys and revocation on the chain", () => {
     expect(await chain.resolveSshKey(w.identityId, commitment.fingerprint)).not.toBeNull();
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "ssh", credentialId: commitment.fingerprint, sequence: 1 })
+      signRevocation(w.secretKey, {
+        accountId: w.identityId,
+        kind: "ssh",
+        credentialId: commitment.fingerprint,
+        sequence: 1,
+      }),
     );
     expect(await chain.resolveSshKey(w.identityId, commitment.fingerprint)).toBeNull();
     expect(await chain.isRevoked(w.identityId, "ssh", commitment.fingerprint)).toBe(true);
@@ -77,7 +91,12 @@ describe("ssh keys and revocation on the chain", () => {
     const publicKey = new Uint8Array(32).fill(8);
     const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: "SHA256:forged" };
     await expect(
-      chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment))
+      chain.registerSshKey(
+        w.publicKey,
+        w.identityId,
+        commitment,
+        signSshCommitment(w.secretKey, w.identityId, commitment),
+      ),
     ).rejects.toThrow("Invalid SSH key");
   });
 
@@ -87,12 +106,22 @@ describe("ssh keys and revocation on the chain", () => {
     for (let i = 0; i < 8; i++) {
       const publicKey = new Uint8Array(32).fill(10 + i);
       const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: sshFingerprint(publicKey) };
-      await chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment));
+      await chain.registerSshKey(
+        w.publicKey,
+        w.identityId,
+        commitment,
+        signSshCommitment(w.secretKey, w.identityId, commitment),
+      );
     }
     const publicKey = new Uint8Array(32).fill(99);
     const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: sshFingerprint(publicKey) };
     await expect(
-      chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment))
+      chain.registerSshKey(
+        w.publicKey,
+        w.identityId,
+        commitment,
+        signSshCommitment(w.secretKey, w.identityId, commitment),
+      ),
     ).rejects.toThrow("Too many");
   });
 
@@ -101,7 +130,12 @@ describe("ssh keys and revocation on the chain", () => {
     const w = await registered(chain);
     const publicKey = new Uint8Array(32).fill(8);
     const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: sshFingerprint(publicKey) };
-    await chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment));
+    await chain.registerSshKey(
+      w.publicKey,
+      w.identityId,
+      commitment,
+      signSshCommitment(w.secretKey, w.identityId, commitment),
+    );
     const viaSsh = certificate(w, generateSigningKeyPair(), new Uint8Array(32).fill(5));
     const viaRoot = certificate(w, generateSigningKeyPair(), new Uint8Array(32).fill(6));
     await chain.authorizeDeviceCertificateWithSshKey(w.identityId, viaSsh, commitment.fingerprint);
@@ -110,7 +144,12 @@ describe("ssh keys and revocation on the chain", () => {
     expect((await chain.getDeviceAuthorization(w.identityId, viaRoot.deviceId))?.kind).toBe("root");
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "ssh", credentialId: commitment.fingerprint, sequence: 1 })
+      signRevocation(w.secretKey, {
+        accountId: w.identityId,
+        kind: "ssh",
+        credentialId: commitment.fingerprint,
+        sequence: 1,
+      }),
     );
     expect(await chain.resolveDeviceCertificate(w.identityId, viaSsh.deviceId)).toBeNull();
     expect(await chain.resolveDeviceCertificate(w.identityId, viaRoot.deviceId)).not.toBeNull();
@@ -120,17 +159,22 @@ describe("ssh keys and revocation on the chain", () => {
     const chain = new DevChainClient();
     const w = await registered(chain);
     const other = wallet();
-    const forged = signRevocation(other.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 1 });
+    const forged = signRevocation(other.secretKey, {
+      accountId: w.identityId,
+      kind: "device",
+      credentialId: "aa",
+      sequence: 1,
+    });
     await expect(chain.revokeCredential(w.publicKey, forged)).rejects.toThrow("Invalid revocation");
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 })
+      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 }),
     );
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 })
-      )
+        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 }),
+      ),
     ).rejects.toThrow("stale");
   });
 
@@ -142,10 +186,15 @@ describe("ssh keys and revocation on the chain", () => {
       const w = await registered(chain);
       const publicKey = new Uint8Array(32).fill(8);
       const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: sshFingerprint(publicKey) };
-      await chain.registerSshKey(w.publicKey, w.identityId, commitment, signSshCommitment(w.secretKey, w.identityId, commitment));
+      await chain.registerSshKey(
+        w.publicKey,
+        w.identityId,
+        commitment,
+        signSshCommitment(w.secretKey, w.identityId, commitment),
+      );
       await chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "dead", sequence: 1 })
+        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "dead", sequence: 1 }),
       );
       const reloaded = new DevChainClient(path);
       expect(await reloaded.resolveSshKey(w.identityId, commitment.fingerprint)).not.toBeNull();

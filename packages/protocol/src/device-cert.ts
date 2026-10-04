@@ -28,7 +28,7 @@ export function issueDeviceCert(
   accountId: IdentityId,
   issuedAt: number,
   expiresAt: number,
-  capabilities: number
+  capabilities: number,
 ): DeviceCertificate {
   const preimage: DeviceCertPreimage = {
     accountId,
@@ -47,10 +47,7 @@ export function issueDeviceCert(
 }
 
 /** Verify a device certificate was signed by the given root public key. */
-export function verifyDeviceCert(
-  cert: DeviceCertificate,
-  rootPk: PublicKey
-): boolean {
+export function verifyDeviceCert(cert: DeviceCertificate, rootPk: PublicKey): boolean {
   const preimage: DeviceCertPreimage = {
     accountId: cert.accountId,
     deviceId: cert.deviceId,
@@ -63,7 +60,10 @@ export function verifyDeviceCert(
   return verify(rootPk, cdeEncode(preimage), cert.rootSignature);
 }
 
-function passkeyPreimage(accountId: IdentityId, credential: PasskeyCredential): {
+function passkeyPreimage(
+  accountId: IdentityId,
+  credential: PasskeyCredential,
+): {
   accountId: IdentityId;
   credentialId: string;
   publicKey: Uint8Array;
@@ -82,7 +82,7 @@ function passkeyPreimage(accountId: IdentityId, credential: PasskeyCredential): 
 export function authorizePasskeyCredential(
   rootSk: Uint8Array,
   accountId: IdentityId,
-  credential: PasskeyCredential
+  credential: PasskeyCredential,
 ): Signature {
   return sign(rootSk, cdeEncode(passkeyPreimage(accountId, credential)));
 }
@@ -91,7 +91,7 @@ export function verifyPasskeyCredentialAuthorization(
   rootPk: PublicKey,
   accountId: IdentityId,
   credential: PasskeyCredential,
-  rootSignature: Signature
+  rootSignature: Signature,
 ): boolean {
   return verify(rootPk, cdeEncode(passkeyPreimage(accountId, credential)), rootSignature);
 }

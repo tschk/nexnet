@@ -31,7 +31,7 @@ function ageAccount(chain: DevChainClient, wallet: Uint8Array): void {
   chain.registerAccount(wallet);
   (chain as unknown as { accounts: Map<string, { createdAt: number; lastActiveAt: number }> }).accounts.set(
     Buffer.from(wallet).toString("hex"),
-    { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() }
+    { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() },
   );
 }
 
@@ -45,9 +45,7 @@ describe("DevChainClient", () => {
 
     // For test speed, we can't wait 7 days.
     // Test that it throws for new account:
-    await expect(
-      chain.registerUsername("alice", wallet, makeIdentity(1))
-    ).rejects.toThrow("Account too new");
+    await expect(chain.registerUsername("alice", wallet, makeIdentity(1))).rejects.toThrow("Account too new");
 
     // Test direct resolution without registration
     const resolved = await chain.resolveUsername("alice");
@@ -56,9 +54,9 @@ describe("DevChainClient", () => {
 
   test("account must be registered before username", async () => {
     const chain = new DevChainClient();
-    await expect(
-      chain.registerUsername("alice", makeWallet(1), makeIdentity(1))
-    ).rejects.toThrow("Account not registered");
+    await expect(chain.registerUsername("alice", makeWallet(1), makeIdentity(1))).rejects.toThrow(
+      "Account not registered",
+    );
   });
 
   test("AD-10: one username per wallet", async () => {
@@ -67,16 +65,14 @@ describe("DevChainClient", () => {
     const wallet = makeWallet(1);
     chain.registerAccount(wallet);
     // The age check will block, but the AD-10 check is there too
-    await expect(
-      chain.registerUsername("bob", wallet, makeIdentity(2))
-    ).rejects.toThrow(/Account too new|Wallet already owns/);
+    await expect(chain.registerUsername("bob", wallet, makeIdentity(2))).rejects.toThrow(
+      /Account too new|Wallet already owns/,
+    );
   });
 
   test("transferUsername is disabled", async () => {
     const chain = new DevChainClient();
-    await expect(
-      chain.transferUsername()
-    ).rejects.toThrow("Username transfer disabled");
+    await expect(chain.transferUsername()).rejects.toThrow("Username transfer disabled");
   });
 
   test("getIdentityRoot returns null for unknown", async () => {
@@ -123,9 +119,7 @@ describe("DevChainClient", () => {
   test("joinValidatorSet rejects duplicate", async () => {
     const chain = new DevChainClient();
     await chain.joinValidatorSet(makeWallet(1), 10);
-    await expect(chain.joinValidatorSet(makeWallet(1), 10)).rejects.toThrow(
-      /Already a validator/
-    );
+    await expect(chain.joinValidatorSet(makeWallet(1), 10)).rejects.toThrow(/Already a validator/);
   });
 
   test("leaveValidatorSet blocked below min after bootstrap", async () => {
@@ -134,9 +128,7 @@ describe("DevChainClient", () => {
       await chain.joinValidatorSet(makeWallet(i), 10);
     }
     // at min 4 — leave would go to 3
-    await expect(chain.leaveValidatorSet(makeWallet(1))).rejects.toThrow(
-      /min validators/
-    );
+    await expect(chain.leaveValidatorSet(makeWallet(1))).rejects.toThrow(/min validators/);
   });
 
   test("leaveValidatorSet ok during bootstrap", async () => {
@@ -157,7 +149,7 @@ describe("DevChainClient", () => {
       chain.registerAccount(wallet);
       (chain as unknown as { accounts: Map<string, { createdAt: number; lastActiveAt: number }> }).accounts.set(
         Buffer.from(wallet).toString("hex"),
-        { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() }
+        { createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000, lastActiveAt: Date.now() },
       );
       await chain.registerUsername("alice", wallet, identity);
       await chain.joinValidatorSet(wallet, 100);
@@ -217,7 +209,7 @@ describe("DevChainClient", () => {
         identity,
         now,
         now + 60_000,
-        1
+        1,
       );
       const chain = new DevChainClient(statePath);
       ageAccount(chain, root.publicKey);
@@ -246,14 +238,14 @@ describe("DevChainClient", () => {
       identity,
       Date.now(),
       Date.now() + 60_000,
-      1
+      1,
     );
     certificate.capabilities = 2;
     const chain = new DevChainClient();
     ageAccount(chain, root.publicKey);
     await chain.registerUsername("alice", root.publicKey, identity);
     await expect(chain.registerDeviceCertificate(root.publicKey, certificate)).rejects.toThrow(
-      "Invalid device certificate signature"
+      "Invalid device certificate signature",
     );
   });
 
@@ -272,7 +264,7 @@ describe("DevChainClient", () => {
         identity,
         Date.now(),
         Date.now() + 60_000,
-        1
+        1,
       );
       const credential = {
         credentialId: "credential-id",
@@ -285,19 +277,23 @@ describe("DevChainClient", () => {
       ageAccount(chain, root.publicKey);
       await chain.registerUsername("alice", root.publicKey, identity);
       const signature = authorizePasskeyCredential(root.secretKey, identity, credential);
-      await expect(
-        chain.registerPasskeyCredential(root.publicKey, identity, credential, signature)
-      ).resolves.toEqual(credential);
+      await expect(chain.registerPasskeyCredential(root.publicKey, identity, credential, signature)).resolves.toEqual(
+        credential,
+      );
       const challenge = await chain.beginPasskeyDeviceCertificateAuthorization(identity, certificate);
       expect(challenge.challenge).toHaveLength(43);
       await expect(
-        chain.authorizeDeviceCertificateWithPasskey(identity, { ...certificate, capabilities: 2 }, {
-          id: credential.credentialId,
-          rawId: credential.credentialId,
-          type: "public-key",
-          response: { clientDataJSON: "", authenticatorData: "", signature: "" },
-          clientExtensionResults: {},
-        })
+        chain.authorizeDeviceCertificateWithPasskey(
+          identity,
+          { ...certificate, capabilities: 2 },
+          {
+            id: credential.credentialId,
+            rawId: credential.credentialId,
+            type: "public-key",
+            response: { clientDataJSON: "", authenticatorData: "", signature: "" },
+            clientExtensionResults: {},
+          },
+        ),
       ).rejects.toThrow("Passkey authorization is missing or expired");
 
       const reopened = new DevChainClient(statePath);

@@ -2,35 +2,13 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
-import {
-  sendDirectMessage,
-  onDirectMessage,
-  deriveConversationId,
-} from "../dm.js";
+import { sendDirectMessage, onDirectMessage, deriveConversationId } from "../dm.js";
 import { setupLocalPrekeys, clearPrekeyDirectory } from "../prekeys.js";
 import { clearSessions as clearRatchetSessions } from "../double-ratchet.js";
-import {
-  createGroup,
-  sendGroupMessage,
-  onGroupMessage,
-} from "../groups.js";
-import {
-  clearGroupSessions,
-  initGroupSession,
-  createEpoch,
-} from "../group-crypto.js";
-import {
-  deriveRoomId,
-  sendRoomMessage,
-  startVotekick,
-  voteKick,
-  isBanned,
-  joinRoom,
-} from "../rooms.js";
-import {
-  prepareAttachment,
-  AttachmentReceiver,
-} from "../attachments.js";
+import { createGroup, sendGroupMessage, onGroupMessage } from "../groups.js";
+import { clearGroupSessions, initGroupSession, createEpoch } from "../group-crypto.js";
+import { deriveRoomId, sendRoomMessage, startVotekick, voteKick, isBanned, joinRoom } from "../rooms.js";
+import { prepareAttachment, AttachmentReceiver } from "../attachments.js";
 import type { CborCdeCodec, MessagePayload } from "@nexnet/types";
 
 // ── Shared mock WS relay ─────────────────────────────────────────────
@@ -160,7 +138,7 @@ function deviceCertificate(
   rootSecretKey: Uint8Array,
   identityId: Uint8Array,
   deviceId: Uint8Array,
-  devicePublicKey: Uint8Array
+  devicePublicKey: Uint8Array,
 ) {
   return issueDeviceCert(
     rootSecretKey,
@@ -170,7 +148,7 @@ function deviceCertificate(
     identityId,
     Date.now(),
     Number.MAX_SAFE_INTEGER,
-    1
+    1,
   );
 }
 
@@ -251,7 +229,7 @@ describe("integration", () => {
       (_env, payload) => {
         got.push(payload);
       },
-      (id) => rootKeys.get(Buffer.from(id).toString("hex"))
+      (id) => rootKeys.get(Buffer.from(id).toString("hex")),
     );
 
     const msgId = await sendDirectMessage(alice, bob.identityId, "hello bob");
@@ -264,15 +242,9 @@ describe("integration", () => {
     expect(receipts).toHaveLength(1);
     expect(receipts[0]!.messageId).toEqual(msgId);
 
-    const aliceSocket = MockWebSocket.instances.find(
-      (ws) => identityFromUrl(ws.url) === alice.identityHex
-    )!;
-    const bobSocket = MockWebSocket.instances.find(
-      (ws) => identityFromUrl(ws.url) === bob.identityHex
-    )!;
-    const duplicate = aliceSocket.sent.find(
-      (raw) => JSON.parse(raw).type === "dm"
-    )!;
+    const aliceSocket = MockWebSocket.instances.find((ws) => identityFromUrl(ws.url) === alice.identityHex)!;
+    const bobSocket = MockWebSocket.instances.find((ws) => identityFromUrl(ws.url) === bob.identityHex)!;
+    const duplicate = aliceSocket.sent.find((raw) => JSON.parse(raw).type === "dm")!;
     bobSocket.simulateMessage(duplicate);
     await new Promise((r) => setTimeout(r, 30));
     expect(got).toHaveLength(1);
@@ -285,7 +257,7 @@ describe("integration", () => {
       (_env, payload) => {
         gotA.push(payload);
       },
-      (id) => rootKeys.get(Buffer.from(id).toString("hex"))
+      (id) => rootKeys.get(Buffer.from(id).toString("hex")),
     );
     await sendDirectMessage(bob, alice.identityId, "hey alice");
     await new Promise((r) => setTimeout(r, 30));
@@ -321,9 +293,9 @@ describe("integration", () => {
       rootPublicKey: root.publicKey,
     });
 
-    await expect(
-      sendDirectMessage(client, new Uint8Array(32).fill(0xe2), "reject")
-    ).rejects.toThrow("Invalid device certificate");
+    await expect(sendDirectMessage(client, new Uint8Array(32).fill(0xe2), "reject")).rejects.toThrow(
+      "Invalid device certificate",
+    );
   });
 
   test("group encryption across members with shared epoch", async () => {
@@ -369,7 +341,7 @@ describe("integration", () => {
       bob,
       groupId,
       (data) => received.push(data.text),
-      (id) => pubkeys.get(Buffer.from(id).toString("hex"))
+      (id) => pubkeys.get(Buffer.from(id).toString("hex")),
     );
 
     await sendGroupMessage(alice, groupId, "group hi");
@@ -383,13 +355,7 @@ describe("integration", () => {
 
   test("attachment prepare + receive transfer completes", () => {
     const data = new TextEncoder().encode("file-bytes-123");
-    const prepared = prepareAttachment(
-      cryptoProvider,
-      codec,
-      data,
-      "note.txt",
-      "text/plain"
-    );
+    const prepared = prepareAttachment(cryptoProvider, codec, data, "note.txt", "text/plain");
     expect(prepared.filename).toBe("note.txt");
     expect(prepared.size).toBe(data.length);
     expect(prepared.encryptedBlob.length).toBeGreaterThan(0);
@@ -399,17 +365,8 @@ describe("integration", () => {
     const total = Math.ceil(prepared.encryptedBlob.length / chunkSize);
     let reassembled: Uint8Array | null = null;
     for (let i = 0; i < total; i++) {
-      const slice = prepared.encryptedBlob.slice(
-        i * chunkSize,
-        (i + 1) * chunkSize
-      );
-      reassembled = receiver.receiveChunk(
-        prepared.attachmentId,
-        i,
-        total,
-        slice,
-        prepared.contentHash
-      );
+      const slice = prepared.encryptedBlob.slice(i * chunkSize, (i + 1) * chunkSize);
+      reassembled = receiver.receiveChunk(prepared.attachmentId, i, total, slice, prepared.contentHash);
     }
     expect(reassembled).not.toBeNull();
     const out = receiver.decryptAttachment(reassembled!, prepared.key);

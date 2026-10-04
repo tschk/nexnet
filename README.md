@@ -3,9 +3,12 @@
 Open-source peer-to-peer social chat network with blockchain-backed identity,
 scarce usernames, local-first history, and privacy-routed discovery.
 
-> **Status:** TypeScript monorepo with 77 passing tests. Crypto, protocol,
-> storage, client, workers, and TUI scaffolded and working. Chain `.in`
-> app not yet implemented.
+> **Status:** TypeScript monorepo plus a Rust terminal UI. Wallet-first
+> identity, wallet-authorised passkeys and SSH keys, an authenticated gateway
+> (`updates` and `public` channels), a Linux terminal agent and a browser
+> bridge work end to end against the in-memory development chain. The chain is
+> not a consensus chain yet; see [docs/gateway.md](docs/gateway.md) and
+> [chain/README.md](chain/README.md) for exactly what is missing.
 
 Nexnet should feel like a modern mix of Usenet, IRC, peer-to-peer messaging,
 and social discovery — without a central message store.
@@ -93,6 +96,9 @@ nexnet/
     storage/              # @nexnet/storage — encrypted local DB
     client/               # @nexnet/client — messaging, rooms, groups
     tui/                  # @nexnet/tui — OpenTUI + SolidJS terminal client
+    gateway/              # @nexnet/gateway — authenticated updates + public chat
+    agent/                # @nexnet/agent — terminal agent and browser bridge
+  terminal/               # nexnet-term — Crepuscularity terminal UI (Rust)
     client/chain-stub.ts  # development chain adapter
   workers/                # Cloudflare Workers
     relay/                # signalling, room gossip
@@ -137,6 +143,8 @@ nexnet/
 | [docs/open-decisions.md](docs/open-decisions.md) | Unresolved design issues |
 | [docs/stack.md](docs/stack.md) | Recommended technology stack |
 | [docs/agent-notes.md](docs/agent-notes.md) | Coding-agent constraints |
+| [docs/gateway.md](docs/gateway.md) | Authenticated gateway, channels, sign-in |
+| [docs/terminal-agent.md](docs/terminal-agent.md) | Terminal UI to agent protocol |
 
 ## MVP snapshot
 

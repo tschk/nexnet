@@ -5,6 +5,23 @@
     "": {
       "name": "nexnet",
     },
+    "packages/agent": {
+      "name": "@nexnet/agent",
+      "version": "0.0.1",
+      "bin": {
+        "nexnet-agent": "src/main.ts",
+      },
+      "dependencies": {
+        "@nexnet/crypto": "workspace:*",
+        "@nexnet/protocol": "workspace:*",
+        "@nexnet/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@nexnet/client": "workspace:*",
+        "@nexnet/gateway": "workspace:*",
+        "bun-types": "latest",
+      },
+    },
     "packages/client": {
       "name": "@nexnet/client",
       "version": "0.0.1",
@@ -369,6 +386,8 @@
     "@levischuck/tiny-cbor": ["@levischuck/tiny-cbor@0.2.11", "", {}, "sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow=="],
 
     "@minhducsun2002/leb128": ["@minhducsun2002/leb128@1.0.0", "", {}, "sha512-eFrYUPDVHeuwWHluTG1kwNQUEUcFjVKYwPkU8z9DR1JH3AW7JtJsG9cRVGmwz809kKtGfwGJj58juCZxEvnI/g=="],
+
+    "@nexnet/agent": ["@nexnet/agent@workspace:packages/agent"],
 
     "@nexnet/client": ["@nexnet/client@workspace:packages/client"],
 

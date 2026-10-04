@@ -55,6 +55,14 @@ with exponential backoff (0.5s doubling, capped at 10s), then re-runs
 Drafts and cached messages survive reconnects. Malformed, oversize
 (> 65536 bytes) or non-UTF-8 lines are skipped and counted (`skipped N`).
 
+## Paste
+
+Bracketed paste is enabled, so a paste into the editor never submits: newlines
+and tabs become spaces and other control characters are dropped. Terminals
+without bracketed paste (the Linux console) deliver a paste as plain keys, so
+an Enter arriving less than 8 ms after the previous editor key is treated as a
+pasted newline (a space) instead of Send. A deliberate Enter still sends.
+
 ## Keys
 
 | Key                                          | Action                                                                   |

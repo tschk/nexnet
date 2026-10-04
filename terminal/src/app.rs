@@ -149,6 +149,8 @@ impl ChannelView {
     }
 }
 
+const PASTE_GAP: std::time::Duration = std::time::Duration::from_millis(8);
+
 #[derive(Debug, Clone)]
 enum Pending {
     Hello,
@@ -178,6 +180,7 @@ pub struct App {
     method: Option<String>,
     pending: HashMap<u64, Pending>,
     sent_at: HashMap<u64, std::time::Instant>,
+    last_edit_key: Option<std::time::Instant>,
     next_id: u64,
     outbox: Vec<String>,
 }
@@ -218,6 +221,7 @@ impl App {
             method: None,
             pending: HashMap::new(),
             sent_at: HashMap::new(),
+            last_edit_key: None,
             next_id: 1,
             outbox: Vec::new(),
         }
@@ -504,6 +508,51 @@ impl App {
             self.channels[c.index()].loaded = true;
         }
         self.set_status(msg, StatusKind::Error);
+    }
+
+    pub fn handle_key_at(&mut self, key: KeyEvent, now: std::time::Instant) {
+        if self.editing && key.kind != KeyEventKind::Release {
+            let burst = self
+                .last_edit_key
+                .is_some_and(|at| now.saturating_duration_since(at) < PASTE_GAP);
+            self.last_edit_key = Some(now);
+            if burst && key.code == KeyCode::Enter {
+                self.handle_paste(" ");
+                return;
+            }
+        }
+        self.handle_key(key);
+    }
+
+    pub fn handle_paste(&mut self, text: &str) {
+        if !self.editing {
+            return;
+        }
+        let Some(channel) = self.page.channel() else {
+            return;
+        };
+        let draft = &mut self.drafts[channel.index()];
+        let mut full = false;
+        for c in text.chars() {
+            let c = if matches!(c, '\n' | '\r' | '\t') {
+                ' '
+            } else {
+                c
+            };
+            if c.is_control() {
+                continue;
+            }
+            if !draft.insert(c) {
+                full = true;
+                break;
+            }
+        }
+        if full {
+            self.set_status(
+                format!("draft is at the {MAX_BODY_BYTES} byte limit"),
+                StatusKind::Error,
+            );
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {

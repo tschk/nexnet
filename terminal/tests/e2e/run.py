@@ -73,6 +73,13 @@ class Tui:
             pass
 
 
+def gateway_bodies():
+    import json
+    import urllib.request
+    with urllib.request.urlopen(f"{URL}/v1/channels/public/messages") as r:
+        return " | ".join(m["body"] for m in json.load(r)["messages"])
+
+
 def main():
     work = tempfile.mkdtemp(prefix="nexnet-e2e-")
     owner_wallet = os.path.join(work, "owner.json")
@@ -84,7 +91,7 @@ def main():
     ).decode().strip()
     gateway = subprocess.Popen(
         ["bun", os.path.join(ROOT, "packages/gateway/src/main.ts")],
-        env=dict(os.environ, NEXNET_MODE="dev-chain", NEXNET_AUDIENCE="nexnet:e2e", NEXNET_OWNER_IDENTITY=owner_id,
+        env=dict(os.environ, NEXNET_MODE="dev-chain", NEXNET_AUDIENCE=URL, NEXNET_OWNER_IDENTITY=owner_id,
                  NEXNET_STATE_DIR=os.path.join(work, "state"), PORT=PORT),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
@@ -105,11 +112,22 @@ def main():
         visitor.keys("c", 2)
         check("identity created", "nx1" in visitor.screen.text(), visitor.screen)
         visitor.keys("\r", 2)
-        check("signed in with wallet", "wallet" in visitor.screen.text().lower(), visitor.screen)
+        check("signed in with wallet", "expires" in visitor.screen.text().lower(), visitor.screen)
         visitor.keys("2")
         visitor.keys("e")
         visitor.keys("\r", 2)
         check("draft survived and posted", visitor.wait_for("hello before signing in"), visitor.screen)
+        visitor.keys("\x1b")
+
+        visitor.keys("e")
+        visitor.keys("\x1b[200~pasted one\npasted two\x1b[201~", 1.5)
+        check("bracketed paste keeps newlines out of the post",
+              "pasted one pasted two" in visitor.screen.text() and "pasted two" not in gateway_bodies(), visitor.screen)
+        visitor.keys("\x15")
+        visitor.keys("burst one\rburst two\r", 1.5)
+        check("unbracketed multi-line burst does not submit",
+              "burst one burst two" in visitor.screen.text() and "burst" not in gateway_bodies(), visitor.screen)
+        visitor.keys("\x15")
         visitor.keys("\x1b")
 
         owner = Tui(owner_wallet)

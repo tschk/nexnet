@@ -592,3 +592,73 @@ fn unanswered_requests_expire_and_unblock_posting() {
     assert!(!app.post_in_flight());
     assert!(matches!(app.status.kind, StatusKind::Error));
 }
+
+fn edit_ready() -> App {
+    let mut app = App::new(true);
+    app.on_link_up();
+    outbox(&mut app);
+    app.on_line(&state_event(false, true));
+    ch(&mut app, '2');
+    ch(&mut app, 'e');
+    app
+}
+
+#[test]
+fn bracketed_paste_never_submits_and_flattens_newlines() {
+    let mut app = edit_ready();
+    app.handle_paste("line one\nline two\r\nline three\n");
+    assert_eq!(
+        app.draft(Channel::Public).text,
+        "line one line two  line three "
+    );
+    assert!(outbox(&mut app).is_empty());
+    assert!(!app.post_in_flight());
+}
+
+#[test]
+fn paste_strips_control_and_escape_characters() {
+    let mut app = edit_ready();
+    app.handle_paste("a\u{1b}[31mb\u{7}c");
+    assert_eq!(app.draft(Channel::Public).text, "a[31mbc");
+}
+
+#[test]
+fn paste_outside_the_editor_is_ignored() {
+    let mut app = App::new(true);
+    app.on_link_up();
+    outbox(&mut app);
+    app.handle_paste("hello");
+    assert!(app.active_draft().is_none_or(|d| d.text.is_empty()));
+}
+
+#[test]
+fn enter_arriving_in_the_same_burst_as_typing_is_a_pasted_newline() {
+    let mut app = edit_ready();
+    let t0 = std::time::Instant::now();
+    let ms = std::time::Duration::from_millis;
+    for (i, c) in "first".chars().enumerate() {
+        app.handle_key_at(key(KeyCode::Char(c)), t0 + ms(i as u64));
+    }
+    app.handle_key_at(key(KeyCode::Enter), t0 + ms(6));
+    for (i, c) in "second".chars().enumerate() {
+        app.handle_key_at(key(KeyCode::Char(c)), t0 + ms(7 + i as u64));
+    }
+    app.handle_key_at(key(KeyCode::Enter), t0 + ms(14));
+    assert_eq!(app.draft(Channel::Public).text, "first second ");
+    assert!(outbox(&mut app).is_empty());
+}
+
+#[test]
+fn a_deliberate_enter_still_submits() {
+    let mut app = edit_ready();
+    let t0 = std::time::Instant::now();
+    let ms = std::time::Duration::from_millis;
+    for (i, c) in "hi".chars().enumerate() {
+        app.handle_key_at(key(KeyCode::Char(c)), t0 + ms(i as u64 * 80));
+    }
+    app.handle_key_at(key(KeyCode::Enter), t0 + ms(400));
+    let sent = outbox(&mut app);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["cmd"], "post");
+    assert_eq!(sent[0]["body"], "hi");
+}

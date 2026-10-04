@@ -1,15 +1,23 @@
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+fn is_bidi(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
 pub fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if c == '\t' { ' ' } else { c })
-        .filter(|c| !c.is_control() || *c == '\n')
+        .filter(|c| (!c.is_control() || *c == '\n') && !is_bidi(*c))
         .collect()
 }
 
 pub fn sanitize_line(s: &str, max_chars: usize) -> String {
     let mut out: String = s
         .chars()
+        .filter(|c| !is_bidi(*c))
         .map(|c| if c.is_control() { ' ' } else { c })
         .take(max_chars + 1)
         .collect();

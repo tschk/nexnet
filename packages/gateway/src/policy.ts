@@ -21,6 +21,8 @@ export function isChannelId(value: string): value is ChannelId {
 }
 
 const BIDI_CONTROLS = /\p{Bidi_Control}/u;
+const INVISIBLE_FORMAT = /(?!\p{Join_Control})\p{Cf}/u;
+const COMBINING_RUN = /\p{M}{9,}/u;
 const CONTROL_OR_SURROGATE = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 export function validateBody(body: string): string | null {
@@ -28,6 +30,8 @@ export function validateBody(body: string): string | null {
   if (Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES) return `Message exceeds ${MAX_BODY_BYTES} bytes`;
   if (CONTROL_OR_SURROGATE.test(body)) return "Message contains control characters";
   if (BIDI_CONTROLS.test(body)) return "Message contains bidirectional control characters";
+  if (INVISIBLE_FORMAT.test(body)) return "Message contains invisible formatting characters";
+  if (COMBINING_RUN.test(body)) return "Message contains too many combining marks";
   return null;
 }
 

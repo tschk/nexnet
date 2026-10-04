@@ -177,6 +177,7 @@ pub struct App {
     pub pane_h: usize,
     method: Option<String>,
     pending: HashMap<u64, Pending>,
+    sent_at: HashMap<u64, std::time::Instant>,
     next_id: u64,
     outbox: Vec<String>,
 }
@@ -216,6 +217,7 @@ impl App {
             pane_h: 10,
             method: None,
             pending: HashMap::new(),
+            sent_at: HashMap::new(),
             next_id: 1,
             outbox: Vec::new(),
         }
@@ -291,12 +293,38 @@ impl App {
         let id = self.next_id;
         self.next_id += 1;
         self.pending.insert(id, pending);
+        self.sent_at.insert(id, std::time::Instant::now());
         self.outbox.push(req.to_line(id));
+    }
+
+    pub fn expire_requests(
+        &mut self,
+        now: std::time::Instant,
+        timeout: std::time::Duration,
+    ) -> bool {
+        let late: Vec<u64> = self
+            .sent_at
+            .iter()
+            .filter(|(_, at)| now.saturating_duration_since(**at) >= timeout)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &late {
+            self.sent_at.remove(id);
+            if let Some(pending) = self.pending.remove(id) {
+                let timed_out = RpcError {
+                    code: ErrorCode::Offline,
+                    message: "the agent did not answer in time".to_string(),
+                };
+                self.on_rpc_error(&pending, &timed_out);
+            }
+        }
+        !late.is_empty()
     }
 
     pub fn on_link_up(&mut self) {
         self.link = LinkState::Connected;
         self.pending.clear();
+        self.sent_at.clear();
         self.outbox.clear();
         self.hello = None;
         self.send(
@@ -330,6 +358,7 @@ impl App {
 
     pub fn on_link_down(&mut self, reason: &str, retry_ms: Option<u64>) {
         self.pending.clear();
+        self.sent_at.clear();
         self.outbox.clear();
         let reason = text::sanitize_line(reason, 120);
         self.set_status(format!("disconnected: {reason}"), StatusKind::Error);
@@ -349,6 +378,7 @@ impl App {
             }
             Ok(Incoming::Response { id, outcome }) => {
                 self.valid_lines += 1;
+                self.sent_at.remove(&id);
                 if let Some(p) = self.pending.remove(&id) {
                     match outcome {
                         Ok(v) => self.on_ok(p, &v),

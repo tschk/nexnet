@@ -83,6 +83,7 @@ function platform(
 ): Platform {
   return {
     gatewayUrl: url,
+    audience: "nexnet:test",
     wallet,
     methods: () => ["wallet"] as SignInMethod[],
     now: () => Date.now() + clock,
@@ -427,5 +428,49 @@ describe("file wallet", () => {
     await expect(new FileWalletStore(path).load()).rejects.toThrow();
     writeFileSync(path, JSON.stringify({ version: 2 }), { mode: 0o600 });
     await expect(new FileWalletStore(path).load()).rejects.toThrow(/format/);
+  });
+});
+
+describe("review fixes", () => {
+  test("a gateway answering with another audience is not signed for", async () => {
+    const c = await client(new MemoryWallet(), { audience: "https://other.example" });
+    await c.send("identity.create");
+    const reply = await c.send("signin", { method: "wallet" });
+    expect(reply.error.code).toBe("invalid");
+    expect(reply.error.message).toMatch(/audience/);
+    expect((await c.send("state")).result.session).toBeNull();
+  });
+
+  test("non-https, non-loopback gateways are treated as unconfigured", async () => {
+    const c = await client(new MemoryWallet(), {}, "http://chat.example.test");
+    expect((await c.send("state")).result.gateway.status).toBe("unconfigured");
+  });
+
+  test("history is trimmed to fit one protocol line", async () => {
+    const poster = await client();
+    await poster.send("identity.create");
+    await poster.send("signin", { method: "wallet" });
+    for (let i = 0; i < 5; i++) {
+      const wallet = new MemoryWallet();
+      const other = await client(wallet);
+      await other.send("identity.create");
+      await other.send("signin", { method: "wallet" });
+      for (let j = 0; j < 5; j++) {
+        await other.send("post", { channel: "public", body: `${i}${j}`.padEnd(1990, "x") });
+      }
+    }
+    const history = await poster.send("history", { channel: "public", limit: 50 });
+    expect(history.ok).toBe(true);
+    expect(new TextEncoder().encode(JSON.stringify(history)).length).toBeLessThan(65_536);
+    expect(history.result.messages.length).toBeGreaterThan(10);
+  });
+
+  test("switching sign-in method in one process works", async () => {
+    const c = await client();
+    await c.send("identity.create");
+    expect((await c.send("signin", { method: "wallet" })).ok).toBe(true);
+    await c.send("signout");
+    expect((await c.send("signin", { method: "wallet" })).ok).toBe(true);
+    expect((await c.send("post", { channel: "public", body: "after re-sign-in" })).ok).toBe(true);
   });
 });

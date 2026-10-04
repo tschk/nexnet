@@ -103,19 +103,34 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(other.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 1 }),
+        signRevocation(other.secretKey, {
+          accountId: w.identityId,
+          kind: "device",
+          credentialId: "a".repeat(64),
+          sequence: 1,
+        }),
       ),
     ).rejects.toThrow("Invalid revocation");
     expect(runIn("can_revoke_credential(1, 0, 0)")).toBe(37);
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 }),
+      signRevocation(w.secretKey, {
+        accountId: w.identityId,
+        kind: "device",
+        credentialId: "a".repeat(64),
+        sequence: 2,
+      }),
     );
     expect(runIn("can_revoke_credential(2, 0, 1)")).toBe(0);
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 }),
+        signRevocation(w.secretKey, {
+          accountId: w.identityId,
+          kind: "device",
+          credentialId: "b".repeat(64),
+          sequence: 2,
+        }),
       ),
     ).rejects.toThrow("stale");
     expect(runIn("can_revoke_credential(2, 2, 1)")).toBe(36);

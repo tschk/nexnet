@@ -71,6 +71,7 @@ function makeBridge(idb: IDBFactory, credentials?: CredentialsContainer): Bridge
   return createBridge(
     {
       gatewayUrl: handle.url,
+      audience: "nexnet:test",
       indexedDB: idb as unknown as IDBFactory,
       credentials,
       location: { hostname: RP_ID, origin: ORIGIN },

@@ -47,6 +47,7 @@ export interface PasskeyAssertionResult {
 
 export interface Platform {
   gatewayUrl: string | null;
+  audience?: string;
   wallet: WalletStore;
   methods(): SignInMethod[];
   now(): number;

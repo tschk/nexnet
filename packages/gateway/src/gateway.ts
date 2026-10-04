@@ -140,6 +140,7 @@ export class Gateway {
     const server = Bun.serve<SocketData>({
       port,
       hostname,
+      maxRequestBodySize: MAX_BODY_JSON_BYTES,
       fetch(req, srv) {
         return gateway.handle(req, srv);
       },
@@ -187,12 +188,21 @@ export class Gateway {
         if (server.upgrade(req, { data })) return undefined as unknown as Response;
         throw new HttpError(400, "invalid", "WebSocket upgrade failed");
       }
-      const ip = server.requestIP(req)?.address ?? "unknown";
+      const ip = this.clientAddress(req, server);
       const response = await this.route(req, url, ip);
       return this.finish(response, cors, false);
     } catch (error) {
       return this.finish(this.errorResponse(error), cors, false);
     }
+  }
+
+  private clientAddress(req: Request, server: Server<SocketData>): string {
+    if (this.config.trustProxy) {
+      const forwarded = req.headers.get("x-forwarded-for");
+      const last = forwarded?.split(",").at(-1)?.trim();
+      if (last) return last;
+    }
+    return server.requestIP(req)?.address ?? "unknown";
   }
 
   private finish(response: Response, cors: string | null, preflight: boolean): Response {
@@ -579,7 +589,7 @@ export class Gateway {
       deviceId: session.device,
       method: session.method,
       expiresAt: session.expiresAt,
-      nextSequence: this.store.lastSequence(session.device) + 1,
+      nextSequence: this.store.lastSequence(`${session.identity}:${session.device}`) + 1,
       owner: this.config.ownerIdentity !== null && session.identity === this.config.ownerIdentity,
     };
   }
@@ -699,7 +709,7 @@ export class Gateway {
     if (this.store.hasEvent(eventId)) {
       throw new HttpError(409, "duplicate", "Event was already accepted");
     }
-    if (event.sequence <= this.store.lastSequence(session.device)) {
+    if (event.sequence <= this.store.lastSequence(`${session.identity}:${session.device}`)) {
       throw new HttpError(409, "stale_sequence", "Event sequence must increase");
     }
     this.expireChannel(channel);

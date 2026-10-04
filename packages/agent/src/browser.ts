@@ -20,6 +20,7 @@ const MAX_FRAME = 65_536;
 
 export interface BridgeOptions {
   gatewayUrl: string | null;
+  audience?: string;
   indexedDB?: IDBFactory;
   credentials?: CredentialsContainer;
   location?: { hostname: string; origin: string };
@@ -77,6 +78,7 @@ class KeyStore {
       };
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error("Storage was blocked"));
     });
   }
 }
@@ -95,6 +97,9 @@ class IndexedDbWallet implements WalletStore {
     const wallet = generateSigningKeyPair();
     if (!(await this.keys.putIfAbsent("wallet", { secretKey: wallet.secretKey }))) {
       throw new Error("A wallet already exists in this browser");
+    }
+    if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+      void navigator.storage.persist().catch(() => undefined);
     }
     return wallet;
   }
@@ -136,6 +141,7 @@ export function createBridge(options: BridgeOptions, send: (frame: string) => vo
 
   const platform: Platform = {
     gatewayUrl: options.gatewayUrl,
+    ...(options.audience ? { audience: options.audience } : {}),
     wallet,
     methods: () =>
       passkeyId && supported() ? (["wallet", "passkey"] as SignInMethod[]) : (["wallet"] as SignInMethod[]),

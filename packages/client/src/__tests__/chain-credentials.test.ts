@@ -162,18 +162,28 @@ describe("ssh keys and revocation on the chain", () => {
     const forged = signRevocation(other.secretKey, {
       accountId: w.identityId,
       kind: "device",
-      credentialId: "aa",
+      credentialId: "a".repeat(64),
       sequence: 1,
     });
     await expect(chain.revokeCredential(w.publicKey, forged)).rejects.toThrow("Invalid revocation");
     await chain.revokeCredential(
       w.publicKey,
-      signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "aa", sequence: 2 }),
+      signRevocation(w.secretKey, {
+        accountId: w.identityId,
+        kind: "device",
+        credentialId: "a".repeat(64),
+        sequence: 2,
+      }),
     );
     await expect(
       chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "bb", sequence: 2 }),
+        signRevocation(w.secretKey, {
+          accountId: w.identityId,
+          kind: "device",
+          credentialId: "b".repeat(64),
+          sequence: 2,
+        }),
       ),
     ).rejects.toThrow("stale");
   });
@@ -194,11 +204,16 @@ describe("ssh keys and revocation on the chain", () => {
       );
       await chain.revokeCredential(
         w.publicKey,
-        signRevocation(w.secretKey, { accountId: w.identityId, kind: "device", credentialId: "dead", sequence: 1 }),
+        signRevocation(w.secretKey, {
+          accountId: w.identityId,
+          kind: "device",
+          credentialId: "d".repeat(64),
+          sequence: 1,
+        }),
       );
       const reloaded = new DevChainClient(path);
       expect(await reloaded.resolveSshKey(w.identityId, commitment.fingerprint)).not.toBeNull();
-      expect(await reloaded.isRevoked(w.identityId, "device", "dead")).toBe(true);
+      expect(await reloaded.isRevoked(w.identityId, "device", "d".repeat(64))).toBe(true);
       expect(await reloaded.getIdentity(w.identityId)).not.toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -577,3 +577,18 @@ fn agent_text_cannot_inject_terminal_escapes() {
     assert!(!out.contains('\u{1b}'));
     assert!(out.contains("hi [2J]0;pwn there"), "{out}");
 }
+
+#[test]
+fn unanswered_requests_expire_and_unblock_posting() {
+    let mut app = App::new(true);
+    app.on_link_up();
+    outbox(&mut app);
+    assert!(!app.expire_requests(
+        std::time::Instant::now(),
+        std::time::Duration::from_secs(20)
+    ));
+    let later = std::time::Instant::now() + std::time::Duration::from_secs(21);
+    assert!(app.expire_requests(later, std::time::Duration::from_secs(20)));
+    assert!(!app.post_in_flight());
+    assert!(matches!(app.status.kind, StatusKind::Error));
+}

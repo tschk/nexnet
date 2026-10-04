@@ -19,6 +19,7 @@ import type { ChannelName, AgentState, Message, Outbound, Platform, WalletSecret
 
 export const MAX_LINE_BYTES = 65_536;
 export const MAX_BODY_BYTES = 2000;
+const MAX_REPLY_BYTES = MAX_LINE_BYTES - 64;
 const PROTOCOL_VERSION = 1;
 const CERT_LIFETIME_MS = 11 * 60 * 60 * 1000;
 const BACKOFF_START_MS = 500;
@@ -51,6 +52,16 @@ interface WireMessage {
   seq: number;
 }
 
+export function gatewayAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+    return url.protocol === "https:" || (url.protocol === "http:" && loopback);
+  } catch {
+    return false;
+  }
+}
+
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
@@ -69,6 +80,7 @@ function strip(message: WireMessage): Message {
 
 export class AgentCore {
   private readonly api: GatewayApi | null;
+  private readonly audience: string;
   private wallet: WalletSecret | null = null;
   private device: DeviceKeys | null = null;
   private session: ActiveSession | null = null;
@@ -87,7 +99,9 @@ export class AgentCore {
     private readonly emit: (output: Outbound) => void,
     fetcher?: typeof fetch,
   ) {
-    this.api = platform.gatewayUrl ? new GatewayApi(platform.gatewayUrl, fetcher) : null;
+    this.api =
+      platform.gatewayUrl && gatewayAllowed(platform.gatewayUrl) ? new GatewayApi(platform.gatewayUrl, fetcher) : null;
+    this.audience = platform.audience ?? (this.api ? new URL(this.api.url).origin : "");
     this.status = this.api ? "offline" : "unconfigured";
   }
 
@@ -227,7 +241,12 @@ export class AgentCore {
     await this.probe();
     if (this.status !== "online") throw new AgentError("offline", "Cannot reach the gateway");
     this.wallet = await this.platform.wallet.create();
-    await this.register();
+    try {
+      await this.register();
+    } catch (error) {
+      this.emit({ event: "state", state: this.state() });
+      throw error;
+    }
     return this.state();
   }
 
@@ -265,6 +284,7 @@ export class AgentCore {
     if (!this.wallet) throw new AgentError("unauthenticated", "Create an identity first");
     const wallet = this.wallet;
     await this.register();
+    this.device = null;
     const device = this.deviceKeys();
     const accountId = identityIdFromWallet(wallet.publicKey);
     const issuedAt = this.platform.now();
@@ -299,6 +319,9 @@ export class AgentCore {
       passkeyChallenge: string | null;
       rpId: string | null;
     }>("POST", "/v1/auth/challenge", { method, certificate: certificateToJson(certificate) });
+    if (challenge.audience !== this.audience) {
+      throw new AgentError("invalid", "The gateway's audience does not match the configured gateway");
+    }
     const preimage = signInPreimage({
       audience: challenge.audience,
       method,
@@ -372,7 +395,14 @@ export class AgentCore {
       `/v1/channels/${channel}/messages?limit=${count}`,
     );
     for (const message of result.messages) this.noteSeq(channel, message.seq);
-    return { channel, messages: result.messages.map(strip) };
+    const messages = result.messages.map(strip);
+    while (
+      messages.length > 0 &&
+      byteLength(JSON.stringify({ id: 0, ok: true, result: { channel, messages } })) > MAX_REPLY_BYTES
+    ) {
+      messages.shift();
+    }
+    return { channel, messages };
   }
 
   private noteSeq(channel: ChannelName, seq: number): void {

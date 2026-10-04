@@ -58,8 +58,10 @@ export class Store {
     `);
   }
 
-  lastSequence(device: string): number {
-    const row = this.db.query("SELECT last_sequence AS value FROM device_sequences WHERE device = ?").get(device) as {
+  lastSequence(sequenceKey: string): number {
+    const row = this.db
+      .query("SELECT last_sequence AS value FROM device_sequences WHERE device = ?")
+      .get(sequenceKey) as {
       value: number;
     } | null;
     return row?.value ?? 0;
@@ -72,7 +74,8 @@ export class Store {
   insertMessage(message: Omit<StoredMessage, "seq">, deviceSequence: number): InsertResult | StoredMessage {
     const run = this.db.transaction((): InsertResult | StoredMessage => {
       if (this.hasEvent(message.eventId)) return "duplicate";
-      if (deviceSequence <= this.lastSequence(message.device)) return "stale_sequence";
+      const sequenceKey = `${message.identity}:${message.device}`;
+      if (deviceSequence <= this.lastSequence(sequenceKey)) return "stale_sequence";
       const result = this.db
         .query(
           `INSERT INTO messages (channel, event_id, identity, device, created_at, received_at, device_sequence, body)
@@ -93,7 +96,7 @@ export class Store {
           `INSERT INTO device_sequences (device, last_sequence) VALUES (?, ?)
            ON CONFLICT(device) DO UPDATE SET last_sequence = excluded.last_sequence`,
         )
-        .run(message.device, deviceSequence);
+        .run(sequenceKey, deviceSequence);
       return { ...message, seq: Number(result.lastInsertRowid) };
     });
     return run();

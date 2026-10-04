@@ -115,6 +115,7 @@ interface PersistedState {
 }
 
 const MAX_SSH_KEYS_PER_IDENTITY = 8;
+const MAX_REVOCATION_SEQUENCE_AHEAD_MS = 24 * 60 * 60 * 1000;
 
 export class DevChainClient implements ChainApiClient {
   private usernames = new Map<string, UsernameRecord>();
@@ -269,6 +270,7 @@ export class DevChainClient implements ChainApiClient {
     if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
       throw new Error("Device is revoked");
     }
+    this.assertNoConflictingDevice(certificate, { kind: "root", credentialId: null });
     const stored = structuredClone(certificate);
     const key = this.deviceCertificateKey(stored.accountId, stored.deviceId);
     this.deviceCertificates.set(key, stored);
@@ -341,7 +343,7 @@ export class DevChainClient implements ChainApiClient {
       certificate: this.persistedDeviceCertificate(certificate),
       expiresAt: Date.now() + 5 * 60_000,
     };
-    this.pendingPasskeyAuthorizations.set(identityHex, authorization);
+    this.pendingPasskeyAuthorizations.set(this.pendingKey(identityHex, certificate.deviceId), authorization);
     this.persist();
     return { challenge: authorization.challenge, expiresAt: authorization.expiresAt };
   }
@@ -352,7 +354,7 @@ export class DevChainClient implements ChainApiClient {
     assertion: PasskeyAssertion,
   ): Promise<DeviceCertificate> {
     const identityHex = Buffer.from(identityId).toString("hex");
-    const pending = this.pendingPasskeyAuthorizations.get(identityHex);
+    const pending = this.pendingPasskeyAuthorizations.get(this.pendingKey(identityHex, certificate.deviceId));
     if (
       !pending ||
       pending.expiresAt < Date.now() ||
@@ -378,11 +380,12 @@ export class DevChainClient implements ChainApiClient {
     });
     if (!result.verified) throw new Error("Invalid passkey assertion");
     credential.counter = result.authenticationInfo.newCounter;
+    this.assertNoConflictingDevice(certificate, { kind: "passkey", credentialId: credential.credentialId });
     const stored = structuredClone(certificate);
     const storedKey = this.deviceCertificateKey(stored.accountId, stored.deviceId);
     this.deviceCertificates.set(storedKey, stored);
     this.deviceAuthorizations.set(storedKey, { kind: "passkey", credentialId: credential.credentialId });
-    this.pendingPasskeyAuthorizations.delete(identityHex);
+    this.pendingPasskeyAuthorizations.delete(this.pendingKey(identityHex, certificate.deviceId));
     this.persist();
     return structuredClone(stored);
   }
@@ -486,6 +489,7 @@ export class DevChainClient implements ChainApiClient {
     if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
       throw new Error("Device is revoked");
     }
+    this.assertNoConflictingDevice(certificate, { kind: "ssh", credentialId: fingerprint });
     const stored = structuredClone(certificate);
     const key = this.deviceCertificateKey(stored.accountId, stored.deviceId);
     this.deviceCertificates.set(key, stored);
@@ -502,10 +506,10 @@ export class DevChainClient implements ChainApiClient {
     }
     if (
       (revocation.kind !== "device" && revocation.kind !== "ssh" && revocation.kind !== "passkey") ||
-      !revocation.credentialId ||
-      revocation.credentialId.length > 256 ||
+      !this.isCredentialIdWellFormed(revocation.kind, revocation.credentialId) ||
       !Number.isSafeInteger(revocation.sequence) ||
       revocation.sequence < 1 ||
+      revocation.sequence > Date.now() + MAX_REVOCATION_SEQUENCE_AHEAD_MS ||
       revocation.rootSignature.length !== 64 ||
       !verifyRevocation(wallet, revocation)
     ) {
@@ -530,6 +534,32 @@ export class DevChainClient implements ChainApiClient {
   async getDeviceAuthorization(identityId: IdentityId, deviceId: DeviceId): Promise<DeviceAuthorization | null> {
     const found = this.deviceAuthorizations.get(this.deviceCertificateKey(identityId, deviceId));
     return found ? { ...found } : null;
+  }
+
+  private isCredentialIdWellFormed(kind: CredentialKind, credentialId: string): boolean {
+    if (credentialId.length === 0 || credentialId.length > 256) return false;
+    if (kind === "device") return /^[0-9a-f]{64}$/.test(credentialId);
+    if (kind === "ssh") return /^SHA256:[A-Za-z0-9+/]{43}$/.test(credentialId);
+    return true;
+  }
+
+  private pendingKey(identityHex: string, deviceId: DeviceId): string {
+    return `${identityHex}:${Buffer.from(deviceId).toString("hex")}`;
+  }
+
+  private assertNoConflictingDevice(certificate: DeviceCertificate, next: DeviceAuthorization): void {
+    const key = this.deviceCertificateKey(certificate.accountId, certificate.deviceId);
+    const existing = this.deviceCertificates.get(key);
+    if (!existing || existing.expiresAt <= Date.now()) return;
+    const authorization = this.deviceAuthorizations.get(key);
+    const sameKey = Buffer.from(existing.deviceSigningPublicKey).equals(
+      Buffer.from(certificate.deviceSigningPublicKey),
+    );
+    const sameAuthorization =
+      authorization?.kind === next.kind && (authorization?.credentialId ?? null) === next.credentialId;
+    if (!sameKey || !sameAuthorization) {
+      throw new Error("Device is already authorised differently; use a new device id");
+    }
   }
 
   private revocationKey(identityHex: string, kind: CredentialKind, credentialId: string): string {

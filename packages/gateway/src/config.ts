@@ -10,6 +10,7 @@ export interface GatewayConfig {
   publicRetentionMs: number;
   sessionMaxMs: number;
   wsAuthTimeoutMs?: number;
+  trustProxy?: boolean;
 }
 
 export const DEFAULT_PUBLIC_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +53,7 @@ export function configFromEnv(env: Record<string, string | undefined>): GatewayC
     audience,
     ownerIdentity,
     stateDir: env.NEXNET_STATE_DIR ?? null,
+    trustProxy: env.NEXNET_TRUST_PROXY === "1",
     rpId: env.NEXNET_RP_ID ?? null,
     origins,
     now: Date.now,

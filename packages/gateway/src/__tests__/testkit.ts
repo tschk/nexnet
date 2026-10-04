@@ -57,6 +57,7 @@ export interface HarnessOptions {
   rpId?: string | null;
   stateDir?: string;
   publicRetentionMs?: number;
+  trustProxy?: boolean;
 }
 
 export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
@@ -74,6 +75,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     publicRetentionMs: options.publicRetentionMs ?? 24 * 60 * 60 * 1000,
     sessionMaxMs: 12 * 60 * 60 * 1000,
     wsAuthTimeoutMs: 300,
+    trustProxy: options.trustProxy ?? false,
   };
   const gateway = new Gateway(config, chain);
   const handle = gateway.listen(0);

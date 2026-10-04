@@ -103,3 +103,10 @@ fn backoff_doubles_and_caps_at_ten_seconds() {
         assert!(b.next_delay_ms() <= Backoff::CAP_MS);
     }
 }
+
+#[test]
+fn bidi_controls_are_stripped() {
+    let hostile = "ab\u{202e}cd\u{2066}ef\u{200f}\u{2028}gh";
+    assert_eq!(nexnet_term::text::sanitize(hostile), "abcdefgh");
+    assert_eq!(nexnet_term::text::sanitize_line(hostile, 40), "abcdefgh");
+}

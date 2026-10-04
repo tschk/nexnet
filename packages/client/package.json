@@ -21,5 +21,9 @@
   },
   "devDependencies": {
     "bun-types": "latest"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./chain-stub": "./src/chain-stub.ts"
   }
 }

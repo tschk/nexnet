@@ -44,6 +44,7 @@ export const DOMAIN_EVENT_ID = "nexnet event id v1";
 export const DOMAIN_ROOM_ID = "nexnet room id v1";
 export const DOMAIN_ATTACHMENT_ID = "nexnet attachment id v1";
 export const DOMAIN_GROUP_ID = "nexnet group id v1";
+export const DOMAIN_IDENTITY_ID = "nexnet identity id v1";
 
 // Size limits (initial)
 export const MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KiB
@@ -71,6 +72,7 @@ export type KnownEventType =
   | "group.closed"
   | "group.message"
   | "identity.device_authorized"
+  | "channel.post"
   | "test.ping";
 
 /** Canonical signed event (AD-4b: CDE-encoded for signatures) */
@@ -130,6 +132,34 @@ export type DeviceCertificateResolver = (
   identityId: IdentityId,
   deviceId: DeviceId
 ) => Promise<DeviceCertificate | null>;
+
+export interface IdentityRecord {
+  identityId: IdentityId;
+  wallet: WalletAddress;
+  createdAt: number;
+  username: string | null;
+}
+
+export type CredentialKind = "device" | "ssh" | "passkey";
+
+export interface SshKeyCommitment {
+  algorithm: "ssh-ed25519";
+  publicKey: PublicKey;
+  fingerprint: string;
+}
+
+export interface Revocation {
+  accountId: IdentityId;
+  kind: CredentialKind;
+  credentialId: string;
+  sequence: number;
+  rootSignature: Signature;
+}
+
+export interface DeviceAuthorization {
+  kind: "root" | "ssh" | "passkey";
+  credentialId: string | null;
+}
 
 export interface PasskeyCredential {
   credentialId: string;
@@ -330,6 +360,40 @@ export interface ChainApiClient {
     certificate: DeviceCertificate,
     assertion: PasskeyAssertion
   ): Promise<DeviceCertificate>;
+  registerIdentity(
+    wallet: WalletAddress,
+    identityId: IdentityId,
+    proof: Signature
+  ): Promise<IdentityRecord>;
+  getIdentity(identityId: IdentityId): Promise<IdentityRecord | null>;
+  registerSshKey(
+    wallet: WalletAddress,
+    identityId: IdentityId,
+    commitment: SshKeyCommitment,
+    rootSignature: Signature
+  ): Promise<SshKeyCommitment>;
+  resolveSshKey(
+    identityId: IdentityId,
+    fingerprint: string
+  ): Promise<SshKeyCommitment | null>;
+  authorizeDeviceCertificateWithSshKey(
+    identityId: IdentityId,
+    certificate: DeviceCertificate,
+    fingerprint: string
+  ): Promise<DeviceCertificate>;
+  revokeCredential(
+    wallet: WalletAddress,
+    revocation: Revocation
+  ): Promise<void>;
+  isRevoked(
+    identityId: IdentityId,
+    kind: CredentialKind,
+    credentialId: string
+  ): Promise<boolean>;
+  getDeviceAuthorization(
+    identityId: IdentityId,
+    deviceId: DeviceId
+  ): Promise<DeviceAuthorization | null>;
   /** Optional AD-14 validator set (dev stub implements) */
   joinValidatorSet?(
     wallet: WalletAddress,

@@ -106,3 +106,11 @@ export function verifyEvent(
   const signBytes = cdeEncode(toSigningPreimage(event));
   return verify(publicKey, signBytes, event.signature);
 }
+
+export function verifyEventId(event: NexnetEvent): boolean {
+  const expected = deriveId(DOMAIN_EVENT_ID, cdeEncode(toIdPreimage(event)));
+  return (
+    expected.length === event.eventId.length &&
+    expected.every((byte, index) => byte === event.eventId[index])
+  );
+}

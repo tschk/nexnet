@@ -19,3 +19,4 @@ Cargo.lock
 node_modules/
 /terminal/target/
 !/terminal/Cargo.lock
+/packages/agent/dist/

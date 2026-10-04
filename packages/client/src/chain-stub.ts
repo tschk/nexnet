@@ -322,6 +322,13 @@ export class DevChainClient implements ChainApiClient {
     return structuredClone(stored);
   }
 
+  async hasLivePasskey(identityId: IdentityId): Promise<boolean> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    return (this.passkeys.get(identityHex) ?? []).some(
+      (item) => !this.isRevokedKey(identityHex, "passkey", item.credentialId),
+    );
+  }
+
   async beginPasskeyDeviceCertificateAuthorization(
     identityId: IdentityId,
     certificate: DeviceCertificate,
@@ -358,15 +365,20 @@ export class DevChainClient implements ChainApiClient {
     identityId: IdentityId,
     certificate: DeviceCertificate,
     assertion: PasskeyAssertion,
+    expectedChallenge?: string,
   ): Promise<DeviceCertificate> {
     const identityHex = Buffer.from(identityId).toString("hex");
     const pending = this.pendingPasskeyAuthorizations.get(this.pendingKey(identityHex, certificate.deviceId));
-    if (
-      !pending ||
-      pending.expiresAt < Date.now() ||
-      !this.isDeviceCertificateShapeValid(certificate, identityId) ||
-      !this.sameDeviceCertificate(this.deviceCertificate(pending.certificate), certificate)
-    ) {
+    if (expectedChallenge === undefined) {
+      if (
+        !pending ||
+        pending.expiresAt < Date.now() ||
+        !this.isDeviceCertificateShapeValid(certificate, identityId) ||
+        !this.sameDeviceCertificate(this.deviceCertificate(pending.certificate), certificate)
+      ) {
+        throw new Error("Passkey authorization is missing or expired");
+      }
+    } else if (expectedChallenge.length === 0 || !this.isDeviceCertificateShapeValid(certificate, identityId)) {
       throw new Error("Passkey authorization is missing or expired");
     }
     const credential = this.passkeys.get(identityHex)?.find((item) => item.credentialId === assertion.id);
@@ -375,7 +387,7 @@ export class DevChainClient implements ChainApiClient {
     }
     const result = await verifyAuthenticationResponse({
       response: assertion as never,
-      expectedChallenge: pending.challenge,
+      expectedChallenge: expectedChallenge ?? pending!.challenge,
       expectedOrigin: credential.origin,
       expectedRPID: credential.rpId,
       credential: {

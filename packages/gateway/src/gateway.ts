@@ -75,6 +75,7 @@ interface PendingChallenge {
   nonce: string;
   expiresAt: number;
   certificate: DeviceCertificate;
+  passkeyChallenge: string | null;
 }
 
 interface SocketData {
@@ -444,18 +445,13 @@ export class Gateway {
       nonce: randomBytes(32).toString("hex"),
       expiresAt: now + CHALLENGE_TTL_MS,
       certificate,
+      passkeyChallenge: null,
     };
-    let passkeyChallenge: string | null = null;
     if (method === "passkey") {
-      try {
-        passkeyChallenge = (
-          await this.chain.beginPasskeyDeviceCertificateAuthorization(certificate.accountId, certificate)
-        ).challenge;
-      } catch (error) {
-        const message = errorMessage(error);
-        if (/too many pending/i.test(message)) throw new HttpError(429, "rate_limited", message);
-        throw new HttpError(403, "forbidden", message);
+      if (!(await this.chain.hasLivePasskey(certificate.accountId))) {
+        throw new HttpError(403, "forbidden", "No passkey credential registered");
       }
+      challenge.passkeyChallenge = randomBytes(32).toString("base64url");
     }
     this.challenges.set(challenge.id, challenge);
     return json({
@@ -464,7 +460,7 @@ export class Gateway {
       nonce: challenge.nonce,
       expiresAt: challenge.expiresAt,
       audience: this.config.audience,
-      passkeyChallenge,
+      passkeyChallenge: challenge.passkeyChallenge,
       rpId: method === "passkey" ? this.config.rpId : null,
       certificate: certificateToJson(certificate),
     });
@@ -565,6 +561,7 @@ export class Gateway {
           certificate.accountId,
           certificate,
           passkeyAssertionFromJson(assertion),
+          challenge.passkeyChallenge ?? "",
         );
       } catch (error) {
         if (error instanceof WireError) throw error;

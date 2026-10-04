@@ -46,9 +46,12 @@ root-signed revocation with a strictly increasing revocation sequence.
      root-signed, unexpired and not revoked.
    - `ssh`: `ssh-keygen -Y sign -n nexnet-auth` over the challenge preimage; the
      SSH key must have a live wallet commitment.
-   - `passkey`: a WebAuthn assertion whose challenge is the challenge preimage
-     hash; the credential must have a live wallet commitment and the counter
-     must advance.
+   - `passkey`: a WebAuthn assertion over the gateway's single-use
+     `passkeyChallenge` (random, held only by the gateway, never reserved on the
+     chain, so challenge requests cannot exhaust anything); the device key also
+     signs the sign-in preimage, which binds method, audience and certificate.
+     The credential must have a live wallet commitment and its counter must
+     advance.
 3. `POST /v1/auth/verify` consumes the challenge and returns a bearer session
    token bound to the device. Sessions last at most 12 hours and end on
    `POST /v1/auth/logout` or revocation.

@@ -340,7 +340,9 @@ export interface ChainApiClient {
     identityId: IdentityId,
     certificate: DeviceCertificate,
     assertion: PasskeyAssertion,
+    expectedChallenge?: string,
   ): Promise<DeviceCertificate>;
+  hasLivePasskey(identityId: IdentityId): Promise<boolean>;
   registerIdentity(wallet: WalletAddress, identityId: IdentityId, proof: Signature): Promise<IdentityRecord>;
   getIdentity(identityId: IdentityId): Promise<IdentityRecord | null>;
   registerSshKey(

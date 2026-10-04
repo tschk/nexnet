@@ -90,8 +90,8 @@ describe("pending passkey challenges", () => {
   });
 });
 
-describe("pending passkey capacity", () => {
-  test("a flood of new devices is refused with 429 and an in-flight sign-in survives", async () => {
+describe("passkey challenges hold no chain state", () => {
+  test("a flood of challenge requests for other devices never breaks an in-flight sign-in", async () => {
     const wallet = makeWallet();
     await createIdentity(h.url, wallet);
     const authenticator = makeAuthenticator();
@@ -100,19 +100,38 @@ describe("pending passkey capacity", () => {
     const certificate = unsignedCertificate(wallet, device, h.clock);
     const challenge = await requestChallenge(h.url, "passkey", certificate);
     const statuses: number[] = [];
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 25; i++) {
       statuses.push(
         (await requestChallenge(h.url, "passkey", unsignedCertificate(wallet, makeDevice(), h.clock))).status,
       );
     }
-    expect(statuses.slice(0, 15).every((s) => s === 200)).toBe(true);
-    expect(statuses.slice(15).every((s) => s === 429)).toBe(true);
+    expect(statuses.every((s) => s === 200)).toBe(true);
+    const pending = (h.chain as unknown as { pendingPasskeyAuthorizations: Map<string, unknown> })
+      .pendingPasskeyAuthorizations;
+    expect(pending.size).toBe(0);
     const verified = await api(h.url, "POST", "/v1/auth/verify", {
       challengeId: challenge.body.challengeId,
       deviceSignature: toBase64Url(sign(device.signingSecretKey, preimageFor("passkey", challenge.body, certificate))),
       passkey: assertion(authenticator, challenge.body.passkeyChallenge),
     });
     expect(verified.status).toBe(201);
+  });
+
+  test("an assertion over a different gateway challenge is refused", async () => {
+    const wallet = makeWallet();
+    await createIdentity(h.url, wallet);
+    const authenticator = makeAuthenticator();
+    await registerPasskey(h.url, wallet, authenticator);
+    const device = makeDevice();
+    const certificate = unsignedCertificate(wallet, device, h.clock);
+    const challenge = await requestChallenge(h.url, "passkey", certificate);
+    const other = await requestChallenge(h.url, "passkey", unsignedCertificate(wallet, makeDevice(), h.clock));
+    const verified = await api(h.url, "POST", "/v1/auth/verify", {
+      challengeId: challenge.body.challengeId,
+      deviceSignature: toBase64Url(sign(device.signingSecretKey, preimageFor("passkey", challenge.body, certificate))),
+      passkey: assertion(authenticator, other.body.passkeyChallenge),
+    });
+    expect(verified.status).toBe(401);
   });
 });
 

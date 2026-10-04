@@ -85,7 +85,7 @@ export class AgentCore {
   constructor(
     private readonly platform: Platform,
     private readonly emit: (output: Outbound) => void,
-    fetcher: typeof fetch = fetch
+    fetcher?: typeof fetch
   ) {
     this.api = platform.gatewayUrl ? new GatewayApi(platform.gatewayUrl, fetcher) : null;
     this.status = this.api ? "offline" : "unconfigured";

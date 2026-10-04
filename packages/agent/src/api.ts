@@ -3,7 +3,7 @@ import { AgentError, codeForStatus } from "./errors.js";
 export class GatewayApi {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetcher: typeof fetch = fetch
+    private readonly fetcher?: typeof fetch
   ) {}
 
   get url(): string {
@@ -13,7 +13,8 @@ export class GatewayApi {
   async request<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
     let response: Response;
     try {
-      response = await this.fetcher(`${this.baseUrl}${path}`, {
+      const send = this.fetcher ?? fetch;
+      response = await send(`${this.baseUrl}${path}`, {
         method,
         headers: {
           ...(body === undefined ? {} : { "content-type": "application/json" }),

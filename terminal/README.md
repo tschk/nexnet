@@ -38,7 +38,7 @@ nexnet [--agent <cmd...> | --serial <path>]
 | Option | Env | Transport |
 |---|---|---|
 | `--agent <cmd...>` | `NEXNET_AGENT` | Spawn the agent, use its stdin/stdout. Must be the last option. The env value is split on whitespace (no quoting). The agent's stderr is never shown; the last line of it is appended to the `disconnected` message when the agent exits. |
-| `--serial <path>` | `NEXNET_SERIAL` | Open a character device read+write. Every line sent and received carries the prefix `@@nexnet `; received lines without it (console noise) are ignored. termios is not configured here (init runs `stty raw`). |
+| `--serial <path>` | `NEXNET_SERIAL` | Open a character device read+write. Every line sent and received carries the prefix `@@nexnet `; received lines without it (console noise) are ignored. The device is switched to raw mode (no echo, no line editing) when opened, because some console drivers reset termios on close. |
 
 Command-line options win over the environment. Giving both transports is an
 error. With neither, the UI starts in a "no agent configured" state with

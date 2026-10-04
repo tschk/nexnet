@@ -98,6 +98,7 @@ impl Link {
 
     pub fn open_serial(path: &Path) -> io::Result<Link> {
         let reader = OpenOptions::new().read(true).write(true).open(path)?;
+        make_raw(&reader);
         let writer = reader.try_clone()?;
         Ok(Link::from_streams(
             Box::new(reader),
@@ -317,5 +318,20 @@ impl Backoff {
 impl Default for Backoff {
     fn default() -> Self {
         Backoff::new()
+    }
+}
+
+fn make_raw(file: &std::fs::File) {
+    use std::os::fd::AsRawFd;
+    let fd = file.as_raw_fd();
+    unsafe {
+        if libc::isatty(fd) != 1 {
+            return;
+        }
+        let mut termios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut termios) == 0 {
+            libc::cfmakeraw(&mut termios);
+            libc::tcsetattr(fd, libc::TCSANOW, &termios);
+        }
     }
 }

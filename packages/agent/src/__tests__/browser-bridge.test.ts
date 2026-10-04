@@ -170,3 +170,21 @@ describe("browser bridge", () => {
     await expect(bridge.registerPasskey()).rejects.toThrow(/identity/i);
   });
 });
+
+describe("default fetch", () => {
+  test("is called unbound, as browsers require", async () => {
+    const original = globalThis.fetch;
+    let boundTo: unknown = "unset";
+    globalThis.fetch = (function (this: unknown) {
+      boundTo = this;
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as unknown as typeof fetch;
+    try {
+      const { GatewayApi } = await import("../api.js");
+      await new GatewayApi("http://127.0.0.1:1").request("GET", "/v1/info");
+      expect(boundTo === undefined || boundTo === globalThis).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

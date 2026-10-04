@@ -339,13 +339,17 @@ export class DevChainClient implements ChainApiClient {
     if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
       throw new Error("Device is revoked");
     }
-    this.prunePendingPasskeys(identityHex);
+    const pendingKey = this.pendingKey(identityHex, certificate.deviceId);
+    const pendingCount = this.prunePendingPasskeys(identityHex);
+    if (pendingCount >= MAX_PENDING_PASSKEYS_PER_IDENTITY && !this.pendingPasskeyAuthorizations.has(pendingKey)) {
+      throw new Error("Too many pending passkey authorizations");
+    }
     const authorization = {
       challenge: Buffer.from(randomBytes(32)).toString("base64url"),
       certificate: this.persistedDeviceCertificate(certificate),
       expiresAt: Date.now() + 5 * 60_000,
     };
-    this.pendingPasskeyAuthorizations.set(this.pendingKey(identityHex, certificate.deviceId), authorization);
+    this.pendingPasskeyAuthorizations.set(pendingKey, authorization);
     this.persist();
     return { challenge: authorization.challenge, expiresAt: authorization.expiresAt };
   }
@@ -546,17 +550,14 @@ export class DevChainClient implements ChainApiClient {
     return true;
   }
 
-  private prunePendingPasskeys(identityHex: string): void {
+  private prunePendingPasskeys(identityHex: string): number {
     const now = Date.now();
-    const mine: [string, PendingPasskeyAuthorization][] = [];
+    let live = 0;
     for (const [key, pending] of this.pendingPasskeyAuthorizations) {
       if (pending.expiresAt <= now) this.pendingPasskeyAuthorizations.delete(key);
-      else if (key.startsWith(`${identityHex}:`)) mine.push([key, pending]);
+      else if (key.startsWith(`${identityHex}:`)) live += 1;
     }
-    mine.sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    while (mine.length >= MAX_PENDING_PASSKEYS_PER_IDENTITY) {
-      this.pendingPasskeyAuthorizations.delete(mine.shift()![0]);
-    }
+    return live;
   }
 
   private pendingKey(identityHex: string, deviceId: DeviceId): string {

@@ -90,6 +90,32 @@ describe("pending passkey challenges", () => {
   });
 });
 
+describe("pending passkey capacity", () => {
+  test("a flood of new devices is refused with 429 and an in-flight sign-in survives", async () => {
+    const wallet = makeWallet();
+    await createIdentity(h.url, wallet);
+    const authenticator = makeAuthenticator();
+    await registerPasskey(h.url, wallet, authenticator);
+    const device = makeDevice();
+    const certificate = unsignedCertificate(wallet, device, h.clock);
+    const challenge = await requestChallenge(h.url, "passkey", certificate);
+    const statuses: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      statuses.push(
+        (await requestChallenge(h.url, "passkey", unsignedCertificate(wallet, makeDevice(), h.clock))).status,
+      );
+    }
+    expect(statuses.slice(0, 15).every((s) => s === 200)).toBe(true);
+    expect(statuses.slice(15).every((s) => s === 429)).toBe(true);
+    const verified = await api(h.url, "POST", "/v1/auth/verify", {
+      challengeId: challenge.body.challengeId,
+      deviceSignature: toBase64Url(sign(device.signingSecretKey, preimageFor("passkey", challenge.body, certificate))),
+      passkey: assertion(authenticator, challenge.body.passkeyChallenge),
+    });
+    expect(verified.status).toBe(201);
+  });
+});
+
 describe("device authorisation conflicts", () => {
   test("a different credential cannot take over an existing device id", async () => {
     const wallet = makeWallet();

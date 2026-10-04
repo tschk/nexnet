@@ -452,7 +452,9 @@ export class Gateway {
           await this.chain.beginPasskeyDeviceCertificateAuthorization(certificate.accountId, certificate)
         ).challenge;
       } catch (error) {
-        throw new HttpError(403, "forbidden", errorMessage(error));
+        const message = errorMessage(error);
+        if (/too many pending/i.test(message)) throw new HttpError(429, "rate_limited", message);
+        throw new HttpError(403, "forbidden", message);
       }
     }
     this.challenges.set(challenge.id, challenge);

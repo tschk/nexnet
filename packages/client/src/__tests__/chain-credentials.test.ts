@@ -244,29 +244,67 @@ describe("ssh keys and revocation on the chain", () => {
     }
   });
 
-  test("pending passkey challenges are pruned and capped per identity", async () => {
+  test("pending passkey challenges are capped without evicting live ones", async () => {
     const chain = new DevChainClient();
     const w = await registered(chain);
     const now = Date.now();
-    const pending = (chain as unknown as { pendingPasskeyAuthorizations: Map<string, unknown> })
-      .pendingPasskeyAuthorizations;
-    (chain as unknown as { passkeys: Map<string, unknown[]> }).passkeys.set(Buffer.from(w.identityId).toString("hex"), [
+    const internals = chain as unknown as {
+      pendingPasskeyAuthorizations: Map<string, unknown>;
+      passkeys: Map<string, unknown[]>;
+    };
+    internals.passkeys.set(Buffer.from(w.identityId).toString("hex"), [
       { credentialId: "c", publicKey: new Uint8Array(1), counter: 0, rpId: "x", origin: "https://x" },
     ]);
-    for (let i = 0; i < 40; i++) {
-      const id = new Uint8Array(32).fill(i + 1);
-      const cert = issueDeviceCert(
+    const cert = (n: number) =>
+      issueDeviceCert(
         w.secretKey,
         generateSigningKeyPair().publicKey,
         new Uint8Array(32).fill(2),
-        id,
+        new Uint8Array(32).fill(n),
         w.identityId,
         now,
         now + 60_000,
         1,
       );
-      await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert);
-    }
-    expect(pending.size).toBeLessThanOrEqual(16);
+    const first = cert(1);
+    await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, first);
+    for (let i = 2; i <= 16; i++) await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert(i));
+    expect(internals.pendingPasskeyAuthorizations.size).toBe(16);
+    await expect(chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert(17))).rejects.toThrow(
+      "Too many pending",
+    );
+    expect(internals.pendingPasskeyAuthorizations.size).toBe(16);
+    const key = `${Buffer.from(w.identityId).toString("hex")}:${Buffer.from(first.deviceId).toString("hex")}`;
+    expect(internals.pendingPasskeyAuthorizations.has(key)).toBe(true);
+    await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, first);
+    expect(internals.pendingPasskeyAuthorizations.size).toBe(16);
+  });
+
+  test("expired pending passkey challenges free their slots", async () => {
+    const chain = new DevChainClient();
+    const w = await registered(chain);
+    const now = Date.now();
+    const internals = chain as unknown as {
+      pendingPasskeyAuthorizations: Map<string, { expiresAt: number }>;
+      passkeys: Map<string, unknown[]>;
+    };
+    internals.passkeys.set(Buffer.from(w.identityId).toString("hex"), [
+      { credentialId: "c", publicKey: new Uint8Array(1), counter: 0, rpId: "x", origin: "https://x" },
+    ]);
+    const cert = (n: number) =>
+      issueDeviceCert(
+        w.secretKey,
+        generateSigningKeyPair().publicKey,
+        new Uint8Array(32).fill(2),
+        new Uint8Array(32).fill(n),
+        w.identityId,
+        now,
+        now + 60_000,
+        1,
+      );
+    for (let i = 1; i <= 16; i++) await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert(i));
+    for (const pending of internals.pendingPasskeyAuthorizations.values()) pending.expiresAt = now - 1;
+    await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert(17));
+    expect(internals.pendingPasskeyAuthorizations.size).toBe(1);
   });
 });

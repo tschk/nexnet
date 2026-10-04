@@ -1,5 +1,20 @@
 {
   "name": "nexnet",
   "private": true,
-  "workspaces": ["packages/*", "workers/*", "site"]
+  "workspaces": [
+    "packages/*",
+    "workers/*",
+    "site"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bunx oxlint packages workers",
+    "format": "bunx prettier --check ."
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.0"
+  }
 }

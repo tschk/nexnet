@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "bun test",
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@nexnet/types": "workspace:*",

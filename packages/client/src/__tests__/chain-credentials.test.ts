@@ -219,4 +219,54 @@ describe("ssh keys and revocation on the chain", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("revoked keys free their slot so rotation never locks the identity out", async () => {
+    const chain = new DevChainClient();
+    const w = await registered(chain);
+    for (let round = 0; round < 10; round++) {
+      const publicKey = new Uint8Array(32).fill(100 + round);
+      const commitment = { algorithm: "ssh-ed25519" as const, publicKey, fingerprint: sshFingerprint(publicKey) };
+      await chain.registerSshKey(
+        w.publicKey,
+        w.identityId,
+        commitment,
+        signSshCommitment(w.secretKey, w.identityId, commitment),
+      );
+      await chain.revokeCredential(
+        w.publicKey,
+        signRevocation(w.secretKey, {
+          accountId: w.identityId,
+          kind: "ssh",
+          credentialId: commitment.fingerprint,
+          sequence: round + 1,
+        }),
+      );
+    }
+  });
+
+  test("pending passkey challenges are pruned and capped per identity", async () => {
+    const chain = new DevChainClient();
+    const w = await registered(chain);
+    const now = Date.now();
+    const pending = (chain as unknown as { pendingPasskeyAuthorizations: Map<string, unknown> })
+      .pendingPasskeyAuthorizations;
+    (chain as unknown as { passkeys: Map<string, unknown[]> }).passkeys.set(Buffer.from(w.identityId).toString("hex"), [
+      { credentialId: "c", publicKey: new Uint8Array(1), counter: 0, rpId: "x", origin: "https://x" },
+    ]);
+    for (let i = 0; i < 40; i++) {
+      const id = new Uint8Array(32).fill(i + 1);
+      const cert = issueDeviceCert(
+        w.secretKey,
+        generateSigningKeyPair().publicKey,
+        new Uint8Array(32).fill(2),
+        id,
+        w.identityId,
+        now,
+        now + 60_000,
+        1,
+      );
+      await chain.beginPasskeyDeviceCertificateAuthorization(w.identityId, cert);
+    }
+    expect(pending.size).toBeLessThanOrEqual(16);
+  });
 });

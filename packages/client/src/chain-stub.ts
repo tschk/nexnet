@@ -115,6 +115,7 @@ interface PersistedState {
 }
 
 const MAX_SSH_KEYS_PER_IDENTITY = 8;
+const MAX_PENDING_PASSKEYS_PER_IDENTITY = 16;
 const MAX_REVOCATION_SEQUENCE_AHEAD_MS = 24 * 60 * 60 * 1000;
 
 export class DevChainClient implements ChainApiClient {
@@ -338,6 +339,7 @@ export class DevChainClient implements ChainApiClient {
     if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
       throw new Error("Device is revoked");
     }
+    this.prunePendingPasskeys(identityHex);
     const authorization = {
       challenge: Buffer.from(randomBytes(32)).toString("base64url"),
       certificate: this.persistedDeviceCertificate(certificate),
@@ -453,7 +455,8 @@ export class DevChainClient implements ChainApiClient {
     if (this.isRevokedKey(identityHex, "ssh", commitment.fingerprint)) {
       throw new Error("SSH key is revoked");
     }
-    if (keys.length >= MAX_SSH_KEYS_PER_IDENTITY) {
+    const liveKeys = keys.filter((item) => !this.isRevokedKey(identityHex, "ssh", item.fingerprint));
+    if (liveKeys.length >= MAX_SSH_KEYS_PER_IDENTITY) {
       throw new Error("Too many SSH keys");
     }
     const stored: SshKeyCommitment = {
@@ -541,6 +544,19 @@ export class DevChainClient implements ChainApiClient {
     if (kind === "device") return /^[0-9a-f]{64}$/.test(credentialId);
     if (kind === "ssh") return /^SHA256:[A-Za-z0-9+/]{43}$/.test(credentialId);
     return true;
+  }
+
+  private prunePendingPasskeys(identityHex: string): void {
+    const now = Date.now();
+    const mine: [string, PendingPasskeyAuthorization][] = [];
+    for (const [key, pending] of this.pendingPasskeyAuthorizations) {
+      if (pending.expiresAt <= now) this.pendingPasskeyAuthorizations.delete(key);
+      else if (key.startsWith(`${identityHex}:`)) mine.push([key, pending]);
+    }
+    mine.sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    while (mine.length >= MAX_PENDING_PASSKEYS_PER_IDENTITY) {
+      this.pendingPasskeyAuthorizations.delete(mine.shift()![0]);
+    }
   }
 
   private pendingKey(identityHex: string, deviceId: DeviceId): string {

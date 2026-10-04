@@ -583,12 +583,10 @@ fn unanswered_requests_expire_and_unblock_posting() {
     let mut app = App::new(true);
     app.on_link_up();
     outbox(&mut app);
-    assert!(!app.expire_requests(
-        std::time::Instant::now(),
-        std::time::Duration::from_secs(20)
-    ));
-    let later = std::time::Instant::now() + std::time::Duration::from_secs(21);
-    assert!(app.expire_requests(later, std::time::Duration::from_secs(20)));
+    let secs = std::time::Duration::from_secs;
+    assert!(!app.expire_requests(std::time::Instant::now(), secs(20), secs(120)));
+    let later = std::time::Instant::now() + secs(21);
+    assert!(app.expire_requests(later, secs(20), secs(120)));
     assert!(!app.post_in_flight());
     assert!(matches!(app.status.kind, StatusKind::Error));
 }
@@ -661,4 +659,23 @@ fn a_deliberate_enter_still_submits() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0]["cmd"], "post");
     assert_eq!(sent[0]["body"], "hi");
+}
+
+#[test]
+fn sign_in_gets_the_longer_interactive_deadline() {
+    let mut app = connected(false, false);
+    app.on_line(&hello_line(1));
+    ch(&mut app, '3');
+    key_enter(&mut app);
+    outbox(&mut app);
+    let secs = std::time::Duration::from_secs;
+    let t = std::time::Instant::now();
+    app.expire_requests(t + secs(30), secs(20), secs(120));
+    assert!(app.pending_signin());
+    app.expire_requests(t + secs(125), secs(20), secs(120));
+    assert!(!app.pending_signin());
+}
+
+fn key_enter(app: &mut App) {
+    app.handle_key(key(KeyCode::Enter));
 }

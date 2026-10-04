@@ -474,3 +474,27 @@ describe("review fixes", () => {
     expect((await c.send("post", { channel: "public", body: "after re-sign-in" })).ok).toBe(true);
   });
 });
+
+describe("failed re-sign-in", () => {
+  test("keeps posting with the old session when a second sign-in fails", async () => {
+    const keyDir = mkdtempSync(join(tmpdir(), "nexnet-agent-ssh-"));
+    try {
+      const keyPath = join(keyDir, "id_ed25519");
+      Bun.spawnSync(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", keyPath]);
+      const env = { NEXNET_SSH_KEY: keyPath };
+      const c = await client(new MemoryWallet(), {
+        methods: () => ["wallet", "ssh"],
+        signSsh: sshSigner(locateSshKey(env)!, env),
+      });
+      await c.send("identity.create");
+      expect((await c.send("signin", { method: "wallet" })).ok).toBe(true);
+      expect((await c.send("post", { channel: "public", body: "before" })).ok).toBe(true);
+      const failed = await c.send("signin", { method: "ssh" });
+      expect(failed.error.code).toBe("unauthenticated");
+      expect((await c.send("state")).result.session.method).toBe("wallet");
+      expect((await c.send("post", { channel: "public", body: "after the failed attempt" })).ok).toBe(true);
+    } finally {
+      rmSync(keyDir, { recursive: true, force: true });
+    }
+  });
+});

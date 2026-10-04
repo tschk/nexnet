@@ -111,7 +111,7 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
         }),
       ),
     ).rejects.toThrow("Invalid revocation");
-    expect(runIn("can_revoke_credential(1, 0, 0)")).toBe(37);
+    expect(runIn("can_revoke_credential(1, 0, 0, 0)")).toBe(37);
     await chain.revokeCredential(
       w.publicKey,
       signRevocation(w.secretKey, {
@@ -121,7 +121,7 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
         sequence: 2,
       }),
     );
-    expect(runIn("can_revoke_credential(2, 0, 1)")).toBe(0);
+    expect(runIn("can_revoke_credential(2, 0, 1, 0)")).toBe(0);
     await expect(
       chain.revokeCredential(
         w.publicKey,
@@ -133,7 +133,19 @@ describe.skipIf(!inBinary)("inauguration .in rules agree with the development ch
         }),
       ),
     ).rejects.toThrow("stale");
-    expect(runIn("can_revoke_credential(2, 2, 1)")).toBe(36);
+    expect(runIn("can_revoke_credential(2, 2, 1, 0)")).toBe(36);
+    await expect(
+      chain.revokeCredential(
+        w.publicKey,
+        signRevocation(w.secretKey, {
+          accountId: w.identityId,
+          kind: "device",
+          credentialId: "c".repeat(64),
+          sequence: Date.now() + 10 * 86_400_000,
+        }),
+      ),
+    ).rejects.toThrow("Invalid revocation");
+    expect(runIn("can_revoke_credential(2, 1, 1, 1)")).toBe(40);
   });
 
   test("device certificates die with their device or authorising credential", async () => {

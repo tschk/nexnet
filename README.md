@@ -94,12 +94,11 @@ nexnet/
     crypto/               # @nexnet/crypto — noble crypto wrappers
     protocol/             # @nexnet/protocol — CBOR CDE, event signing
     storage/              # @nexnet/storage — encrypted local DB
-    client/               # @nexnet/client — messaging, rooms, groups
+    client/               # @nexnet/client — messaging, rooms, groups, dev chain adapter
     tui/                  # @nexnet/tui — OpenTUI + SolidJS terminal client
     gateway/              # @nexnet/gateway — authenticated updates + public chat
     agent/                # @nexnet/agent — terminal agent and browser bridge
   terminal/               # nexnet-term — Crepuscularity terminal UI (Rust)
-    client/chain-stub.ts  # development chain adapter
   workers/                # Cloudflare Workers
     relay/                # signalling, room gossip
     presence/             # presence leases
@@ -161,8 +160,12 @@ Details: [`docs/mvp.md`](docs/mvp.md) · phases: [`docs/phases.md`](docs/phases.
 
 The TypeScript/Bun foundation is implemented: protocol types, reviewed crypto
 wrappers, CDE event signing, local encrypted storage, client flows, Workers,
-and a TUI all have tests. The chain application currently contains pure `.in`
-transition rules; its stateful executor and the end-to-end MVP remain to ship.
+and a TUI all have tests. On top of it, wallet-first identity, wallet-authorised
+passkeys and SSH keys, the authenticated gateway, the Linux terminal agent, the
+browser bridge and the Rust terminal UI work end to end against the in-memory
+development chain. The chain application currently contains pure `.in`
+transition rules; a stateful chain executor, a real chain client and a deployed
+gateway remain to ship.
 
 ## License
 

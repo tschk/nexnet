@@ -258,6 +258,17 @@ export class AgentCore {
     });
   }
 
+  private newDeviceKeys(): DeviceKeys {
+    const signing = generateSigningKeyPair();
+    const encryption = generateKeyPair();
+    return {
+      signingSecretKey: signing.secretKey,
+      signingPublicKey: signing.publicKey,
+      encryptionPublicKey: encryption.publicKey,
+      deviceId: randomBytes(32),
+    };
+  }
+
   private deviceKeys(): DeviceKeys {
     if (!this.device) {
       const signing = generateSigningKeyPair();
@@ -284,8 +295,7 @@ export class AgentCore {
     if (!this.wallet) throw new AgentError("unauthenticated", "Create an identity first");
     const wallet = this.wallet;
     await this.register();
-    this.device = null;
-    const device = this.deviceKeys();
+    const device = this.newDeviceKeys();
     const accountId = identityIdFromWallet(wallet.publicKey);
     const issuedAt = this.platform.now();
     const expiresAt = issuedAt + CERT_LIFETIME_MS;
@@ -351,6 +361,7 @@ export class AgentCore {
       nextSequence: number;
       owner: boolean;
     }>("POST", "/v1/auth/verify", body);
+    this.device = device;
     this.session = {
       token: verified.token,
       method: verified.method,

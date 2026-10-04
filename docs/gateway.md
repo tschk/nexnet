@@ -72,7 +72,7 @@ the server sends `{"event":"message",...}` frames. Tokens never appear in URLs.
 ## Known gaps
 
 - The chain is the in-memory `DevChainClient`. The inauguration `.in` app encodes
-  pure transition rules only; see [chain.md](chain.md).
+  pure transition rules only; see [chain/README.md](../chain/README.md).
 - SSH hosting (an `sshd` that terminates the user's SSH connection) is not part
   of the gateway. SSH keys sign in through `ssh-keygen -Y sign`.
 - Passkeys are verified by the gateway, but a passkey ceremony needs a browser

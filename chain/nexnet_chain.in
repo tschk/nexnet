@@ -132,10 +132,13 @@ fn can_register_ssh_key(key_count: Int, already_registered: Int, revoked: Int, c
   return 0;
 }
 
-// 36: stale sequence, 37: bad wallet signature
-fn can_revoke_credential(sequence: Int, last_sequence: Int, signature_valid: Int) -> Int {
+// 36: stale sequence, 37: bad wallet signature, 40: sequence too far ahead
+fn can_revoke_credential(sequence: Int, last_sequence: Int, signature_valid: Int, too_far_ahead: Int) -> Int {
   if signature_valid == 0 {
     return 37;
+  }
+  if too_far_ahead != 0 {
+    return 40;
   }
   if sequence < 1 {
     return 36;
@@ -243,17 +246,20 @@ fn main() -> Int {
   if can_register_ssh_key(1, 0, 0, 0) != 35 {
     return 128;
   }
-  if can_revoke_credential(2, 1, 1) != 0 {
+  if can_revoke_credential(2, 1, 1, 0) != 0 {
     return 129;
   }
-  if can_revoke_credential(1, 1, 1) != 36 {
+  if can_revoke_credential(1, 1, 1, 0) != 36 {
     return 130;
   }
-  if can_revoke_credential(0, 0, 1) != 36 {
+  if can_revoke_credential(0, 0, 1, 0) != 36 {
     return 131;
   }
-  if can_revoke_credential(2, 1, 0) != 37 {
+  if can_revoke_credential(2, 1, 0, 0) != 37 {
     return 132;
+  }
+  if can_revoke_credential(2, 1, 1, 1) != 40 {
+    return 137;
   }
   if can_use_device_certificate(0, 0, 0) != 0 {
     return 133;

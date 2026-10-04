@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const INTERACTIVE_TIMEOUT: Duration = Duration::from_secs(120);
 
 use crate::app::{App, LinkState};
 use crate::link::{Backoff, Link, LinkMsg, Transport};
@@ -37,7 +38,7 @@ impl Connection {
         if !self.transport.is_configured() {
             return false;
         }
-        let mut changed = app.expire_requests(now, REQUEST_TIMEOUT);
+        let mut changed = app.expire_requests(now, REQUEST_TIMEOUT, INTERACTIVE_TIMEOUT);
         if self.link.is_none() {
             let due = self.retry_at.is_none_or(|t| now >= t);
             if due {

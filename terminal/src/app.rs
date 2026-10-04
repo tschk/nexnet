@@ -280,6 +280,12 @@ impl App {
         self.page.channel().map(|c| self.draft(c))
     }
 
+    pub fn pending_signin(&self) -> bool {
+        self.pending
+            .values()
+            .any(|p| matches!(p, Pending::Signin(_)))
+    }
+
     pub fn post_in_flight(&self) -> bool {
         self.pending
             .values()
@@ -305,11 +311,18 @@ impl App {
         &mut self,
         now: std::time::Instant,
         timeout: std::time::Duration,
+        interactive_timeout: std::time::Duration,
     ) -> bool {
         let late: Vec<u64> = self
             .sent_at
             .iter()
-            .filter(|(_, at)| now.saturating_duration_since(**at) >= timeout)
+            .filter(|(id, at)| {
+                let limit = match self.pending.get(id) {
+                    Some(Pending::Signin(_) | Pending::Create) => interactive_timeout,
+                    _ => timeout,
+                };
+                now.saturating_duration_since(**at) >= limit
+            })
             .map(|(id, _)| *id)
             .collect();
         for id in &late {

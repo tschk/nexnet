@@ -1,0 +1,22 @@
+{
+  "name": "@nexnet/agent",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": { "nexnet-agent": "src/main.ts" },
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nexnet/crypto": "workspace:*",
+    "@nexnet/protocol": "workspace:*",
+    "@nexnet/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@nexnet/client": "workspace:*",
+    "@nexnet/gateway": "workspace:*",
+    "bun-types": "latest"
+  }
+}

@@ -28,3 +28,12 @@ export {
   sshPublicKeyBlob,
   verifySshSignature,
 } from "./ssh.js";
+export {
+  certificateToJson,
+  eventToJson,
+  fromBase64Url,
+  fromHex,
+  revocationToJson,
+  toBase64Url,
+  toHex,
+} from "./wire.js";

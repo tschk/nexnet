@@ -1,15 +1,9 @@
 import type { DeviceCertificate, NexnetEvent, Revocation } from "@nexnet/types";
-import { cdeDecode } from "@nexnet/protocol";
+import { cdeDecode, certificateToJson, eventToJson, revocationToJson, toBase64Url, toHex } from "@nexnet/protocol";
+
+export { certificateToJson, eventToJson, revocationToJson, toBase64Url, toHex };
 
 export class WireError extends Error {}
-
-export function toHex(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("hex");
-}
-
-export function toBase64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64url");
-}
 
 export function hexBytes(value: unknown, length: number, field: string): Uint8Array {
   if (typeof value !== "string" || value.length !== length * 2 || !/^[0-9a-f]+$/.test(value)) {
@@ -41,30 +35,6 @@ export function safeInteger(value: unknown, field: string): number {
   return value;
 }
 
-export interface CertificateJson {
-  accountId: string;
-  deviceId: string;
-  deviceSigningPublicKey: string;
-  deviceEncryptionPublicKey: string;
-  issuedAt: number;
-  expiresAt: number;
-  capabilities: number;
-  rootSignature: string;
-}
-
-export function certificateToJson(certificate: DeviceCertificate): CertificateJson {
-  return {
-    accountId: toHex(certificate.accountId),
-    deviceId: toHex(certificate.deviceId),
-    deviceSigningPublicKey: toHex(certificate.deviceSigningPublicKey),
-    deviceEncryptionPublicKey: toHex(certificate.deviceEncryptionPublicKey),
-    issuedAt: certificate.issuedAt,
-    expiresAt: certificate.expiresAt,
-    capabilities: certificate.capabilities,
-    rootSignature: toBase64Url(certificate.rootSignature),
-  };
-}
-
 export function certificateFromJson(value: unknown): DeviceCertificate {
   const input = record(value, "certificate");
   return {
@@ -76,16 +46,6 @@ export function certificateFromJson(value: unknown): DeviceCertificate {
     expiresAt: safeInteger(input.expiresAt, "certificate.expiresAt"),
     capabilities: safeInteger(input.capabilities, "certificate.capabilities"),
     rootSignature: base64UrlBytes(input.rootSignature, "certificate.rootSignature", 64),
-  };
-}
-
-export function revocationToJson(revocation: Revocation) {
-  return {
-    accountId: toHex(revocation.accountId),
-    kind: revocation.kind,
-    credentialId: revocation.credentialId,
-    sequence: revocation.sequence,
-    rootSignature: toBase64Url(revocation.rootSignature),
   };
 }
 
@@ -103,21 +63,6 @@ export function revocationFromJson(value: unknown): Revocation {
     credentialId: input.credentialId,
     sequence: safeInteger(input.sequence, "revocation.sequence"),
     rootSignature: base64UrlBytes(input.rootSignature, "revocation.rootSignature", 64),
-  };
-}
-
-export function eventToJson(event: NexnetEvent) {
-  return {
-    protocolVersion: event.protocolVersion,
-    eventType: event.eventType,
-    eventId: toHex(event.eventId),
-    authorIdentityId: toHex(event.authorIdentityId),
-    authorDeviceId: toHex(event.authorDeviceId),
-    createdAt: event.createdAt,
-    sequence: event.sequence,
-    parentIds: event.parentIds.map(toHex),
-    payload: toBase64Url(event.payload),
-    signature: toBase64Url(event.signature),
   };
 }
 

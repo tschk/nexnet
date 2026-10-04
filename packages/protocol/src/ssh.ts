@@ -1,6 +1,7 @@
 import { sha256, sha512 } from "@noble/hashes/sha2";
 import { verify } from "@nexnet/crypto";
 import type { PublicKey } from "@nexnet/types";
+import { toBase64Url } from "./wire.js";
 
 export const SSH_SIGNATURE_NAMESPACE = "nexnet-auth";
 
@@ -9,6 +10,19 @@ const SSHSIG_MAGIC = new TextEncoder().encode("SSHSIG");
 const ARMOR_BEGIN = "-----BEGIN SSH SIGNATURE-----";
 const ARMOR_END = "-----END SSH SIGNATURE-----";
 const MAX_SIGNATURE_BYTES = 4096;
+
+function standardBase64(bytes: Uint8Array, padded: boolean): string {
+  const value = toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/");
+  return padded ? value.padEnd(Math.ceil(value.length / 4) * 4, "=") : value;
+}
+
+function decodeBase64(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, index) => byte === b[index]);
+}
 
 class Reader {
   private offset = 0;
@@ -67,7 +81,7 @@ export function sshPublicKeyBlob(publicKey: PublicKey): Uint8Array {
 }
 
 export function sshFingerprint(publicKey: PublicKey): string {
-  return `SHA256:${Buffer.from(sha256(sshPublicKeyBlob(publicKey))).toString("base64").replace(/=+$/, "")}`;
+  return `SHA256:${standardBase64(sha256(sshPublicKeyBlob(publicKey)), false)}`;
 }
 
 function parsePublicKeyBlob(blob: Uint8Array): PublicKey {
@@ -82,11 +96,11 @@ export function parseSshPublicKey(line: string): PublicKey {
   const fields = line.trim().split(/\s+/);
   if (fields.length < 2 || fields[0] !== SSH_ED25519) throw new Error("Only ssh-ed25519 keys are supported");
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(fields[1]!)) throw new Error("Invalid ssh-ed25519 key");
-  return parsePublicKeyBlob(new Uint8Array(Buffer.from(fields[1]!, "base64")));
+  return parsePublicKeyBlob(decodeBase64(fields[1]!));
 }
 
 export function formatSshPublicKey(publicKey: PublicKey): string {
-  return `${SSH_ED25519} ${Buffer.from(sshPublicKeyBlob(publicKey)).toString("base64")}`;
+  return `${SSH_ED25519} ${standardBase64(sshPublicKeyBlob(publicKey), true)}`;
 }
 
 function dearmor(armored: string): Uint8Array {
@@ -98,7 +112,7 @@ function dearmor(armored: string): Uint8Array {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body) || body.length > MAX_SIGNATURE_BYTES * 2) {
     throw new Error("Invalid SSH signature armor");
   }
-  return new Uint8Array(Buffer.from(body, "base64"));
+  return decodeBase64(body);
 }
 
 export function verifySshSignature(
@@ -110,10 +124,10 @@ export function verifySshSignature(
   try {
     const reader = new Reader(dearmor(armoredSignature));
     const magic = reader.raw(SSHSIG_MAGIC.length);
-    if (Buffer.compare(Buffer.from(magic), Buffer.from(SSHSIG_MAGIC)) !== 0) return false;
+    if (!sameBytes(magic, SSHSIG_MAGIC)) return false;
     if (reader.uint32() !== 1) return false;
     const publicKey = parsePublicKeyBlob(reader.string());
-    if (Buffer.compare(Buffer.from(publicKey), Buffer.from(expectedPublicKey)) !== 0) return false;
+    if (!sameBytes(publicKey, expectedPublicKey)) return false;
     if (reader.text() !== namespace) return false;
     if (reader.string().length !== 0) return false;
     const hashAlgorithm = reader.text();

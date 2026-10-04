@@ -27,3 +27,7 @@ export function verify(
 ): boolean {
   return ed25519.verify(signature, message, publicKey);
 }
+
+export function publicKeyFromSecret(secretKey: Uint8Array): PublicKey {
+  return ed25519.getPublicKey(secretKey);
+}

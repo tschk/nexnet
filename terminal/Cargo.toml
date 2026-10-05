@@ -1,0 +1,31 @@
+[package]
+name = "nexnet-term"
+version = "0.1.0"
+edition = "2021"
+description = "Nexnet terminal chat UI (Crepuscularity). Holds no keys; talks to an agent over newline-delimited JSON."
+license = "ISC"
+publish = false
+rust-version = "1.86"
+
+[[bin]]
+name = "nexnet"
+path = "src/main.rs"
+
+[lib]
+name = "nexnet_term"
+path = "src/lib.rs"
+
+[dependencies]
+crepuscularity-tui = "0.4.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"
+libc = "0.2"
+
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

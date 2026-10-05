@@ -50,21 +50,13 @@ export interface MlsMemberKeys {
   privatePackage: PrivateKeyPackage;
 }
 
-export async function generateMlsMember(
-  identityBytes: Uint8Array
-): Promise<MlsMemberKeys> {
+export async function generateMlsMember(identityBytes: Uint8Array): Promise<MlsMemberKeys> {
   const impl = await mlsCiphersuite();
   const credential: Credential = {
     credentialType: "basic",
     identity: identityBytes,
   };
-  const kp = await generateKeyPackage(
-    credential,
-    defaultCapabilities(),
-    defaultLifetime,
-    [],
-    impl
-  );
+  const kp = await generateKeyPackage(credential, defaultCapabilities(), defaultLifetime, [], impl);
   return {
     identity: identityBytes,
     publicPackage: kp.publicPackage,
@@ -72,18 +64,9 @@ export async function generateMlsMember(
   };
 }
 
-export async function mlsCreateGroup(
-  groupId: Uint8Array,
-  creator: MlsMemberKeys
-): Promise<ClientState> {
+export async function mlsCreateGroup(groupId: Uint8Array, creator: MlsMemberKeys): Promise<ClientState> {
   const impl = await mlsCiphersuite();
-  return createGroup(
-    groupId,
-    creator.publicPackage,
-    creator.privatePackage,
-    [],
-    impl
-  );
+  return createGroup(groupId, creator.publicPackage, creator.privatePackage, [], impl);
 }
 
 /**
@@ -91,7 +74,7 @@ export async function mlsCreateGroup(
  */
 export async function mlsAddMember(
   state: ClientState,
-  memberKeyPackage: KeyPackage
+  memberKeyPackage: KeyPackage,
 ): Promise<{ state: ClientState; welcome: Welcome; commit: MLSMessage }> {
   const impl = await mlsCiphersuite();
   const add: Proposal = {
@@ -100,7 +83,7 @@ export async function mlsAddMember(
   };
   const result = await createCommit(
     { state, cipherSuite: impl },
-    { extraProposals: [add], ratchetTreeExtension: true }
+    { extraProposals: [add], ratchetTreeExtension: true },
   );
   result.consumed.forEach(zeroOutUint8Array);
   if (!result.welcome) {
@@ -118,17 +101,14 @@ export async function mlsAddMember(
  */
 export async function mlsRemoveMember(
   state: ClientState,
-  removedLeafIndex: number
+  removedLeafIndex: number,
 ): Promise<{ state: ClientState; commit: MLSMessage }> {
   const impl = await mlsCiphersuite();
   const remove: Proposal = {
     proposalType: "remove",
     remove: { removed: removedLeafIndex as never },
   };
-  const result = await createCommit(
-    { state, cipherSuite: impl },
-    { extraProposals: [remove] }
-  );
+  const result = await createCommit({ state, cipherSuite: impl }, { extraProposals: [remove] });
   result.consumed.forEach(zeroOutUint8Array);
   return { state: result.newState, commit: result.commit };
 }
@@ -136,22 +116,15 @@ export async function mlsRemoveMember(
 export async function mlsJoin(
   welcome: Welcome,
   member: MlsMemberKeys,
-  ratchetTree?: ClientState["ratchetTree"]
+  ratchetTree?: ClientState["ratchetTree"],
 ): Promise<ClientState> {
   const impl = await mlsCiphersuite();
-  return joinGroup(
-    welcome,
-    member.publicPackage,
-    member.privatePackage,
-    emptyPskIndex,
-    impl,
-    ratchetTree
-  );
+  return joinGroup(welcome, member.publicPackage, member.privatePackage, emptyPskIndex, impl, ratchetTree);
 }
 
 export async function mlsEncrypt(
   state: ClientState,
-  plaintext: Uint8Array
+  plaintext: Uint8Array,
 ): Promise<{ state: ClientState; privateMessage: PrivateMessage; wire: Uint8Array }> {
   const impl = await mlsCiphersuite();
   const result = await createApplicationMessage(state, plaintext, impl);
@@ -170,7 +143,7 @@ export async function mlsEncrypt(
 
 export async function mlsDecrypt(
   state: ClientState,
-  wire: Uint8Array
+  wire: Uint8Array,
 ): Promise<{ state: ClientState; plaintext: Uint8Array }> {
   if (state.groupActiveState.kind !== "active") {
     throw new Error("mls: removed from group");
@@ -180,12 +153,7 @@ export async function mlsDecrypt(
   if (!decoded || decoded.wireformat !== "mls_private_message") {
     throw new Error("mls: expected private message");
   }
-  const result = await processPrivateMessage(
-    state,
-    decoded.privateMessage,
-    emptyPskIndex,
-    impl
-  );
+  const result = await processPrivateMessage(state, decoded.privateMessage, emptyPskIndex, impl);
   result.consumed.forEach(zeroOutUint8Array);
   if (result.kind !== "applicationMessage") {
     throw new Error("mls: expected application message");
@@ -230,26 +198,14 @@ export function encodeCommit(commit: MLSMessage): Uint8Array {
   return encodeMlsMessage(commit);
 }
 
-export async function mlsProcessCommit(
-  state: ClientState,
-  wire: Uint8Array
-): Promise<ClientState> {
+export async function mlsProcessCommit(state: ClientState, wire: Uint8Array): Promise<ClientState> {
   const impl = await mlsCiphersuite();
   const decoded = decodeMlsMessage(wire, 0)?.[0];
   if (!decoded) throw new Error("mls: bad commit message");
-  if (
-    decoded.wireformat !== "mls_public_message" &&
-    decoded.wireformat !== "mls_private_message"
-  ) {
+  if (decoded.wireformat !== "mls_public_message" && decoded.wireformat !== "mls_private_message") {
     throw new Error("mls: unexpected commit wireformat");
   }
-  const result = await processMessage(
-    decoded,
-    state,
-    emptyPskIndex,
-    () => "accept",
-    impl
-  );
+  const result = await processMessage(decoded, state, emptyPskIndex, () => "accept", impl);
   result.consumed.forEach(zeroOutUint8Array);
   return result.newState;
 }

@@ -3,9 +3,12 @@
 Open-source peer-to-peer social chat network with blockchain-backed identity,
 scarce usernames, local-first history, and privacy-routed discovery.
 
-> **Status:** TypeScript monorepo with 77 passing tests. Crypto, protocol,
-> storage, client, workers, and TUI scaffolded and working. Chain `.in`
-> app not yet implemented.
+> **Status:** TypeScript monorepo plus a Rust terminal UI. Wallet-first
+> identity, wallet-authorised passkeys and SSH keys, an authenticated gateway
+> (`updates` and `public` channels), a Linux terminal agent and a browser
+> bridge work end to end against the in-memory development chain. The chain is
+> not a consensus chain yet; see [docs/gateway.md](docs/gateway.md) and
+> [chain/README.md](chain/README.md) for exactly what is missing.
 
 Nexnet should feel like a modern mix of Usenet, IRC, peer-to-peer messaging,
 and social discovery — without a central message store.
@@ -22,16 +25,16 @@ and social discovery — without a central message store.
 
 ## Core principles
 
-| Principle | Meaning |
-|---|---|
-| Local-first | Private history lives on user devices |
-| P2P by default | Direct peer transfer when possible |
-| E2EE | Relays never see private plaintext or long-term keys |
-| Cryptographic identity | Wallet root; device-signed messages |
-| Immutable communication | No edit / unsend protocol |
-| Minimal social state | Exact online presence, delivered receipts only |
-| Open protocol | Independent implementations welcome |
-| Free user access | Infrastructure funded outside the chat UX |
+| Principle               | Meaning                                              |
+| ----------------------- | ---------------------------------------------------- |
+| Local-first             | Private history lives on user devices                |
+| P2P by default          | Direct peer transfer when possible                   |
+| E2EE                    | Relays never see private plaintext or long-term keys |
+| Cryptographic identity  | Wallet root; device-signed messages                  |
+| Immutable communication | No edit / unsend protocol                            |
+| Minimal social state    | Exact online presence, delivered receipts only       |
+| Open protocol           | Independent implementations welcome                  |
+| Free user access        | Infrastructure funded outside the chat UX            |
 
 ## Architecture (overview)
 
@@ -91,9 +94,11 @@ nexnet/
     crypto/               # @nexnet/crypto — noble crypto wrappers
     protocol/             # @nexnet/protocol — CBOR CDE, event signing
     storage/              # @nexnet/storage — encrypted local DB
-    client/               # @nexnet/client — messaging, rooms, groups
+    client/               # @nexnet/client — messaging, rooms, groups, dev chain adapter
     tui/                  # @nexnet/tui — OpenTUI + SolidJS terminal client
-    client/chain-stub.ts  # development chain adapter
+    gateway/              # @nexnet/gateway — authenticated updates + public chat
+    agent/                # @nexnet/agent — terminal agent and browser bridge
+  terminal/               # nexnet-term — Crepuscularity terminal UI (Rust)
   workers/                # Cloudflare Workers
     relay/                # signalling, room gossip
     presence/             # presence leases
@@ -106,37 +111,39 @@ nexnet/
 
 ## Documentation
 
-| Doc | Topic |
-|---|---|
-| [docs/README.md](docs/README.md) | Doc index |
-| [docs/architecture.md](docs/architecture.md) | Layers, topology, data flow |
-| [docs/principles.md](docs/principles.md) | Product principles |
-| [docs/identity.md](docs/identity.md) | Wallet, username, passkeys, devices |
-| [docs/profiles.md](docs/profiles.md) | Bio profile fields (AD-24) |
-| [docs/chain.md](docs/chain.md) | On-chain scope, token, treasury |
-| [docs/consensus.md](docs/consensus.md) | HotStuff consensus (AD-9) |
-| [docs/messaging.md](docs/messaging.md) | DMs, offline queue, receipts, ordering |
-| [docs/cryptography.md](docs/cryptography.md) | Primitives and session design |
-| [docs/transport.md](docs/transport.md) | Direct / routed / fallback modes |
-| [docs/presence.md](docs/presence.md) | Exact online leases |
-| [docs/discovery.md](docs/discovery.md) | Interests, language, random match |
-| [docs/groups.md](docs/groups.md) | Private creator-owned groups |
-| [docs/rooms.md](docs/rooms.md) | Public ownerless chatrooms |
-| [docs/attachments.md](docs/attachments.md) | Encrypted blob transfer |
-| [docs/multi-device.md](docs/multi-device.md) | Fanout and history sync |
-| [docs/storage.md](docs/storage.md) | Local encrypted DB |
-| [docs/protocol.md](docs/protocol.md) | Event model and encoding |
-| [docs/apis.md](docs/apis.md) | Service surface |
-| [docs/reputation.md](docs/reputation.md) | Random-match reputation |
-| [docs/moderation.md](docs/moderation.md) | Abuse boundaries |
-| [docs/privacy.md](docs/privacy.md) | Content vs metadata privacy |
-| [docs/threat-model.md](docs/threat-model.md) | Adversaries and guarantees |
-| [docs/mvp.md](docs/mvp.md) | First shippable slice |
-| [docs/phases.md](docs/phases.md) | Implementation phases |
-| [docs/defaults.md](docs/defaults.md) | Product defaults |
-| [docs/open-decisions.md](docs/open-decisions.md) | Unresolved design issues |
-| [docs/stack.md](docs/stack.md) | Recommended technology stack |
-| [docs/agent-notes.md](docs/agent-notes.md) | Coding-agent constraints |
+| Doc                                              | Topic                                    |
+| ------------------------------------------------ | ---------------------------------------- |
+| [docs/README.md](docs/README.md)                 | Doc index                                |
+| [docs/architecture.md](docs/architecture.md)     | Layers, topology, data flow              |
+| [docs/principles.md](docs/principles.md)         | Product principles                       |
+| [docs/identity.md](docs/identity.md)             | Wallet, username, passkeys, devices      |
+| [docs/profiles.md](docs/profiles.md)             | Bio profile fields (AD-24)               |
+| [docs/chain.md](docs/chain.md)                   | On-chain scope, token, treasury          |
+| [docs/consensus.md](docs/consensus.md)           | HotStuff consensus (AD-9)                |
+| [docs/messaging.md](docs/messaging.md)           | DMs, offline queue, receipts, ordering   |
+| [docs/cryptography.md](docs/cryptography.md)     | Primitives and session design            |
+| [docs/transport.md](docs/transport.md)           | Direct / routed / fallback modes         |
+| [docs/presence.md](docs/presence.md)             | Exact online leases                      |
+| [docs/discovery.md](docs/discovery.md)           | Interests, language, random match        |
+| [docs/groups.md](docs/groups.md)                 | Private creator-owned groups             |
+| [docs/rooms.md](docs/rooms.md)                   | Public ownerless chatrooms               |
+| [docs/attachments.md](docs/attachments.md)       | Encrypted blob transfer                  |
+| [docs/multi-device.md](docs/multi-device.md)     | Fanout and history sync                  |
+| [docs/storage.md](docs/storage.md)               | Local encrypted DB                       |
+| [docs/protocol.md](docs/protocol.md)             | Event model and encoding                 |
+| [docs/apis.md](docs/apis.md)                     | Service surface                          |
+| [docs/reputation.md](docs/reputation.md)         | Random-match reputation                  |
+| [docs/moderation.md](docs/moderation.md)         | Abuse boundaries                         |
+| [docs/privacy.md](docs/privacy.md)               | Content vs metadata privacy              |
+| [docs/threat-model.md](docs/threat-model.md)     | Adversaries and guarantees               |
+| [docs/mvp.md](docs/mvp.md)                       | First shippable slice                    |
+| [docs/phases.md](docs/phases.md)                 | Implementation phases                    |
+| [docs/defaults.md](docs/defaults.md)             | Product defaults                         |
+| [docs/open-decisions.md](docs/open-decisions.md) | Unresolved design issues                 |
+| [docs/stack.md](docs/stack.md)                   | Recommended technology stack             |
+| [docs/agent-notes.md](docs/agent-notes.md)       | Coding-agent constraints                 |
+| [docs/gateway.md](docs/gateway.md)               | Authenticated gateway, channels, sign-in |
+| [docs/terminal-agent.md](docs/terminal-agent.md) | Terminal UI to agent protocol            |
 
 ## MVP snapshot
 
@@ -153,8 +160,12 @@ Details: [`docs/mvp.md`](docs/mvp.md) · phases: [`docs/phases.md`](docs/phases.
 
 The TypeScript/Bun foundation is implemented: protocol types, reviewed crypto
 wrappers, CDE event signing, local encrypted storage, client flows, Workers,
-and a TUI all have tests. The chain application currently contains pure `.in`
-transition rules; its stateful executor and the end-to-end MVP remain to ship.
+and a TUI all have tests. On top of it, wallet-first identity, wallet-authorised
+passkeys and SSH keys, the authenticated gateway, the Linux terminal agent, the
+browser bridge and the Rust terminal UI work end to end against the in-memory
+development chain. The chain application currently contains pure `.in`
+transition rules; a stateful chain executor, a real chain client and a deployed
+gateway remain to ship.
 
 ## License
 

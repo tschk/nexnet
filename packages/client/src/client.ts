@@ -162,7 +162,7 @@ export class NexnetClient {
   sendSignaling(
     type: "session_offer" | "session_answer" | "candidate",
     toIdentityHex: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
   ): void {
     this.sendWs({ type, to: toIdentityHex, ...data });
   }
@@ -221,10 +221,7 @@ export class NexnetClient {
       recipientDeviceId: this.deviceId,
       storedAt,
     };
-    const signature = this.crypto.sign(
-      this.signingSecretKey,
-      this.codec.encode(receipt)
-    );
+    const signature = this.crypto.sign(this.signingSecretKey, this.codec.encode(receipt));
     try {
       this.sendWs({
         type: "delivery_receipt",
@@ -330,17 +327,11 @@ export class NexnetClient {
 
   private _scheduleReconnect(): void {
     if (this._intentionalClose) return;
-    if (
-      this._maxReconnectAttempts > 0 &&
-      this._reconnectAttempts >= this._maxReconnectAttempts
-    ) {
+    if (this._maxReconnectAttempts > 0 && this._reconnectAttempts >= this._maxReconnectAttempts) {
       return;
     }
 
-    const delay = Math.min(
-      this._reconnectBaseMs * Math.pow(2, this._reconnectAttempts),
-      this._reconnectMaxMs
-    );
+    const delay = Math.min(this._reconnectBaseMs * Math.pow(2, this._reconnectAttempts), this._reconnectMaxMs);
     this._reconnectAttempts++;
 
     this.emit("reconnecting", {
@@ -420,7 +411,7 @@ export class NexnetClient {
       this.signingSecretKey,
       context,
       new TextEncoder().encode("nexnet local event log key v1"),
-      32
+      32,
     );
     this._eventLog = EventLog.open(join(this.storagePath, "events.db"), key, this.crypto);
     return this._eventLog;

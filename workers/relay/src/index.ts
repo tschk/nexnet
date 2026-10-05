@@ -221,9 +221,7 @@ export class RelaySession {
 
   // ── Signaling ──────────────────────────────────────────────────────
 
-  private forwardSignaling(
-    msg: SessionOfferMessage | SessionAnswerMessage | CandidateMessage
-  ): void {
+  private forwardSignaling(msg: SessionOfferMessage | SessionAnswerMessage | CandidateMessage): void {
     const target = this.connections.get(msg.to);
     if (!target) {
       // Target offline — silently drop. Sender can retry.
@@ -263,10 +261,7 @@ export class RelaySession {
     }
   }
 
-  private broadcastRoomEvent(
-    senderIdentity: string,
-    msg: RoomEventMessage
-  ): void {
+  private broadcastRoomEvent(senderIdentity: string, msg: RoomEventMessage): void {
     const subs = this.roomSubscriptions.get(msg.room_id);
     if (!subs) return;
 
@@ -312,11 +307,14 @@ export class RelaySession {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("*", cors({
-  origin: "*",
-  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(
+  "*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.get("/ws", (c) => handleWebSocket(c.req.raw, c.env));
 app.post("/relay/path", (c) => handleRelayPath(c.req.raw, c.env));
@@ -326,10 +324,7 @@ app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "in
 
 export default app;
 
-async function handleWebSocket(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleWebSocket(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const identity = url.searchParams.get("identity");
   const device = url.searchParams.get("device");
@@ -344,10 +339,7 @@ async function handleWebSocket(
   return stub.fetch(request);
 }
 
-async function handleRelayPath(
-  _request: Request,
-  _env: Env
-): Promise<Response> {
+async function handleRelayPath(_request: Request, _env: Env): Promise<Response> {
   // Stub: onion relay path request
   // TODO: implement actual relay path selection when multi-hop sessions land (AD-21)
   return jsonResponse({
@@ -357,14 +349,11 @@ async function handleRelayPath(
   });
 }
 
-async function handleHealth(
-  _request: Request,
-  env: Env
-): Promise<Response> {
+async function handleHealth(_request: Request, env: Env): Promise<Response> {
   const id = env.RELAY.idFromName("default");
   const stub = env.RELAY.get(id);
   const statusResp = await stub.fetch("https://relay/status");
-  const status = await statusResp.json() as Record<string, unknown>;
+  const status = (await statusResp.json()) as Record<string, unknown>;
   return jsonResponse({ status: "ok", ...status });
 }
 

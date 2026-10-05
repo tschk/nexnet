@@ -66,12 +66,12 @@ Chain application and consensus logic stay in **inauguration `.in`**.
 Client, relay, presence, discovery, TUI, node, and chain-client use
 TypeScript/Bun.
 
-| Component | Language |
-|---|---|
-| Username / identity / treasury / relay-registry transitions | inauguration `.in` |
-| Client, relay, presence, discovery, TUI, node | **TypeScript (Bun)** |
-| Cloudflare services | TypeScript (Workers) |
-| Chain client API | TypeScript chain-client interface |
+| Component                                                   | Language                          |
+| ----------------------------------------------------------- | --------------------------------- |
+| Username / identity / treasury / relay-registry transitions | inauguration `.in`                |
+| Client, relay, presence, discovery, TUI, node               | **TypeScript (Bun)**              |
+| Cloudflare services                                         | TypeScript (Workers)              |
+| Chain client API                                            | TypeScript chain-client interface |
 
 Expand `.in` into the validator host later when its networking and standard
 library surface is ready.

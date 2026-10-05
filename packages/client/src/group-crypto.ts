@@ -9,10 +9,7 @@
  */
 
 import type { CryptoProvider, GroupId, IdentityId } from "@nexnet/types";
-import {
-  generateKeyPair as defaultGenerateDh,
-  getSharedSecret as defaultDh,
-} from "@nexnet/crypto";
+import { generateKeyPair as defaultGenerateDh, getSharedSecret as defaultDh } from "@nexnet/crypto";
 
 const GROUP_KEY_DOMAIN = "nexnet group msg key v1";
 const WRAP_INFO = "nexnet group epoch wrap v1";
@@ -64,18 +61,13 @@ export function deriveGroupKey(
   crypto: CryptoProvider,
   epochSecret: Uint8Array,
   groupId: GroupId,
-  epoch: number
+  epoch: number,
 ): Uint8Array {
   const e = epochBytes(epoch);
   const salt = new Uint8Array(groupId.length + e.length);
   salt.set(groupId, 0);
   salt.set(e, groupId.length);
-  return crypto.hkdf(
-    epochSecret,
-    salt,
-    new TextEncoder().encode(GROUP_KEY_DOMAIN),
-    32
-  );
+  return crypto.hkdf(epochSecret, salt, new TextEncoder().encode(GROUP_KEY_DOMAIN), 32);
 }
 
 /** Epoch number = membership-change count (compat). */
@@ -92,10 +84,7 @@ export function createEpoch(crypto: CryptoProvider): GroupEpoch {
  * Next epoch: new random secret (forward secrecy on membership change).
  * Previous secret does not determine next (FS for removed members).
  */
-export function advanceEpoch(
-  crypto: CryptoProvider,
-  current: GroupEpoch
-): GroupEpoch {
+export function advanceEpoch(crypto: CryptoProvider, current: GroupEpoch): GroupEpoch {
   return { epoch: current.epoch + 1, secret: crypto.randomBytes(32) };
 }
 
@@ -107,16 +96,11 @@ export function wrapEpochSecret(
   crypto: CryptoProvider,
   secret: Uint8Array,
   memberId: IdentityId,
-  memberDhPublic: Uint8Array
+  memberDhPublic: Uint8Array,
 ): EpochSecretWrap {
   const eph = defaultGenerateDh();
   const shared = defaultDh(eph.secretKey, memberDhPublic);
-  const wrapKey = crypto.hkdf(
-    shared,
-    memberId,
-    new TextEncoder().encode(WRAP_INFO),
-    32
-  );
+  const wrapKey = crypto.hkdf(shared, memberId, new TextEncoder().encode(WRAP_INFO), 32);
   const nonce = crypto.randomBytes(24);
   const ciphertext = crypto.encrypt(wrapKey, nonce, memberId, secret);
   return {
@@ -131,15 +115,10 @@ export function unwrapEpochSecret(
   crypto: CryptoProvider,
   wrap: EpochSecretWrap,
   myDhSecret: Uint8Array,
-  myIdentityId: IdentityId
+  myIdentityId: IdentityId,
 ): Uint8Array {
   const shared = defaultDh(myDhSecret, wrap.ephemeralPublic);
-  const wrapKey = crypto.hkdf(
-    shared,
-    myIdentityId,
-    new TextEncoder().encode(WRAP_INFO),
-    32
-  );
+  const wrapKey = crypto.hkdf(shared, myIdentityId, new TextEncoder().encode(WRAP_INFO), 32);
   return crypto.decrypt(wrapKey, wrap.nonce, myIdentityId, wrap.ciphertext);
 }
 
@@ -149,16 +128,14 @@ export function encryptGroupMessage(
   epoch: number,
   epochSecret: Uint8Array,
   payload: Uint8Array,
-  signingKey: Uint8Array
+  signingKey: Uint8Array,
 ): EncryptedGroupPayload {
   const key = deriveGroupKey(crypto, epochSecret, groupId, epoch);
   const nonce = crypto.randomBytes(24);
   const ciphertext = crypto.encrypt(key, nonce, groupId, payload);
 
   const e = epochBytes(epoch);
-  const signPayload = new Uint8Array(
-    nonce.length + ciphertext.length + e.length
-  );
+  const signPayload = new Uint8Array(nonce.length + ciphertext.length + e.length);
   signPayload.set(nonce, 0);
   signPayload.set(ciphertext, nonce.length);
   signPayload.set(e, nonce.length + ciphertext.length);
@@ -172,12 +149,10 @@ export function decryptGroupMessage(
   groupId: GroupId,
   epochSecret: Uint8Array,
   encrypted: EncryptedGroupPayload,
-  senderPublicKey: Uint8Array
+  senderPublicKey: Uint8Array,
 ): Uint8Array | null {
   const e = epochBytes(encrypted.epoch);
-  const signPayload = new Uint8Array(
-    encrypted.nonce.length + encrypted.ciphertext.length + e.length
-  );
+  const signPayload = new Uint8Array(encrypted.nonce.length + encrypted.ciphertext.length + e.length);
   signPayload.set(encrypted.nonce, 0);
   signPayload.set(encrypted.ciphertext, encrypted.nonce.length);
   signPayload.set(e, encrypted.nonce.length + encrypted.ciphertext.length);
@@ -186,12 +161,7 @@ export function decryptGroupMessage(
     return null;
   }
 
-  const key = deriveGroupKey(
-    crypto,
-    epochSecret,
-    groupId,
-    encrypted.epoch
-  );
+  const key = deriveGroupKey(crypto, epochSecret, groupId, encrypted.epoch);
   try {
     return crypto.decrypt(key, encrypted.nonce, groupId, encrypted.ciphertext);
   } catch {
@@ -211,11 +181,7 @@ export function getGroupSession(groupId: GroupId): GroupSession | undefined {
   return groupSessions.get(idHex(groupId));
 }
 
-export function initGroupSession(
-  crypto: CryptoProvider,
-  groupId: GroupId,
-  epoch?: GroupEpoch
-): GroupSession {
+export function initGroupSession(crypto: CryptoProvider, groupId: GroupId, epoch?: GroupEpoch): GroupSession {
   const e = epoch ?? createEpoch(crypto);
   const session: GroupSession = {
     groupId,
@@ -228,11 +194,7 @@ export function initGroupSession(
   return session;
 }
 
-export function setMemberDh(
-  session: GroupSession,
-  memberId: IdentityId,
-  dhPublic: Uint8Array
-): void {
+export function setMemberDh(session: GroupSession, memberId: IdentityId, dhPublic: Uint8Array): void {
   session.memberDh.set(idHex(memberId), dhPublic);
 }
 
@@ -240,7 +202,7 @@ export function setMemberDh(
 export function rotateEpoch(
   crypto: CryptoProvider,
   session: GroupSession,
-  activeMemberIds: IdentityId[]
+  activeMemberIds: IdentityId[],
 ): { epoch: GroupEpoch; wraps: EpochSecretWrap[] } {
   const next = advanceEpoch(crypto, {
     epoch: session.epoch,
@@ -264,14 +226,9 @@ export function applyEpochWrap(
   session: GroupSession,
   epoch: number,
   wrap: EpochSecretWrap,
-  myIdentityId: IdentityId
+  myIdentityId: IdentityId,
 ): void {
-  const secret = unwrapEpochSecret(
-    crypto,
-    wrap,
-    session.dh.secretKey,
-    myIdentityId
-  );
+  const secret = unwrapEpochSecret(crypto, wrap, session.dh.secretKey, myIdentityId);
   session.epoch = epoch;
   session.secret = secret;
 }

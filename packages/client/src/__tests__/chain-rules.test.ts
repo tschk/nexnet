@@ -15,7 +15,7 @@ function canRegisterUsername(
   ownsUsername: number,
   nameTaken: number,
   ownerInactiveMs: number,
-  nameLen: number
+  nameLen: number,
 ): number {
   if (nameLen < MIN_USERNAME_LEN) return 1;
   if (nameLen > MAX_USERNAME_LEN) return 2;
@@ -31,10 +31,7 @@ function canTransferUsername(): number {
   return 10;
 }
 
-function canSetGroupCreator(
-  existingCreator: number,
-  callerIsCreator: number
-): number {
+function canSetGroupCreator(existingCreator: number, callerIsCreator: number): number {
   if (existingCreator === 0) return 0;
   if (callerIsCreator !== 0) return 0;
   return 11;
@@ -53,21 +50,14 @@ function canBindIdentityRoot(alreadyBound: number): number {
 const MIN_VALIDATORS = 4;
 const MAX_VALIDATORS = 21;
 
-function canJoinValidatorSet(
-  stakeOk: number,
-  setSize: number,
-  alreadyValidator: number
-): number {
+function canJoinValidatorSet(stakeOk: number, setSize: number, alreadyValidator: number): number {
   if (alreadyValidator !== 0) return 20;
   if (stakeOk === 0) return 21;
   if (setSize > MAX_VALIDATORS) return 22;
   return 0;
 }
 
-function canLeaveValidatorSet(
-  setSizeAfter: number,
-  bootstrapping: number
-): number {
+function canLeaveValidatorSet(setSizeAfter: number, bootstrapping: number): number {
   if (bootstrapping !== 0) return 0;
   if (setSizeAfter < MIN_VALIDATORS) return 23;
   return 0;
@@ -103,9 +93,7 @@ describe("chain transition rules (mirror of chain/nexnet_chain.in)", () => {
   });
 
   test("register allows inactive release", () => {
-    expect(
-      canRegisterUsername(MIN_ACCOUNT_AGE_MS, 0, 1, INACTIVITY_RELEASE_MS, 5)
-    ).toBe(0);
+    expect(canRegisterUsername(MIN_ACCOUNT_AGE_MS, 0, 1, INACTIVITY_RELEASE_MS, 5)).toBe(0);
   });
 
   test("transfer always disabled", () => {

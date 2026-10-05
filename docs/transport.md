@@ -30,14 +30,14 @@ Used when direct NAT traversal fails. Relays transient encrypted traffic
 
 ## Default routing policy
 
-| Context | Default |
-|---|---|
-| Trusted contacts | Direct when possible |
-| Random matching | Private routed |
-| Public chatrooms | Relay-assisted gossip |
-| Attachments | Direct only (AD-20) |
+| Context                 | Default                                       |
+| ----------------------- | --------------------------------------------- |
+| Trusted contacts        | Direct when possible                          |
+| Random matching         | Private routed                                |
+| Public chatrooms        | Relay-assisted gossip                         |
+| Attachments             | Direct only (AD-20)                           |
 | Opt-in private sessions | Tor-style multi-hop when user enables (AD-21) |
-| NAT failure | Fallback relay |
+| NAT failure             | Fallback relay                                |
 
 ### Opt-in private routing (AD-21)
 

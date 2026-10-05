@@ -9,13 +9,7 @@
 
 import { Database } from "bun:sqlite";
 import { DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
-import type {
-  MessageId,
-  IdentityId,
-  OutboundQueueItem,
-  OutboundQueueLike,
-  DeliveryState,
-} from "@nexnet/types";
+import type { MessageId, IdentityId, OutboundQueueItem, OutboundQueueLike, DeliveryState } from "@nexnet/types";
 
 export type { DeliveryState, OutboundQueueItem } from "@nexnet/types";
 
@@ -36,25 +30,25 @@ export class OutboundQueue implements OutboundQueueLike {
       `INSERT OR REPLACE INTO outbound
        (message_id, recipient_identity, encrypted_envelope, created_at,
         last_attempt_at, next_attempt_at, attempt_count, delivery_state, encryption_format)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.pendingStmt = this.db.prepare(
       `SELECT * FROM outbound
        WHERE delivery_state = 'pending'
          AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'
          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-       ORDER BY created_at ASC`
+       ORDER BY created_at ASC`,
     );
     this.pendingForRecipientStmt = this.db.prepare(
       `SELECT * FROM outbound
        WHERE delivery_state = 'pending'
          AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'
          AND recipient_identity = ?
-       ORDER BY created_at ASC`
+       ORDER BY created_at ASC`,
     );
     this.markDeliveredStmt = this.db.prepare(
       `UPDATE outbound SET delivery_state = 'delivered' WHERE message_id = ?
-       AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`
+       AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`,
     );
     this.markAttemptStmt = this.db.prepare(
       `UPDATE outbound
@@ -62,11 +56,9 @@ export class OutboundQueue implements OutboundQueueLike {
            last_attempt_at = ?,
            next_attempt_at = ?,
            delivery_state = CASE WHEN attempt_count + 1 >= 10 THEN 'failed' ELSE 'pending' END
-       WHERE message_id = ? AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`
+       WHERE message_id = ? AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`,
     );
-    this.getByIdStmt = this.db.prepare(
-      "SELECT * FROM outbound WHERE message_id = ?"
-    );
+    this.getByIdStmt = this.db.prepare("SELECT * FROM outbound WHERE message_id = ?");
   }
 
   static open(path: string): OutboundQueue {
@@ -99,23 +91,25 @@ export class OutboundQueue implements OutboundQueueLike {
   enqueue(item: OutboundQueueItem): void {
     const encryptionFormat = item.encryptionFormat;
     if (encryptionFormat !== DM_X3DH_QUEUE_FORMAT) throw new Error("Queue item lacks X3DH provenance");
-    this.db.transaction(() => {
-      const existing = this.getByIdStmt.get(item.messageId) as { encryption_format: unknown } | null;
-      if (existing && existing.encryption_format !== DM_X3DH_QUEUE_FORMAT) {
-        throw new Error("Cannot replace a legacy queue item");
-      }
-      this.enqueueStmt.run(
-        item.messageId,
-        item.recipientIdentityId,
-        item.encryptedEnvelope,
-        item.createdAt,
-        item.lastAttemptAt ?? null,
-        item.nextAttemptAt ?? null,
-        item.attemptCount,
-        item.deliveryState,
-        encryptionFormat
-      );
-    }).immediate();
+    this.db
+      .transaction(() => {
+        const existing = this.getByIdStmt.get(item.messageId) as { encryption_format: unknown } | null;
+        if (existing && existing.encryption_format !== DM_X3DH_QUEUE_FORMAT) {
+          throw new Error("Cannot replace a legacy queue item");
+        }
+        this.enqueueStmt.run(
+          item.messageId,
+          item.recipientIdentityId,
+          item.encryptedEnvelope,
+          item.createdAt,
+          item.lastAttemptAt ?? null,
+          item.nextAttemptAt ?? null,
+          item.attemptCount,
+          item.deliveryState,
+          encryptionFormat,
+        );
+      })
+      .immediate();
   }
 
   pending(): OutboundQueueItem[] {
@@ -127,17 +121,19 @@ export class OutboundQueue implements OutboundQueueLike {
   }
 
   private rowsToItems(rows: unknown[]): OutboundQueueItem[] {
-    return (rows as Array<{
-      message_id: Uint8Array;
-      recipient_identity: Uint8Array;
-      encrypted_envelope: Uint8Array;
-      created_at: number;
-      last_attempt_at: number | null;
-      next_attempt_at: number | null;
-      attempt_count: number;
-      delivery_state: string;
-      encryption_format: typeof DM_X3DH_QUEUE_FORMAT;
-    }>).map((row) => ({
+    return (
+      rows as Array<{
+        message_id: Uint8Array;
+        recipient_identity: Uint8Array;
+        encrypted_envelope: Uint8Array;
+        created_at: number;
+        last_attempt_at: number | null;
+        next_attempt_at: number | null;
+        attempt_count: number;
+        delivery_state: string;
+        encryption_format: typeof DM_X3DH_QUEUE_FORMAT;
+      }>
+    ).map((row) => ({
       messageId: new Uint8Array(row.message_id),
       encryptionFormat: row.encryption_format,
       recipientIdentityId: new Uint8Array(row.recipient_identity),
@@ -156,15 +152,10 @@ export class OutboundQueue implements OutboundQueueLike {
 
   markAttempt(messageId: MessageId): void {
     const now = Date.now();
-    const row = this.getByIdStmt.get(messageId) as
-      | { attempt_count: number }
-      | undefined;
+    const row = this.getByIdStmt.get(messageId) as { attempt_count: number } | undefined;
     if (!row) return;
 
-    const backoffMs = Math.min(
-      30_000 * Math.pow(2, row.attempt_count),
-      30 * 60 * 1000
-    );
+    const backoffMs = Math.min(30_000 * Math.pow(2, row.attempt_count), 30 * 60 * 1000);
     this.markAttemptStmt.run(now, now + backoffMs, messageId);
   }
 

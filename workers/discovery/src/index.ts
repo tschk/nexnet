@@ -10,10 +10,7 @@
  * AD-24: profile = username + bio, no avatar.
  */
 
-import {
-  DEFAULT_REPUTATION_THRESHOLD,
-  DEFAULT_REPUTATION_WEIGHTS,
-} from "@nexnet/types";
+import { DEFAULT_REPUTATION_THRESHOLD, DEFAULT_REPUTATION_WEIGHTS } from "@nexnet/types";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -256,10 +253,13 @@ export class DiscoveryIndex {
 
     const now = Date.now();
     const requests = (this.matchRequests.get(body.identityId) ?? []).filter(
-      (requestedAt) => requestedAt > now - MATCH_RATE_WINDOW_MS
+      (requestedAt) => requestedAt > now - MATCH_RATE_WINDOW_MS,
     );
     if (requests.length >= MATCH_RATE_LIMIT) {
-      return jsonResponse({ error: "random match rate limited", retryAfterMs: requests[0] + MATCH_RATE_WINDOW_MS - now }, 429);
+      return jsonResponse(
+        { error: "random match rate limited", retryAfterMs: requests[0] + MATCH_RATE_WINDOW_MS - now },
+        429,
+      );
     }
     requests.push(now);
     this.matchRequests.set(body.identityId, requests);
@@ -282,12 +282,8 @@ export class DiscoveryIndex {
       if (this.blocks.get(profile.identityId)?.has(body.identityId)) continue;
 
       // Must have at least one interest or language overlap
-      const interestOverlap = profile.interests.some((i) =>
-        requesterInterests.has(i.toLowerCase())
-      );
-      const langOverlap = profile.languages.some((l) =>
-        requesterLangs.has(l.toLowerCase())
-      );
+      const interestOverlap = profile.interests.some((i) => requesterInterests.has(i.toLowerCase()));
+      const langOverlap = profile.languages.some((l) => requesterLangs.has(l.toLowerCase()));
       if (!interestOverlap && !langOverlap) continue;
 
       // Score: age(0.35) + completed(0.35) + continuity(0.15) + blockInverse(0.15)
@@ -349,11 +345,14 @@ export class DiscoveryIndex {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("*", cors({
-  origin: "*",
-  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(
+  "*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.post("/discovery/profile", (c) => handleProfileUpsert(c.req.raw, c.env));
 app.get("/discovery/profile/:identityId", (c) => handleProfileGet(c.req.param("identityId"), c.env));
@@ -368,10 +367,7 @@ app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "in
 
 export default app;
 
-async function handleProfileUpsert(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleProfileUpsert(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/profile/upsert", {
@@ -381,26 +377,17 @@ async function handleProfileUpsert(
   });
 }
 
-async function handleProfileGet(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handleProfileGet(identityId: string, env: Env): Promise<Response> {
   const stub = getDiscoveryStub(env);
   return stub.fetch(`https://discovery/do/profile/get?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handleProfileDelete(
-  identityId: string,
-  env: Env
-): Promise<Response> {
+async function handleProfileDelete(identityId: string, env: Env): Promise<Response> {
   const stub = getDiscoveryStub(env);
   return stub.fetch(`https://discovery/do/profile/delete?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handleSearchInterest(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleSearchInterest(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/search/interest", {
@@ -410,10 +397,7 @@ async function handleSearchInterest(
   });
 }
 
-async function handleSearchLanguage(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleSearchLanguage(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/search/language", {
@@ -423,10 +407,7 @@ async function handleSearchLanguage(
   });
 }
 
-async function handleRandomMatch(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleRandomMatch(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/random-match", {
@@ -436,10 +417,7 @@ async function handleRandomMatch(
   });
 }
 
-async function handleBlock(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleBlock(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/block", {
@@ -449,10 +427,7 @@ async function handleBlock(
   });
 }
 
-async function handleGroupsList(
-  _request: Request,
-  env: Env
-): Promise<Response> {
+async function handleGroupsList(_request: Request, env: Env): Promise<Response> {
   const stub = getDiscoveryStub(env);
   return stub.fetch("https://discovery/do/groups/list");
 }

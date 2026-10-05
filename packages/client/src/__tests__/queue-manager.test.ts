@@ -15,32 +15,22 @@ function createMockQueue(): OutboundQueueLike & { _items: OutboundQueueItem[] } 
     },
     pending() {
       const now = Date.now();
-      return _items.filter(
-        (i) =>
-          i.deliveryState === "pending" &&
-          (!i.nextAttemptAt || i.nextAttemptAt <= now)
-      );
+      return _items.filter((i) => i.deliveryState === "pending" && (!i.nextAttemptAt || i.nextAttemptAt <= now));
     },
     pendingForRecipient(identityId: Uint8Array) {
       const hex = Buffer.from(identityId).toString("hex");
       return _items.filter(
-        (i) =>
-          i.deliveryState === "pending" &&
-          Buffer.from(i.recipientIdentityId).toString("hex") === hex
+        (i) => i.deliveryState === "pending" && Buffer.from(i.recipientIdentityId).toString("hex") === hex,
       );
     },
     markDelivered(messageId: Uint8Array) {
       const hex = Buffer.from(messageId).toString("hex");
-      const item = _items.find(
-        (i) => Buffer.from(i.messageId).toString("hex") === hex
-      );
+      const item = _items.find((i) => Buffer.from(i.messageId).toString("hex") === hex);
       if (item) item.deliveryState = "delivered";
     },
     markAttempt(messageId: Uint8Array) {
       const hex = Buffer.from(messageId).toString("hex");
-      const item = _items.find(
-        (i) => Buffer.from(i.messageId).toString("hex") === hex
-      );
+      const item = _items.find((i) => Buffer.from(i.messageId).toString("hex") === hex);
       if (item) {
         item.attemptCount++;
         item.lastAttemptAt = Date.now();
@@ -149,7 +139,7 @@ describe("QueueManager", () => {
     expect(queue._items[0]?.deliveryState).toBe("pending");
     const signature = cryptoProvider.sign(
       recipientKeys.secretKey,
-      cdeEncode({ messageId, recipientDeviceId, storedAt })
+      cdeEncode({ messageId, recipientDeviceId, storedAt }),
     );
     handlers.get("delivery_receipt")?.({
       from: Buffer.from(recipient).toString("hex"),
@@ -170,17 +160,29 @@ test("legacy custom-queue envelopes never retry or mutate, even with a valid rec
   const handlers = new Map<string, (data: unknown) => void>();
   let sends = 0;
   const client = {
-    online: true, crypto: cryptoProvider, codec: { encode: cdeEncode },
-    on(event: string, handler: (data: unknown) => void) { handlers.set(event, handler); },
-    off(event: string) { handlers.delete(event); },
-    sendDm() { sends++; return true; },
+    online: true,
+    crypto: cryptoProvider,
+    codec: { encode: cdeEncode },
+    on(event: string, handler: (data: unknown) => void) {
+      handlers.set(event, handler);
+    },
+    off(event: string) {
+      handlers.delete(event);
+    },
+    sendDm() {
+      sends++;
+      return true;
+    },
   } as unknown as import("../client.js").NexnetClient;
   const manager = new QueueManager(queue, () => keys.publicKey);
   for (const marker of [undefined, null, "unknown-format"]) {
     queue.enqueue({
       messageId: new Uint8Array(32).fill(queue._items.length + 1),
-      recipientIdentityId: recipient, encryptedEnvelope: new Uint8Array([2, 1, 3]),
-      createdAt: 123, attemptCount: 0, deliveryState: "pending",
+      recipientIdentityId: recipient,
+      encryptedEnvelope: new Uint8Array([2, 1, 3]),
+      createdAt: 123,
+      attemptCount: 0,
+      deliveryState: "pending",
       encryptionFormat: marker as OutboundQueueItem["encryptionFormat"],
     });
   }
@@ -190,14 +192,22 @@ test("legacy custom-queue envelopes never retry or mutate, even with a valid rec
     manager.processQueue(client);
     handlers.get("presence")?.({ status: "online", identityId: Buffer.from(recipient).toString("hex") });
     for (const item of queue._items) {
-      const receipt = { messageId: item.messageId, recipientDeviceId: new Uint8Array(32).fill(9), storedAt: Date.now() };
+      const receipt = {
+        messageId: item.messageId,
+        recipientDeviceId: new Uint8Array(32).fill(9),
+        storedAt: Date.now(),
+      };
       handlers.get("delivery_receipt")?.({
-        ...receipt, from: Buffer.from(recipient).toString("hex"),
+        ...receipt,
+        from: Buffer.from(recipient).toString("hex"),
         signature: cryptoProvider.sign(keys.secretKey, cdeEncode(receipt)),
       });
       expect(() => manager.enqueue(item)).toThrow("Queue item lacks X3DH provenance");
     }
     expect(manager.pendingCount).toBe(0);
-    expect(sends).toBe(0); expect(queue._items).toEqual(before);
-  } finally { manager.stop(); }
+    expect(sends).toBe(0);
+    expect(queue._items).toEqual(before);
+  } finally {
+    manager.stop();
+  }
 });

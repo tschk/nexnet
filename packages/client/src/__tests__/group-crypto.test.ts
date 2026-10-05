@@ -20,10 +20,7 @@ import {
 
 describe("Group encryption", () => {
   const crypto = cryptoProvider;
-  const groupId = crypto.deriveId(
-    "nexnet group id v1",
-    new TextEncoder().encode("test-group")
-  );
+  const groupId = crypto.deriveId("nexnet group id v1", new TextEncoder().encode("test-group"));
 
   beforeEach(() => {
     clearGroupSessions();
@@ -53,26 +50,13 @@ describe("Group encryption", () => {
     const epoch = createEpoch(crypto);
     const payload = new TextEncoder().encode("Hello group!");
 
-    const encrypted = encryptGroupMessage(
-      crypto,
-      groupId,
-      epoch.epoch,
-      epoch.secret,
-      payload,
-      kp.secretKey
-    );
+    const encrypted = encryptGroupMessage(crypto, groupId, epoch.epoch, epoch.secret, payload, kp.secretKey);
 
     expect(encrypted.epoch).toBe(0);
     expect(encrypted.ciphertext.length).toBeGreaterThan(0);
     expect(encrypted.nonce.length).toBe(24);
 
-    const decrypted = decryptGroupMessage(
-      crypto,
-      groupId,
-      epoch.secret,
-      encrypted,
-      kp.publicKey
-    );
+    const decrypted = decryptGroupMessage(crypto, groupId, epoch.secret, encrypted, kp.publicKey);
 
     expect(decrypted).not.toBeNull();
     expect(new TextDecoder().decode(decrypted!)).toBe("Hello group!");
@@ -83,23 +67,10 @@ describe("Group encryption", () => {
     const epoch = createEpoch(crypto);
     const payload = new TextEncoder().encode("secret");
 
-    const encrypted = encryptGroupMessage(
-      crypto,
-      groupId,
-      epoch.epoch,
-      epoch.secret,
-      payload,
-      kp.secretKey
-    );
+    const encrypted = encryptGroupMessage(crypto, groupId, epoch.epoch, epoch.secret, payload, kp.secretKey);
 
     const wrongSecret = crypto.randomBytes(32);
-    const decrypted = decryptGroupMessage(
-      crypto,
-      groupId,
-      wrongSecret,
-      encrypted,
-      kp.publicKey
-    );
+    const decrypted = decryptGroupMessage(crypto, groupId, wrongSecret, encrypted, kp.publicKey);
 
     expect(decrypted).toBeNull();
   });
@@ -110,22 +81,9 @@ describe("Group encryption", () => {
     const epoch = createEpoch(crypto);
     const payload = new TextEncoder().encode("signed");
 
-    const encrypted = encryptGroupMessage(
-      crypto,
-      groupId,
-      epoch.epoch,
-      epoch.secret,
-      payload,
-      kp.secretKey
-    );
+    const encrypted = encryptGroupMessage(crypto, groupId, epoch.epoch, epoch.secret, payload, kp.secretKey);
 
-    const decrypted = decryptGroupMessage(
-      crypto,
-      groupId,
-      epoch.secret,
-      encrypted,
-      kp2.publicKey
-    );
+    const decrypted = decryptGroupMessage(crypto, groupId, epoch.secret, encrypted, kp2.publicKey);
 
     expect(decrypted).toBeNull();
   });
@@ -149,24 +107,13 @@ describe("Group encryption", () => {
     const e1 = advanceEpoch(crypto, e0);
     const payload = new TextEncoder().encode("epoch 1 message");
 
-    const encrypted = encryptGroupMessage(
-      crypto,
-      groupId,
-      e1.epoch,
-      e1.secret,
-      payload,
-      kp.secretKey
-    );
+    const encrypted = encryptGroupMessage(crypto, groupId, e1.epoch, e1.secret, payload, kp.secretKey);
 
     // Old epoch secret fails
-    expect(
-      decryptGroupMessage(crypto, groupId, e0.secret, encrypted, kp.publicKey)
-    ).toBeNull();
+    expect(decryptGroupMessage(crypto, groupId, e0.secret, encrypted, kp.publicKey)).toBeNull();
 
     // New secret works
-    expect(
-      decryptGroupMessage(crypto, groupId, e1.secret, encrypted, kp.publicKey)
-    ).not.toBeNull();
+    expect(decryptGroupMessage(crypto, groupId, e1.secret, encrypted, kp.publicKey)).not.toBeNull();
   });
 
   test("wrap/unwrap epoch secret for member", () => {
@@ -175,12 +122,7 @@ describe("Group encryption", () => {
     const secret = crypto.randomBytes(32);
 
     const wrap = wrapEpochSecret(crypto, secret, memberId, memberDh.publicKey);
-    const opened = unwrapEpochSecret(
-      crypto,
-      wrap,
-      memberDh.secretKey,
-      memberId
-    );
+    const opened = unwrapEpochSecret(crypto, wrap, memberDh.secretKey, memberId);
     expect(opened).toEqual(secret);
   });
 

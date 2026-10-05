@@ -9,10 +9,7 @@
 
 import type { NexnetClient } from "./client.js";
 
-export type PeerMessageHandler = (
-  peerIdentityHex: string,
-  data: Uint8Array
-) => void;
+export type PeerMessageHandler = (peerIdentityHex: string, data: Uint8Array) => void;
 
 /** Minimal RTC types so we don't depend on DOM lib everywhere */
 export interface IceCandidateLike {
@@ -228,10 +225,7 @@ export class PeerManager {
     };
     channel.onmessage = (ev) => {
       const raw = ev.data;
-      const bytes =
-        typeof raw === "string"
-          ? new TextEncoder().encode(raw)
-          : new Uint8Array(raw);
+      const bytes = typeof raw === "string" ? new TextEncoder().encode(raw) : new Uint8Array(raw);
       // Default: treat binary as DM envelope CBOR → emit dm event
       try {
         this.client.emit("dm", { envelope: Array.from(bytes) });
@@ -320,7 +314,7 @@ export class PeerManager {
     this.unsub.push(
       () => this.client.off("session_offer", onOffer),
       () => this.client.off("session_answer", onAnswer),
-      () => this.client.off("candidate", onCandidate)
+      () => this.client.off("candidate", onCandidate),
     );
   }
 }

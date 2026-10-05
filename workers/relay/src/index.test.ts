@@ -7,12 +7,16 @@ function createMockState() {
   return {
     storage: {
       get: async (key: string) => store.get(key),
-      put: async (key: string, value: unknown) => { store.set(key, value); },
+      put: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
       delete: async (key: string) => store.delete(key),
       list: async () => [...store.entries()],
     },
     acceptWebSocket: mock(() => {}),
-    blockConcurrencyWhile: async (fn: () => Promise<void>) => { await fn(); },
+    blockConcurrencyWhile: async (fn: () => Promise<void>) => {
+      await fn();
+    },
   } as unknown as DurableObjectState;
 }
 
@@ -24,7 +28,9 @@ function createMockEnv() {
 function createMockWs(identity: string) {
   const sent: unknown[] = [];
   const ws = {
-    send: mock((data: string) => { sent.push(JSON.parse(data)); }),
+    send: mock((data: string) => {
+      sent.push(JSON.parse(data));
+    }),
     close: mock(() => {}),
     _identity: identity,
     _sent: sent,
@@ -43,7 +49,7 @@ describe("RelaySession", () => {
     const req = new Request("https://relay/ws");
     const resp = await relay.fetch(req);
     expect(resp.status).toBe(400);
-    const body = await resp.json() as { error: string };
+    const body = (await resp.json()) as { error: string };
     expect(body.error).toContain("identity");
   });
 
@@ -51,8 +57,12 @@ describe("RelaySession", () => {
     // WebSocketPair is a Cloudflare Workers API — mock it for Bun
     const origWSP = (globalThis as any).WebSocketPair;
     (globalThis as any).WebSocketPair = class {
-      0: any; 1: any;
-      constructor() { this[0] = {}; this[1] = {}; }
+      0: any;
+      1: any;
+      constructor() {
+        this[0] = {};
+        this[1] = {};
+      }
     };
     try {
       const req = new Request("https://relay/ws?identity=alice&device=d1");
@@ -68,7 +78,7 @@ describe("RelaySession", () => {
     const req = new Request("https://relay/status");
     const resp = await relay.fetch(req);
     expect(resp.status).toBe(200);
-    const body = await resp.json() as { connections: number; rooms: number };
+    const body = (await resp.json()) as { connections: number; rooms: number };
     expect(body.connections).toBe(0);
     expect(body.rooms).toBe(0);
   });
@@ -80,18 +90,27 @@ describe("RelaySession", () => {
 
     // Manually register connections (bypass WebSocket upgrade)
     (relay as any).connections.set("alice", {
-      ws: wsA, identity: "alice", device: "d1", rooms: new Set(),
+      ws: wsA,
+      identity: "alice",
+      device: "d1",
+      rooms: new Set(),
     });
     (relay as any).connections.set("bob", {
-      ws: wsB, identity: "bob", device: "d2", rooms: new Set(),
+      ws: wsB,
+      identity: "bob",
+      device: "d2",
+      rooms: new Set(),
     });
 
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "session_offer",
-      to: "bob",
-      sdp: "fake-sdp",
-      session_id: "sess-1",
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "session_offer",
+        to: "bob",
+        sdp: "fake-sdp",
+        session_id: "sess-1",
+      }),
+    );
 
     expect((wsB as any)._sent).toHaveLength(1);
     expect((wsB as any)._sent[0]).toMatchObject({
@@ -104,16 +123,22 @@ describe("RelaySession", () => {
   test("session_offer to offline target is silently dropped", async () => {
     const wsA = createMockWs("alice");
     (relay as any).connections.set("alice", {
-      ws: wsA, identity: "alice", device: "d1", rooms: new Set(),
+      ws: wsA,
+      identity: "alice",
+      device: "d1",
+      rooms: new Set(),
     });
 
     // Should not throw
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "session_offer",
-      to: "offline-user",
-      sdp: "fake-sdp",
-      session_id: "sess-2",
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "session_offer",
+        to: "offline-user",
+        sdp: "fake-sdp",
+        session_id: "sess-2",
+      }),
+    );
 
     expect((wsA as any)._sent).toHaveLength(0);
   });
@@ -124,29 +149,49 @@ describe("RelaySession", () => {
     const wsC = createMockWs("charlie");
 
     (relay as any).connections.set("alice", {
-      ws: wsA, identity: "alice", device: "d1", rooms: new Set(),
+      ws: wsA,
+      identity: "alice",
+      device: "d1",
+      rooms: new Set(),
     });
     (relay as any).connections.set("bob", {
-      ws: wsB, identity: "bob", device: "d2", rooms: new Set(),
+      ws: wsB,
+      identity: "bob",
+      device: "d2",
+      rooms: new Set(),
     });
     (relay as any).connections.set("charlie", {
-      ws: wsC, identity: "charlie", device: "d3", rooms: new Set(),
+      ws: wsC,
+      identity: "charlie",
+      device: "d3",
+      rooms: new Set(),
     });
 
     // Alice and Bob subscribe to room "general", Charlie does not
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "room_subscribe", room_id: "general",
-    }));
-    await relay.webSocketMessage(wsB as unknown as WebSocket, JSON.stringify({
-      type: "room_subscribe", room_id: "general",
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_subscribe",
+        room_id: "general",
+      }),
+    );
+    await relay.webSocketMessage(
+      wsB as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_subscribe",
+        room_id: "general",
+      }),
+    );
 
     // Alice sends room event
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "room_event",
-      room_id: "general",
-      event: { text: "hello" },
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_event",
+        room_id: "general",
+        event: { text: "hello" },
+      }),
+    );
 
     // Bob should receive it, Alice (sender) and Charlie (not subscribed) should not
     expect((wsB as any)._sent).toHaveLength(1);
@@ -163,27 +208,48 @@ describe("RelaySession", () => {
     const wsB = createMockWs("bob");
 
     (relay as any).connections.set("alice", {
-      ws: wsA, identity: "alice", device: "d1", rooms: new Set(),
+      ws: wsA,
+      identity: "alice",
+      device: "d1",
+      rooms: new Set(),
     });
     (relay as any).connections.set("bob", {
-      ws: wsB, identity: "bob", device: "d2", rooms: new Set(),
+      ws: wsB,
+      identity: "bob",
+      device: "d2",
+      rooms: new Set(),
     });
 
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "room_subscribe", room_id: "test-room",
-    }));
-    await relay.webSocketMessage(wsB as unknown as WebSocket, JSON.stringify({
-      type: "room_subscribe", room_id: "test-room",
-    }));
-    await relay.webSocketMessage(wsB as unknown as WebSocket, JSON.stringify({
-      type: "room_unsubscribe", room_id: "test-room",
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_subscribe",
+        room_id: "test-room",
+      }),
+    );
+    await relay.webSocketMessage(
+      wsB as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_subscribe",
+        room_id: "test-room",
+      }),
+    );
+    await relay.webSocketMessage(
+      wsB as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_unsubscribe",
+        room_id: "test-room",
+      }),
+    );
 
-    await relay.webSocketMessage(wsA as unknown as WebSocket, JSON.stringify({
-      type: "room_event",
-      room_id: "test-room",
-      event: { text: "still here?" },
-    }));
+    await relay.webSocketMessage(
+      wsA as unknown as WebSocket,
+      JSON.stringify({
+        type: "room_event",
+        room_id: "test-room",
+        event: { text: "still here?" },
+      }),
+    );
 
     expect((wsB as any)._sent).toHaveLength(0);
   });

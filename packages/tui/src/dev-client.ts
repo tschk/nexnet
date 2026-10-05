@@ -4,7 +4,15 @@
  */
 
 import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nexnet/crypto";
-import { NexnetClient, sendDirectMessage, joinRoom, sendRoomMessage, onRoomMessage, deriveRoomId, onDirectMessage } from "@nexnet/client";
+import {
+  NexnetClient,
+  sendDirectMessage,
+  joinRoom,
+  sendRoomMessage,
+  onRoomMessage,
+  deriveRoomId,
+  onDirectMessage,
+} from "@nexnet/client";
 import { cdeEncode, cdeDecode } from "@nexnet/protocol";
 import type { CborCdeCodec } from "@nexnet/types";
 
@@ -98,9 +106,7 @@ export async function connectDev(relayUrl: string): Promise<void> {
 
     onRoomMessage(client, roomId, (event) => {
       const payload = codec.decode<{ text?: string }>(
-        typeof event.payload === "object" && event.payload instanceof Uint8Array
-          ? event.payload
-          : new Uint8Array()
+        typeof event.payload === "object" && event.payload instanceof Uint8Array ? event.payload : new Uint8Array(),
       );
       const authorHex = hexEncode(event.authorIdentityId);
       const own = authorHex === id.publicKeyHex;

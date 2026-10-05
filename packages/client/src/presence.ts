@@ -29,7 +29,7 @@ function emitUpdate(client: NexnetClient, identityId: unknown, status: unknown, 
 export function consumePresenceMessage(client: NexnetClient, data: unknown): boolean {
   let message: PresenceMessage;
   try {
-    message = typeof data === "string" ? JSON.parse(data) : data as PresenceMessage;
+    message = typeof data === "string" ? JSON.parse(data) : (data as PresenceMessage);
   } catch {
     return false;
   }

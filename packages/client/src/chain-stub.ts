@@ -8,8 +8,14 @@
 
 import type {
   ChainApiClient,
+  CredentialKind,
+  DeviceAuthorization,
   DeviceCertificate,
   DeviceId,
+  IdentityRecord,
+  Revocation,
+  Signature,
+  SshKeyCommitment,
   PasskeyAssertion,
   PasskeyCertificateChallenge,
   PasskeyCredential,
@@ -18,7 +24,15 @@ import type {
   WalletAddress,
   IdentityId,
 } from "@nexnet/types";
-import { verifyPasskeyCredentialAuthorization, verifyDeviceCert } from "@nexnet/protocol";
+import {
+  identityIdFromWallet,
+  sshFingerprint,
+  verifyDeviceCert,
+  verifyIdentityProof,
+  verifyPasskeyCredentialAuthorization,
+  verifyRevocation,
+  verifySshCommitment,
+} from "@nexnet/protocol";
 import { randomBytes } from "@nexnet/crypto";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -74,6 +88,11 @@ interface PersistedPasskeyCredential {
   origin: string;
 }
 
+interface PersistedSshKey {
+  publicKey: string;
+  fingerprint: string;
+}
+
 interface PendingPasskeyAuthorization {
   challenge: string;
   certificate: PersistedDeviceCertificate;
@@ -88,8 +107,16 @@ interface PersistedState {
   deviceCertificates?: PersistedDeviceCertificate[];
   passkeys?: [string, PersistedPasskeyCredential[]][];
   pendingPasskeyAuthorizations?: [string, PendingPasskeyAuthorization][];
+  sshKeys?: [string, PersistedSshKey[]][];
+  revocations?: [string, number][];
+  revocationSequences?: [string, number][];
+  deviceAuthorizations?: [string, DeviceAuthorization][];
   validators: PersistedValidatorRecord[];
 }
+
+const MAX_SSH_KEYS_PER_IDENTITY = 8;
+const MAX_PENDING_PASSKEYS_PER_IDENTITY = 16;
+const MAX_REVOCATION_SEQUENCE_AHEAD_MS = 24 * 60 * 60 * 1000;
 
 export class DevChainClient implements ChainApiClient {
   private usernames = new Map<string, UsernameRecord>();
@@ -99,6 +126,10 @@ export class DevChainClient implements ChainApiClient {
   private deviceCertificates = new Map<string, DeviceCertificate>();
   private passkeys = new Map<string, PasskeyCredential[]>();
   private pendingPasskeyAuthorizations = new Map<string, PendingPasskeyAuthorization>();
+  private sshKeys = new Map<string, SshKeyCommitment[]>();
+  private revocations = new Map<string, number>();
+  private revocationSequences = new Map<string, number>();
+  private deviceAuthorizations = new Map<string, DeviceAuthorization>();
   private accounts = new Map<string, AccountMeta>(); // walletHex -> meta
   private validators = new Map<string, ValidatorRecord>();
 
@@ -136,11 +167,7 @@ export class DevChainClient implements ChainApiClient {
     }
   }
 
-  async registerUsername(
-    username: string,
-    wallet: WalletAddress,
-    identityId: IdentityId
-  ): Promise<UsernameRecord> {
+  async registerUsername(username: string, wallet: WalletAddress, identityId: IdentityId): Promise<UsernameRecord> {
     const walletHex = Buffer.from(wallet).toString("hex");
     const normalized = username.toLowerCase().trim();
 
@@ -201,9 +228,7 @@ export class DevChainClient implements ChainApiClient {
     return record;
   }
 
-  async resolveUsername(
-    username: string
-  ): Promise<UsernameRecord | null> {
+  async resolveUsername(username: string): Promise<UsernameRecord | null> {
     return this.usernames.get(username.toLowerCase().trim()) ?? null;
   }
 
@@ -215,17 +240,12 @@ export class DevChainClient implements ChainApiClient {
     return this.history.get(username.toLowerCase().trim()) ?? [];
   }
 
-  async getIdentityRoot(
-    identityId: IdentityId
-  ): Promise<{ wallet: WalletAddress } | null> {
+  async getIdentityRoot(identityId: IdentityId): Promise<{ wallet: WalletAddress } | null> {
     const wallet = this.identityRoots.get(Buffer.from(identityId).toString("hex"));
     return wallet ? { wallet } : null;
   }
 
-  async registerDeviceCertificate(
-    wallet: WalletAddress,
-    certificate: DeviceCertificate
-  ): Promise<DeviceCertificate> {
+  async registerDeviceCertificate(wallet: WalletAddress, certificate: DeviceCertificate): Promise<DeviceCertificate> {
     if (
       wallet.length !== 32 ||
       certificate.accountId.length !== 32 ||
@@ -248,28 +268,31 @@ export class DevChainClient implements ChainApiClient {
     if (!verifyDeviceCert(certificate, wallet)) {
       throw new Error("Invalid device certificate signature");
     }
+    if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
+      throw new Error("Device is revoked");
+    }
+    this.assertNoConflictingDevice(certificate, { kind: "root", credentialId: null });
     const stored = structuredClone(certificate);
-    this.deviceCertificates.set(this.deviceCertificateKey(stored.accountId, stored.deviceId), stored);
+    const key = this.deviceCertificateKey(stored.accountId, stored.deviceId);
+    this.deviceCertificates.set(key, stored);
+    this.deviceAuthorizations.set(key, { kind: "root", credentialId: null });
     this.persist();
     return structuredClone(stored);
   }
 
-  async resolveDeviceCertificate(
-    identityId: IdentityId,
-    deviceId: DeviceId
-  ): Promise<DeviceCertificate | null> {
+  async resolveDeviceCertificate(identityId: IdentityId, deviceId: DeviceId): Promise<DeviceCertificate | null> {
     const certificate = this.deviceCertificates.get(this.deviceCertificateKey(identityId, deviceId));
     const now = Date.now();
-    return certificate && certificate.issuedAt <= now && now < certificate.expiresAt
-      ? structuredClone(certificate)
-      : null;
+    if (!certificate || certificate.issuedAt > now || now >= certificate.expiresAt) return null;
+    if (this.isCertificateRevoked(identityId, deviceId)) return null;
+    return structuredClone(certificate);
   }
 
   async registerPasskeyCredential(
     wallet: WalletAddress,
     identityId: IdentityId,
     credential: PasskeyCredential,
-    rootSignature: Uint8Array
+    rootSignature: Uint8Array,
   ): Promise<PasskeyCredential> {
     const identityHex = Buffer.from(identityId).toString("hex");
     const root = this.identityRoots.get(identityHex);
@@ -299,23 +322,41 @@ export class DevChainClient implements ChainApiClient {
     return structuredClone(stored);
   }
 
+  async hasLivePasskey(identityId: IdentityId): Promise<boolean> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    return (this.passkeys.get(identityHex) ?? []).some(
+      (item) => !this.isRevokedKey(identityHex, "passkey", item.credentialId),
+    );
+  }
+
   async beginPasskeyDeviceCertificateAuthorization(
     identityId: IdentityId,
-    certificate: DeviceCertificate
+    certificate: DeviceCertificate,
   ): Promise<PasskeyCertificateChallenge> {
     const identityHex = Buffer.from(identityId).toString("hex");
     if (!this.identityRoots.has(identityHex) || !this.isDeviceCertificateShapeValid(certificate, identityId)) {
       throw new Error("Invalid device certificate");
     }
-    if ((this.passkeys.get(identityHex)?.length ?? 0) === 0) {
+    const livePasskeys = (this.passkeys.get(identityHex) ?? []).filter(
+      (item) => !this.isRevokedKey(identityHex, "passkey", item.credentialId),
+    );
+    if (livePasskeys.length === 0) {
       throw new Error("No passkey credential registered");
+    }
+    if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
+      throw new Error("Device is revoked");
+    }
+    const pendingKey = this.pendingKey(identityHex, certificate.deviceId);
+    const pendingCount = this.prunePendingPasskeys(identityHex);
+    if (pendingCount >= MAX_PENDING_PASSKEYS_PER_IDENTITY && !this.pendingPasskeyAuthorizations.has(pendingKey)) {
+      throw new Error("Too many pending passkey authorizations");
     }
     const authorization = {
       challenge: Buffer.from(randomBytes(32)).toString("base64url"),
       certificate: this.persistedDeviceCertificate(certificate),
       expiresAt: Date.now() + 5 * 60_000,
     };
-    this.pendingPasskeyAuthorizations.set(identityHex, authorization);
+    this.pendingPasskeyAuthorizations.set(pendingKey, authorization);
     this.persist();
     return { challenge: authorization.challenge, expiresAt: authorization.expiresAt };
   }
@@ -323,23 +364,30 @@ export class DevChainClient implements ChainApiClient {
   async authorizeDeviceCertificateWithPasskey(
     identityId: IdentityId,
     certificate: DeviceCertificate,
-    assertion: PasskeyAssertion
+    assertion: PasskeyAssertion,
+    expectedChallenge?: string,
   ): Promise<DeviceCertificate> {
     const identityHex = Buffer.from(identityId).toString("hex");
-    const pending = this.pendingPasskeyAuthorizations.get(identityHex);
-    if (
-      !pending ||
-      pending.expiresAt < Date.now() ||
-      !this.isDeviceCertificateShapeValid(certificate, identityId) ||
-      !this.sameDeviceCertificate(this.deviceCertificate(pending.certificate), certificate)
-    ) {
+    const pending = this.pendingPasskeyAuthorizations.get(this.pendingKey(identityHex, certificate.deviceId));
+    if (expectedChallenge === undefined) {
+      if (
+        !pending ||
+        pending.expiresAt < Date.now() ||
+        !this.isDeviceCertificateShapeValid(certificate, identityId) ||
+        !this.sameDeviceCertificate(this.deviceCertificate(pending.certificate), certificate)
+      ) {
+        throw new Error("Passkey authorization is missing or expired");
+      }
+    } else if (expectedChallenge.length === 0 || !this.isDeviceCertificateShapeValid(certificate, identityId)) {
       throw new Error("Passkey authorization is missing or expired");
     }
     const credential = this.passkeys.get(identityHex)?.find((item) => item.credentialId === assertion.id);
-    if (!credential) throw new Error("Passkey credential is not authorized");
+    if (!credential || this.isRevokedKey(identityHex, "passkey", credential.credentialId)) {
+      throw new Error("Passkey credential is not authorized");
+    }
     const result = await verifyAuthenticationResponse({
       response: assertion as never,
-      expectedChallenge: pending.challenge,
+      expectedChallenge: expectedChallenge ?? pending!.challenge,
       expectedOrigin: credential.origin,
       expectedRPID: credential.rpId,
       credential: {
@@ -350,11 +398,217 @@ export class DevChainClient implements ChainApiClient {
     });
     if (!result.verified) throw new Error("Invalid passkey assertion");
     credential.counter = result.authenticationInfo.newCounter;
+    this.assertNoConflictingDevice(certificate, { kind: "passkey", credentialId: credential.credentialId });
     const stored = structuredClone(certificate);
-    this.deviceCertificates.set(this.deviceCertificateKey(stored.accountId, stored.deviceId), stored);
-    this.pendingPasskeyAuthorizations.delete(identityHex);
+    const storedKey = this.deviceCertificateKey(stored.accountId, stored.deviceId);
+    this.deviceCertificates.set(storedKey, stored);
+    this.deviceAuthorizations.set(storedKey, { kind: "passkey", credentialId: credential.credentialId });
+    this.pendingPasskeyAuthorizations.delete(this.pendingKey(identityHex, certificate.deviceId));
     this.persist();
     return structuredClone(stored);
+  }
+
+  async registerIdentity(wallet: WalletAddress, identityId: IdentityId, proof: Signature): Promise<IdentityRecord> {
+    if (wallet.length !== 32 || identityId.length !== 32 || proof.length !== 64) {
+      throw new Error("Invalid identity registration");
+    }
+    if (!Buffer.from(identityId).equals(Buffer.from(identityIdFromWallet(wallet)))) {
+      throw new Error("Identity id does not match wallet");
+    }
+    if (!verifyIdentityProof(wallet, proof)) {
+      throw new Error("Invalid identity proof");
+    }
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const root = this.identityRoots.get(identityHex);
+    if (root && !Buffer.from(root).equals(Buffer.from(wallet))) {
+      throw new Error("Identity root already bound");
+    }
+    if (!root) {
+      this.registerAccount(wallet);
+      this.identityRoots.set(identityHex, new Uint8Array(wallet));
+      this.persist();
+    }
+    return (await this.getIdentity(identityId))!;
+  }
+
+  async getIdentity(identityId: IdentityId): Promise<IdentityRecord | null> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const wallet = this.identityRoots.get(identityHex);
+    if (!wallet) return null;
+    const walletHex = Buffer.from(wallet).toString("hex");
+    return {
+      identityId: new Uint8Array(identityId),
+      wallet: new Uint8Array(wallet),
+      createdAt: this.accounts.get(walletHex)?.createdAt ?? 0,
+      username: this.walletToUsername.get(walletHex) ?? null,
+    };
+  }
+
+  async registerSshKey(
+    wallet: WalletAddress,
+    identityId: IdentityId,
+    commitment: SshKeyCommitment,
+    rootSignature: Signature,
+  ): Promise<SshKeyCommitment> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    const root = this.identityRoots.get(identityHex);
+    if (!root || !Buffer.from(root).equals(Buffer.from(wallet))) {
+      throw new Error("Wallet is not the identity root");
+    }
+    if (
+      commitment.algorithm !== "ssh-ed25519" ||
+      commitment.publicKey.length !== 32 ||
+      rootSignature.length !== 64 ||
+      commitment.fingerprint !== sshFingerprint(commitment.publicKey) ||
+      !verifySshCommitment(wallet, identityId, commitment, rootSignature)
+    ) {
+      throw new Error("Invalid SSH key authorization");
+    }
+    const keys = this.sshKeys.get(identityHex) ?? [];
+    if (keys.some((item) => item.fingerprint === commitment.fingerprint)) {
+      throw new Error("SSH key already registered");
+    }
+    if (this.isRevokedKey(identityHex, "ssh", commitment.fingerprint)) {
+      throw new Error("SSH key is revoked");
+    }
+    const liveKeys = keys.filter((item) => !this.isRevokedKey(identityHex, "ssh", item.fingerprint));
+    if (liveKeys.length >= MAX_SSH_KEYS_PER_IDENTITY) {
+      throw new Error("Too many SSH keys");
+    }
+    const stored: SshKeyCommitment = {
+      algorithm: commitment.algorithm,
+      publicKey: new Uint8Array(commitment.publicKey),
+      fingerprint: commitment.fingerprint,
+    };
+    keys.push(stored);
+    this.sshKeys.set(identityHex, keys);
+    this.persist();
+    return structuredClone(stored);
+  }
+
+  async resolveSshKey(identityId: IdentityId, fingerprint: string): Promise<SshKeyCommitment | null> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    if (this.isRevokedKey(identityHex, "ssh", fingerprint)) return null;
+    const found = this.sshKeys.get(identityHex)?.find((item) => item.fingerprint === fingerprint);
+    return found ? structuredClone(found) : null;
+  }
+
+  async authorizeDeviceCertificateWithSshKey(
+    identityId: IdentityId,
+    certificate: DeviceCertificate,
+    fingerprint: string,
+  ): Promise<DeviceCertificate> {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    if (!this.identityRoots.has(identityHex) || !this.isDeviceCertificateShapeValid(certificate, identityId)) {
+      throw new Error("Invalid device certificate");
+    }
+    if (!(await this.resolveSshKey(identityId, fingerprint))) {
+      throw new Error("SSH key is not authorized");
+    }
+    if (this.isRevokedKey(identityHex, "device", Buffer.from(certificate.deviceId).toString("hex"))) {
+      throw new Error("Device is revoked");
+    }
+    this.assertNoConflictingDevice(certificate, { kind: "ssh", credentialId: fingerprint });
+    const stored = structuredClone(certificate);
+    const key = this.deviceCertificateKey(stored.accountId, stored.deviceId);
+    this.deviceCertificates.set(key, stored);
+    this.deviceAuthorizations.set(key, { kind: "ssh", credentialId: fingerprint });
+    this.persist();
+    return structuredClone(stored);
+  }
+
+  async revokeCredential(wallet: WalletAddress, revocation: Revocation): Promise<void> {
+    const identityHex = Buffer.from(revocation.accountId).toString("hex");
+    const root = this.identityRoots.get(identityHex);
+    if (!root || !Buffer.from(root).equals(Buffer.from(wallet))) {
+      throw new Error("Wallet is not the identity root");
+    }
+    if (
+      (revocation.kind !== "device" && revocation.kind !== "ssh" && revocation.kind !== "passkey") ||
+      !this.isCredentialIdWellFormed(revocation.kind, revocation.credentialId) ||
+      !Number.isSafeInteger(revocation.sequence) ||
+      revocation.sequence < 1 ||
+      revocation.sequence > Date.now() + MAX_REVOCATION_SEQUENCE_AHEAD_MS ||
+      revocation.rootSignature.length !== 64 ||
+      !verifyRevocation(wallet, revocation)
+    ) {
+      throw new Error("Invalid revocation");
+    }
+    const last = this.revocationSequences.get(identityHex) ?? 0;
+    if (revocation.sequence <= last) {
+      throw new Error("Revocation sequence is stale");
+    }
+    this.revocationSequences.set(identityHex, revocation.sequence);
+    this.revocations.set(
+      this.revocationKey(identityHex, revocation.kind, revocation.credentialId),
+      revocation.sequence,
+    );
+    this.persist();
+  }
+
+  async isRevoked(identityId: IdentityId, kind: CredentialKind, credentialId: string): Promise<boolean> {
+    return this.isRevokedKey(Buffer.from(identityId).toString("hex"), kind, credentialId);
+  }
+
+  async getDeviceAuthorization(identityId: IdentityId, deviceId: DeviceId): Promise<DeviceAuthorization | null> {
+    const found = this.deviceAuthorizations.get(this.deviceCertificateKey(identityId, deviceId));
+    return found ? { ...found } : null;
+  }
+
+  private isCredentialIdWellFormed(kind: CredentialKind, credentialId: string): boolean {
+    if (credentialId.length === 0 || credentialId.length > 256) return false;
+    if (kind === "device") return /^[0-9a-f]{64}$/.test(credentialId);
+    if (kind === "ssh") return /^SHA256:[A-Za-z0-9+/]{43}$/.test(credentialId);
+    return true;
+  }
+
+  private prunePendingPasskeys(identityHex: string): number {
+    const now = Date.now();
+    let live = 0;
+    for (const [key, pending] of this.pendingPasskeyAuthorizations) {
+      if (pending.expiresAt <= now) this.pendingPasskeyAuthorizations.delete(key);
+      else if (key.startsWith(`${identityHex}:`)) live += 1;
+    }
+    return live;
+  }
+
+  private pendingKey(identityHex: string, deviceId: DeviceId): string {
+    return `${identityHex}:${Buffer.from(deviceId).toString("hex")}`;
+  }
+
+  private assertNoConflictingDevice(certificate: DeviceCertificate, next: DeviceAuthorization): void {
+    const key = this.deviceCertificateKey(certificate.accountId, certificate.deviceId);
+    const existing = this.deviceCertificates.get(key);
+    if (!existing || existing.expiresAt <= Date.now()) return;
+    const authorization = this.deviceAuthorizations.get(key);
+    const sameKey = Buffer.from(existing.deviceSigningPublicKey).equals(
+      Buffer.from(certificate.deviceSigningPublicKey),
+    );
+    const sameAuthorization =
+      authorization?.kind === next.kind && (authorization?.credentialId ?? null) === next.credentialId;
+    if (!sameKey || !sameAuthorization) {
+      throw new Error("Device is already authorised differently; use a new device id");
+    }
+  }
+
+  private revocationKey(identityHex: string, kind: CredentialKind, credentialId: string): string {
+    return `${identityHex}:${kind}:${credentialId}`;
+  }
+
+  private isRevokedKey(identityHex: string, kind: CredentialKind, credentialId: string): boolean {
+    return this.revocations.has(this.revocationKey(identityHex, kind, credentialId));
+  }
+
+  private isCertificateRevoked(identityId: IdentityId, deviceId: DeviceId): boolean {
+    const identityHex = Buffer.from(identityId).toString("hex");
+    if (this.isRevokedKey(identityHex, "device", Buffer.from(deviceId).toString("hex"))) return true;
+    const authorization = this.deviceAuthorizations.get(this.deviceCertificateKey(identityId, deviceId));
+    return (
+      !!authorization &&
+      authorization.kind !== "root" &&
+      authorization.credentialId !== null &&
+      this.isRevokedKey(identityHex, authorization.kind, authorization.credentialId)
+    );
   }
 
   private appendHistory(username: string, record: UsernameRecord): void {
@@ -366,41 +620,46 @@ export class DevChainClient implements ChainApiClient {
   private restore(serialized: string): void {
     const state = JSON.parse(serialized) as PersistedState;
     this.accounts = new Map(state.accounts);
-    this.usernames = new Map(
-      state.usernames.map((record) => [record.username, this.usernameRecord(record)])
-    );
+    this.usernames = new Map(state.usernames.map((record) => [record.username, this.usernameRecord(record)]));
     this.history = new Map(
-      state.history.map(([username, records]) => [
-        username,
-        records.map((record) => this.usernameRecord(record)),
-      ])
+      state.history.map(([username, records]) => [username, records.map((record) => this.usernameRecord(record))]),
     );
     this.identityRoots = new Map(
       (state.identityRoots ?? []).map(([identityHex, wallet]) => [
         identityHex,
         new Uint8Array(Buffer.from(wallet, "base64")),
-      ])
+      ]),
     );
     this.deviceCertificates = new Map(
       (state.deviceCertificates ?? []).map((record) => {
         const certificate = this.deviceCertificate(record);
         return [this.deviceCertificateKey(certificate.accountId, certificate.deviceId), certificate];
-      })
+      }),
     );
     this.passkeys = new Map(
       (state.passkeys ?? []).map(([identityHex, credentials]) => [
         identityHex,
         credentials.map((credential) => this.passkeyCredential(credential)),
-      ])
+      ]),
     );
     this.pendingPasskeyAuthorizations = new Map(state.pendingPasskeyAuthorizations ?? []);
+    this.sshKeys = new Map(
+      (state.sshKeys ?? []).map(([identityHex, keys]) => [
+        identityHex,
+        keys.map((key) => ({
+          algorithm: "ssh-ed25519" as const,
+          publicKey: new Uint8Array(Buffer.from(key.publicKey, "base64")),
+          fingerprint: key.fingerprint,
+        })),
+      ]),
+    );
+    this.revocations = new Map(state.revocations ?? []);
+    this.revocationSequences = new Map(state.revocationSequences ?? []);
+    this.deviceAuthorizations = new Map(state.deviceAuthorizations ?? []);
     if (this.identityRoots.size === 0) {
       for (const records of this.history.values()) {
         for (const record of records) {
-          this.identityRoots.set(
-            Buffer.from(record.identityId).toString("hex"),
-            record.ownerWallet
-          );
+          this.identityRoots.set(Buffer.from(record.identityId).toString("hex"), record.ownerWallet);
         }
       }
     }
@@ -408,13 +667,10 @@ export class DevChainClient implements ChainApiClient {
       state.validators.map((record) => {
         const validator = this.validatorRecord(record);
         return [Buffer.from(validator.wallet).toString("hex"), validator];
-      })
+      }),
     );
     this.walletToUsername = new Map(
-      [...this.usernames.values()].map((record) => [
-        Buffer.from(record.ownerWallet).toString("hex"),
-        record.username,
-      ])
+      [...this.usernames.values()].map((record) => [Buffer.from(record.ownerWallet).toString("hex"), record.username]),
     );
   }
 
@@ -429,10 +685,7 @@ export class DevChainClient implements ChainApiClient {
     const state: PersistedState = {
       accounts: [...this.accounts.entries()],
       usernames: [...this.usernames.values()].map(serializeUsername),
-      history: [...this.history.entries()].map(([username, records]) => [
-        username,
-        records.map(serializeUsername),
-      ]),
+      history: [...this.history.entries()].map(([username, records]) => [username, records.map(serializeUsername)]),
       identityRoots: [...this.identityRoots.entries()].map(([identityHex, wallet]) => [
         identityHex,
         Buffer.from(wallet).toString("base64"),
@@ -445,6 +698,16 @@ export class DevChainClient implements ChainApiClient {
         credentials.map((credential) => this.persistedPasskeyCredential(credential)),
       ]),
       pendingPasskeyAuthorizations: [...this.pendingPasskeyAuthorizations.entries()],
+      sshKeys: [...this.sshKeys.entries()].map(([identityHex, keys]) => [
+        identityHex,
+        keys.map((key) => ({
+          publicKey: Buffer.from(key.publicKey).toString("base64"),
+          fingerprint: key.fingerprint,
+        })),
+      ]),
+      revocations: [...this.revocations.entries()],
+      revocationSequences: [...this.revocationSequences.entries()],
+      deviceAuthorizations: [...this.deviceAuthorizations.entries()],
       validators: [...this.validators.values()].map((record) => ({
         wallet: Buffer.from(record.wallet).toString("base64"),
         bondedStake: record.bondedStake,
@@ -538,24 +801,23 @@ export class DevChainClient implements ChainApiClient {
   }
 
   private sameDeviceCertificate(a: DeviceCertificate, b: DeviceCertificate): boolean {
-    return Buffer.from(a.accountId).equals(Buffer.from(b.accountId)) &&
+    return (
+      Buffer.from(a.accountId).equals(Buffer.from(b.accountId)) &&
       Buffer.from(a.deviceId).equals(Buffer.from(b.deviceId)) &&
       Buffer.from(a.deviceSigningPublicKey).equals(Buffer.from(b.deviceSigningPublicKey)) &&
       Buffer.from(a.deviceEncryptionPublicKey).equals(Buffer.from(b.deviceEncryptionPublicKey)) &&
       a.issuedAt === b.issuedAt &&
       a.expiresAt === b.expiresAt &&
       a.capabilities === b.capabilities &&
-      Buffer.from(a.rootSignature).equals(Buffer.from(b.rootSignature));
+      Buffer.from(a.rootSignature).equals(Buffer.from(b.rootSignature))
+    );
   }
 
   private deviceCertificateKey(identityId: IdentityId, deviceId: DeviceId): string {
     return `${Buffer.from(identityId).toString("hex")}:${Buffer.from(deviceId).toString("hex")}`;
   }
 
-  async joinValidatorSet(
-    wallet: WalletAddress,
-    bondedStake: number
-  ): Promise<ValidatorRecord> {
+  async joinValidatorSet(wallet: WalletAddress, bondedStake: number): Promise<ValidatorRecord> {
     const hex = Buffer.from(wallet).toString("hex");
     if (this.validators.has(hex)) {
       throw new Error("Already a validator (code 20)");
@@ -594,8 +856,6 @@ export class DevChainClient implements ChainApiClient {
   }
 
   async listValidators(): Promise<ValidatorRecord[]> {
-    return [...this.validators.values()].sort(
-      (a, b) => b.effectivePower - a.effectivePower
-    );
+    return [...this.validators.values()].sort((a, b) => b.effectivePower - a.effectivePower);
   }
 }

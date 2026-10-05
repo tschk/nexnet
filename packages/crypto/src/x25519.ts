@@ -12,9 +12,6 @@ export function generateKeyPair(): {
   return { secretKey, publicKey };
 }
 
-export function getSharedSecret(
-  ourSk: Uint8Array,
-  theirPk: Uint8Array
-): Uint8Array {
+export function getSharedSecret(ourSk: Uint8Array, theirPk: Uint8Array): Uint8Array {
   return x25519.getSharedSecret(ourSk, theirPk);
 }

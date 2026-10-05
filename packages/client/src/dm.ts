@@ -31,11 +31,7 @@ import {
   x3dhSessionStoreKey,
   setSession,
 } from "./double-ratchet.js";
-import {
-  fetchBundle,
-  getLocalPrekeys,
-  refreshPublishedBundle,
-} from "./prekeys.js";
+import { fetchBundle, getLocalPrekeys, refreshPublishedBundle } from "./prekeys.js";
 import { x3dhInitiate, x3dhRespond } from "./x3dh.js";
 import { trySendDirect } from "./transport.js";
 
@@ -69,11 +65,7 @@ function sameCertificate(a: DeviceCertificate, b: DeviceCertificate): boolean {
 
 async function senderCertificate(client: NexnetClient): Promise<DeviceCertificate> {
   const cert = client.deviceCertificate;
-  if (
-    !cert ||
-    !client.deviceSigningPublicKey ||
-    !client.deviceSigningSecretKey
-  ) {
+  if (!cert || !client.deviceSigningPublicKey || !client.deviceSigningSecretKey) {
     throw new Error("A root-authorized device certificate is required");
   }
   if (
@@ -88,10 +80,7 @@ async function senderCertificate(client: NexnetClient): Promise<DeviceCertificat
   if (client.rootPublicKey && verifyDeviceCert(cert, client.rootPublicKey)) {
     return cert;
   }
-  const registered = await client.deviceCertificateResolver?.(
-    client.identityId,
-    client.deviceId
-  );
+  const registered = await client.deviceCertificateResolver?.(client.identityId, client.deviceId);
   if (!registered || !sameCertificate(cert, registered)) {
     throw new Error("Invalid device certificate");
   }
@@ -103,7 +92,7 @@ function handleAuthorizedDirectMessage(
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
   envelope: MessageEnvelope,
   bytes: Uint8Array,
-  preimage: Uint8Array
+  preimage: Uint8Array,
 ): void {
   try {
     const cert = envelope.senderCertificate;
@@ -117,10 +106,7 @@ function handleAuthorizedDirectMessage(
       senderIdentityId: envelope.senderIdentityId,
       recipientIdentityId: envelope.recipientIdentityId,
     });
-    const sessionKey = x3dhSessionStoreKey(
-      envelope.conversationId,
-      envelope.senderIdentityId
-    );
+    const sessionKey = x3dhSessionStoreKey(envelope.conversationId, envelope.senderIdentityId);
 
     let ratchetBlob = envelope.ciphertext;
     const stored = getSession(sessionKey);
@@ -138,7 +124,7 @@ function handleAuthorizedDirectMessage(
         { ...local, oneTime: new Map(local.oneTime) },
         x3dh.identityDhPublic,
         x3dh.ekPublic,
-        x3dh.otpId
+        x3dh.otpId,
       );
       existing = initResponder(resp.sk, client.crypto);
       ratchetBlob = x3dh.ratchetBlob;
@@ -160,19 +146,11 @@ function handleAuthorizedDirectMessage(
     }
     if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
     callback(envelope, payload);
-    client.sendDeliveryReceipt(
-      Buffer.from(envelope.senderIdentityId).toString("hex"),
-      envelope.messageId
-    );
-  } catch {
-  }
+    client.sendDeliveryReceipt(Buffer.from(envelope.senderIdentityId).toString("hex"), envelope.messageId);
+  } catch {}
 }
 
-export function deriveConversationId(
-  crypto: NexnetClient["crypto"],
-  a: IdentityId,
-  b: IdentityId
-): ConversationId {
+export function deriveConversationId(crypto: NexnetClient["crypto"], a: IdentityId, b: IdentityId): ConversationId {
   const [first, second] = compareBytes(a, b) <= 0 ? [a, b] : [b, a];
   const combined = new Uint8Array(64);
   combined.set(first, 0);
@@ -180,11 +158,7 @@ export function deriveConversationId(
   return crypto.deriveId(DOMAIN_CONVERSATION_ID, combined);
 }
 
-function encodeX3dhPrefix(
-  identityDhPublic: Uint8Array,
-  ekPublic: Uint8Array,
-  otpId?: number
-): Uint8Array {
+function encodeX3dhPrefix(identityDhPublic: Uint8Array, ekPublic: Uint8Array, otpId?: number): Uint8Array {
   const out = new Uint8Array(X3DH_PREFIX_LEN);
   out[0] = DM_WIRE_X3DH;
   out.set(identityDhPublic, 1);
@@ -202,11 +176,7 @@ function decodeX3dhPrefix(blob: Uint8Array): {
   if (blob.length < X3DH_PREFIX_LEN + 2 || blob[0] !== DM_WIRE_X3DH) {
     return null;
   }
-  const otpRaw = new DataView(
-    blob.buffer,
-    blob.byteOffset + 65,
-    4
-  ).getUint32(0);
+  const otpRaw = new DataView(blob.buffer, blob.byteOffset + 65, 4).getUint32(0);
   return {
     identityDhPublic: blob.slice(1, 33),
     ekPublic: blob.slice(33, 65),
@@ -220,19 +190,12 @@ export async function sendDirectMessage(
   recipientId: IdentityId,
   message: string | MessagePayload,
   queue?: OutboundQueueLike,
-  options: SendDirectMessageOptions = {}
+  options: SendDirectMessageOptions = {},
 ): Promise<MessageId> {
   const certificate = await senderCertificate(client);
-  const conversationId = deriveConversationId(
-    client.crypto,
-    client.identityId,
-    recipientId
-  );
+  const conversationId = deriveConversationId(client.crypto, client.identityId, recipientId);
 
-  const payload: MessagePayload =
-    typeof message === "string"
-      ? { contentType: "text", text: message }
-      : message;
+  const payload: MessagePayload = typeof message === "string" ? { contentType: "text", text: message } : message;
   const payloadCde = client.codec.encode(payload);
   const now = Date.now();
   const messageId = client.crypto.deriveId(
@@ -244,7 +207,7 @@ export async function sendDirectMessage(
       createdAt: now,
       nonce: client.crypto.randomBytes(16),
       payloadCde,
-    })
+    }),
   );
 
   const aad = client.codec.encode({
@@ -270,11 +233,7 @@ export async function sendDirectMessage(
     const ratchet = initInitiator(init.sk, client.crypto);
     const sealed = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
     setSession(sessionKey, ratchet);
-    const prefix = encodeX3dhPrefix(
-      local.identityDh.publicKey,
-      init.ekPublic,
-      init.usedOneTimePrekeyId
-    );
+    const prefix = encodeX3dhPrefix(local.identityDh.publicKey, init.ekPublic, init.usedOneTimePrekeyId);
     ciphertext = new Uint8Array(prefix.length + sealed.length);
     ciphertext.set(prefix, 0);
     ciphertext.set(sealed, prefix.length);
@@ -293,10 +252,7 @@ export async function sendDirectMessage(
     createdAt: now,
     ciphertext,
   });
-  const signature = client.crypto.sign(
-    client.deviceSigningSecretKey!,
-    envelopePreimage
-  );
+  const signature = client.crypto.sign(client.deviceSigningSecretKey!, envelopePreimage);
 
   const envelope: MessageEnvelope = {
     protocolVersion: PROTOCOL_VERSION,
@@ -355,7 +311,7 @@ export function onDirectMessage(
   client: NexnetClient,
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
   getSenderRootPublicKey?: (identityId: IdentityId) => Uint8Array | undefined,
-  resolveDeviceCertificate: DeviceCertificateResolver | undefined = client.deviceCertificateResolver
+  resolveDeviceCertificate: DeviceCertificateResolver | undefined = client.deviceCertificateResolver,
 ): void {
   client.on("dm", (data) => {
     const msg = data as { envelope: number[] };
@@ -397,10 +353,7 @@ export function onDirectMessage(
       if (!resolveDeviceCertificate) return;
       void (async () => {
         try {
-          const registered = await resolveDeviceCertificate(
-            envelope.senderIdentityId,
-            envelope.senderDeviceId
-          );
+          const registered = await resolveDeviceCertificate(envelope.senderIdentityId, envelope.senderDeviceId);
           if (registered && sameCertificate(cert, registered)) {
             handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
           }

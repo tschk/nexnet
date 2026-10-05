@@ -2,13 +2,13 @@
 
 ## First release fields
 
-| Field | v1 |
-|---|---|
-| username | yes (on-chain label) |
-| identity_id | yes |
-| **bio** | **yes** — short text, client-stored / discovery profile |
-| display name | omit (use username) |
-| **avatar** | **no** |
+| Field        | v1                                                      |
+| ------------ | ------------------------------------------------------- |
+| username     | yes (on-chain label)                                    |
+| identity_id  | yes                                                     |
+| **bio**      | **yes** — short text, client-stored / discovery profile |
+| display name | omit (use username)                                     |
+| **avatar**   | **no**                                                  |
 
 Suggested bio limit until OD-22 locks: **160 graphemes**, plain text, no
 remote images.

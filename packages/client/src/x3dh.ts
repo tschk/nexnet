@@ -10,10 +10,7 @@
  * Uses X25519 + HKDF from @nexnet/crypto. Signed prekey verified with Ed25519.
  */
 
-import {
-  generateKeyPair as defaultGenerateDh,
-  getSharedSecret as defaultDh,
-} from "@nexnet/crypto";
+import { generateKeyPair as defaultGenerateDh, getSharedSecret as defaultDh } from "@nexnet/crypto";
 import type { CryptoProvider, PublicKey, Signature } from "@nexnet/types";
 
 const X3DH_INFO = new TextEncoder().encode("nexnet x3dh v1");
@@ -67,18 +64,12 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 export function createLocalPrekeys(
   crypto: CryptoProvider,
   identitySignSecret: Uint8Array,
-  oneTimeCount = 10
+  oneTimeCount = 10,
 ): LocalPrekeyMaterial {
   const identityDh = defaultGenerateDh();
   const signedPrekey = defaultGenerateDh();
-  const signedPrekeySig = crypto.sign(
-    identitySignSecret,
-    signedPrekey.publicKey
-  );
-  const oneTime = new Map<
-    number,
-    { secretKey: Uint8Array; publicKey: Uint8Array }
-  >();
+  const signedPrekeySig = crypto.sign(identitySignSecret, signedPrekey.publicKey);
+  const oneTime = new Map<number, { secretKey: Uint8Array; publicKey: Uint8Array }>();
   for (let i = 1; i <= oneTimeCount; i++) {
     oneTime.set(i, defaultGenerateDh());
   }
@@ -92,10 +83,7 @@ export function createLocalPrekeys(
 }
 
 /** Public bundle for directory / presence publish. */
-export function exportBundle(
-  material: LocalPrekeyMaterial,
-  identitySignPublic: PublicKey
-): PrekeyBundle {
+export function exportBundle(material: LocalPrekeyMaterial, identitySignPublic: PublicKey): PrekeyBundle {
   // consume lowest OTP id if any
   let otp: { id: number; publicKey: Uint8Array } | undefined;
   for (const [id, kp] of material.oneTime) {
@@ -112,15 +100,8 @@ export function exportBundle(
   };
 }
 
-export function verifyBundle(
-  crypto: CryptoProvider,
-  bundle: PrekeyBundle
-): boolean {
-  return crypto.verify(
-    bundle.identitySignPublic,
-    bundle.signedPrekeyPublic,
-    bundle.signedPrekeySig
-  );
+export function verifyBundle(crypto: CryptoProvider, bundle: PrekeyBundle): boolean {
+  return crypto.verify(bundle.identitySignPublic, bundle.signedPrekeyPublic, bundle.signedPrekeySig);
 }
 
 /**
@@ -130,7 +111,7 @@ export function verifyBundle(
 export function x3dhInitiate(
   crypto: CryptoProvider,
   aliceIdentityDhSecret: Uint8Array,
-  bob: PrekeyBundle
+  bob: PrekeyBundle,
 ): X3dhInitResult {
   if (!verifyBundle(crypto, bob)) {
     throw new Error("x3dh: invalid signed prekey signature");
@@ -166,7 +147,7 @@ export function x3dhRespond(
   bob: LocalPrekeyMaterial,
   aliceIdentityDhPublic: Uint8Array,
   aliceEkPublic: Uint8Array,
-  usedOneTimePrekeyId?: number
+  usedOneTimePrekeyId?: number,
 ): X3dhRecvResult {
   const dh1 = defaultDh(bob.signedPrekey.secretKey, aliceIdentityDhPublic);
   const dh2 = defaultDh(bob.identityDh.secretKey, aliceEkPublic);

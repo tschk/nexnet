@@ -1,12 +1,7 @@
 import { beforeEach, afterEach, describe, test, expect } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
-import {
-  prepareAttachment,
-  sendAttachment,
-  AttachmentReceiver,
-  type DirectAttachmentChunk,
-} from "../attachments.js";
+import { prepareAttachment, sendAttachment, AttachmentReceiver, type DirectAttachmentChunk } from "../attachments.js";
 import { NexnetClient } from "../client.js";
 import { onDirectMessage } from "../dm.js";
 import { setupLocalPrekeys, clearPrekeyDirectory } from "../prekeys.js";
@@ -25,23 +20,33 @@ describe("Attachments", () => {
       signingSecretKey: device.secretKey,
       deviceSigningSecretKey: device.secretKey,
       deviceSigningPublicKey: device.publicKey,
-      deviceCertificate: issueDeviceCert(root.secretKey, device.publicKey, device.publicKey, deviceId, identityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      deviceCertificate: issueDeviceCert(
+        root.secretKey,
+        device.publicKey,
+        device.publicKey,
+        deviceId,
+        identityId,
+        Date.now(),
+        Number.MAX_SAFE_INTEGER,
+        1,
+      ),
       rootPublicKey: root.publicKey,
     };
   }
 
-  beforeEach(() => { clearSessions(); clearPrekeyDirectory(); });
-  afterEach(() => { setDirectTransport(null); clearSessions(); clearPrekeyDirectory(); });
+  beforeEach(() => {
+    clearSessions();
+    clearPrekeyDirectory();
+  });
+  afterEach(() => {
+    setDirectTransport(null);
+    clearSessions();
+    clearPrekeyDirectory();
+  });
 
   test("prepareAttachment encrypts and hashes", () => {
     const file = new TextEncoder().encode("Hello, this is a test file!");
-    const transfer = prepareAttachment(
-      crypto,
-      codec,
-      file,
-      "test.txt",
-      "text/plain"
-    );
+    const transfer = prepareAttachment(crypto, codec, file, "test.txt", "text/plain");
 
     expect(transfer.attachmentId.length).toBe(32);
     expect(transfer.contentHash.length).toBe(32);
@@ -99,13 +104,7 @@ describe("Attachments", () => {
 
   test("decrypt attachment after reassembly", () => {
     const file = new TextEncoder().encode("secret document");
-    const transfer = prepareAttachment(
-      crypto,
-      codec,
-      file,
-      "secret.txt",
-      "text/plain"
-    );
+    const transfer = prepareAttachment(crypto, codec, file, "secret.txt", "text/plain");
 
     const receiver = new AttachmentReceiver(crypto);
 
@@ -115,7 +114,7 @@ describe("Attachments", () => {
       0,
       1,
       transfer.encryptedBlob,
-      transfer.contentHash
+      transfer.contentHash,
     );
     expect(reassembled).not.toBeNull();
 
@@ -149,7 +148,16 @@ describe("Attachments", () => {
       signingSecretKey: senderKeys.secretKey,
       deviceSigningSecretKey: senderKeys.secretKey,
       deviceSigningPublicKey: senderKeys.publicKey,
-      deviceCertificate: issueDeviceCert(rootKeys.secretKey, senderKeys.publicKey, senderKeys.publicKey, senderDeviceId, senderIdentityId, Date.now(), Number.MAX_SAFE_INTEGER, 1),
+      deviceCertificate: issueDeviceCert(
+        rootKeys.secretKey,
+        senderKeys.publicKey,
+        senderKeys.publicKey,
+        senderDeviceId,
+        senderIdentityId,
+        Date.now(),
+        Number.MAX_SAFE_INTEGER,
+        1,
+      ),
       rootPublicKey: rootKeys.publicKey,
     });
     const recipientKeys = crypto.generateSigningKeyPair();
@@ -175,7 +183,7 @@ describe("Attachments", () => {
           contentHash = new Uint8Array(payload.attachmentOffer.encryptedContentHash);
         }
       },
-      () => rootKeys.publicKey
+      () => rootKeys.publicKey,
     );
 
     await sendAttachment(client, recipientId, file, "a.bin", "application/octet-stream", 2);
@@ -188,13 +196,7 @@ describe("Attachments", () => {
     let blob: Uint8Array | null = null;
     for (const bytes of sent.slice(1)) {
       const chunk = codec.decode<DirectAttachmentChunk>(bytes);
-      blob = receiver.receiveChunk(
-        chunk.attachmentId,
-        chunk.chunkIndex,
-        chunk.totalChunks,
-        chunk.data,
-        contentHash!
-      );
+      blob = receiver.receiveChunk(chunk.attachmentId, chunk.chunkIndex, chunk.totalChunks, chunk.data, contentHash!);
     }
     expect(blob).not.toBeNull();
     expect(receiver.decryptAttachment(blob!, attachmentKey!)).toEqual(file);
@@ -206,7 +208,7 @@ describe("Attachments", () => {
       codec,
       new Uint8Array([1, 2, 3, 4, 5, 6]),
       "resume.bin",
-      "application/octet-stream"
+      "application/octet-stream",
     );
     const receiver = new AttachmentReceiver(crypto);
     const chunkSize = 3;
@@ -218,8 +220,8 @@ describe("Attachments", () => {
         0,
         total,
         transfer.encryptedBlob.slice(0, chunkSize),
-        transfer.contentHash
-      )
+        transfer.contentHash,
+      ),
     ).toBeNull();
 
     let blob: Uint8Array | null = null;
@@ -229,7 +231,7 @@ describe("Attachments", () => {
         i,
         total,
         transfer.encryptedBlob.slice(i * chunkSize, (i + 1) * chunkSize),
-        transfer.contentHash
+        transfer.contentHash,
       );
     }
     expect(blob).toEqual(transfer.encryptedBlob);
@@ -241,21 +243,15 @@ describe("Attachments", () => {
       codec,
       new Uint8Array([1, 2, 3]),
       "corrupt.bin",
-      "application/octet-stream"
+      "application/octet-stream",
     );
     const corrupted = new Uint8Array(transfer.encryptedBlob);
     corrupted[corrupted.length - 1] ^= 1;
     const receiver = new AttachmentReceiver(crypto);
 
-    expect(() =>
-      receiver.receiveChunk(
-        transfer.attachmentId,
-        0,
-        1,
-        corrupted,
-        transfer.contentHash
-      )
-    ).toThrow("Attachment integrity verification failed");
+    expect(() => receiver.receiveChunk(transfer.attachmentId, 0, 1, corrupted, transfer.contentHash)).toThrow(
+      "Attachment integrity verification failed",
+    );
   });
 
   test("sendAttachment rejects without an open direct session", async () => {
@@ -275,7 +271,7 @@ describe("Attachments", () => {
     setupLocalPrekeys(crypto, recipientId, recipientKeys.secretKey, recipientKeys.publicKey, 0);
 
     await expect(
-      sendAttachment(client, recipientId, new Uint8Array([1]), "a.bin", "application/octet-stream")
+      sendAttachment(client, recipientId, new Uint8Array([1]), "a.bin", "application/octet-stream"),
     ).rejects.toThrow("Direct session is required");
   });
 
@@ -302,7 +298,7 @@ describe("Attachments", () => {
     setupLocalPrekeys(crypto, recipientId, recipientKeys.secretKey, recipientKeys.publicKey, 0);
 
     await expect(
-      sendAttachment(client, recipientId, new Uint8Array([1, 2]), "a.bin", "application/octet-stream", 1)
+      sendAttachment(client, recipientId, new Uint8Array([1, 2]), "a.bin", "application/octet-stream", 1),
     ).rejects.toThrow("Direct session closed during attachment transfer");
     expect(sends).toBe(2);
   });

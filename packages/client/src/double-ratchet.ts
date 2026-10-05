@@ -6,30 +6,12 @@
  * Optional disk backend via setSessionBackend (SessionStore blob API).
  */
 
-import {
-  generateKeyPair as defaultGenerateDh,
-  getSharedSecret as defaultDh,
-} from "@nexnet/crypto";
+import { generateKeyPair as defaultGenerateDh, getSharedSecret as defaultDh } from "@nexnet/crypto";
 
 export interface RatchetCrypto {
-  hkdf(
-    ikm: Uint8Array,
-    salt: Uint8Array,
-    info: Uint8Array,
-    length: number
-  ): Uint8Array;
-  encrypt(
-    key: Uint8Array,
-    nonce: Uint8Array,
-    aad: Uint8Array,
-    plaintext: Uint8Array
-  ): Uint8Array;
-  decrypt(
-    key: Uint8Array,
-    nonce: Uint8Array,
-    aad: Uint8Array,
-    ciphertext: Uint8Array
-  ): Uint8Array;
+  hkdf(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): Uint8Array;
+  encrypt(key: Uint8Array, nonce: Uint8Array, aad: Uint8Array, plaintext: Uint8Array): Uint8Array;
+  decrypt(key: Uint8Array, nonce: Uint8Array, aad: Uint8Array, ciphertext: Uint8Array): Uint8Array;
   randomBytes(n: number): Uint8Array;
   generateDhKeyPair?: () => { secretKey: Uint8Array; publicKey: Uint8Array };
   dh?: (ourSk: Uint8Array, theirPk: Uint8Array) => Uint8Array;
@@ -70,28 +52,18 @@ function dh(crypto: RatchetCrypto, ourSk: Uint8Array, theirPk: Uint8Array) {
 }
 
 /** KDF_RK: (rk, dhOut) → (rk', ck) */
-export function kdfRk(
-  crypto: RatchetCrypto,
-  rk: Uint8Array,
-  dhOut: Uint8Array
-): { rk: Uint8Array; ck: Uint8Array } {
+export function kdfRk(crypto: RatchetCrypto, rk: Uint8Array, dhOut: Uint8Array): { rk: Uint8Array; ck: Uint8Array } {
   const out = crypto.hkdf(dhOut, rk, INFO_RK, 64);
   return { rk: out.slice(0, 32), ck: out.slice(32, 64) };
 }
 
 /** KDF_CK: ck → (ck', mk) */
-export function kdfCk(
-  crypto: RatchetCrypto,
-  ck: Uint8Array
-): { ck: Uint8Array; mk: Uint8Array } {
+export function kdfCk(crypto: RatchetCrypto, ck: Uint8Array): { ck: Uint8Array; mk: Uint8Array } {
   const out = crypto.hkdf(ck, new Uint8Array(0), INFO_CK, 64);
   return { ck: out.slice(0, 32), mk: out.slice(32, 64) };
 }
 
-export function initInitiator(
-  sk: Uint8Array,
-  crypto: RatchetCrypto
-): RatchetState {
+export function initInitiator(sk: Uint8Array, crypto: RatchetCrypto): RatchetState {
   const DHs = genDh(crypto);
   // Bootstrap sending chain from SK + public DH (peer can recompute)
   const { rk, ck } = kdfRk(crypto, sk, DHs.publicKey);
@@ -108,10 +80,7 @@ export function initInitiator(
   };
 }
 
-export function initResponder(
-  sk: Uint8Array,
-  crypto: RatchetCrypto
-): RatchetState {
+export function initResponder(sk: Uint8Array, crypto: RatchetCrypto): RatchetState {
   return {
     DHs: genDh(crypto),
     DHr: null,
@@ -129,12 +98,7 @@ function skipKeyId(dhPub: Uint8Array, n: number): string {
   return `${Buffer.from(dhPub).toString("hex")}:${n}`;
 }
 
-function skipMessageKeys(
-  crypto: RatchetCrypto,
-  state: RatchetState,
-  until: number,
-  dhPub: Uint8Array
-): void {
+function skipMessageKeys(crypto: RatchetCrypto, state: RatchetState, until: number, dhPub: Uint8Array): void {
   if (state.CKr === null) return;
   if (until - state.Nr > MAX_SKIP) {
     throw new Error("too many skipped message keys");
@@ -147,11 +111,7 @@ function skipMessageKeys(
   }
 }
 
-function dhRatchet(
-  crypto: RatchetCrypto,
-  state: RatchetState,
-  headerDh: Uint8Array
-): void {
+function dhRatchet(crypto: RatchetCrypto, state: RatchetState, headerDh: Uint8Array): void {
   state.PN = state.Ns;
   state.Ns = 0;
   state.Nr = 0;
@@ -170,11 +130,7 @@ function dhRatchet(
 }
 
 /** First receive: recompute initiator bootstrap chain from SK + their DH public. */
-function bootstrapReceive(
-  crypto: RatchetCrypto,
-  state: RatchetState,
-  headerDh: Uint8Array
-): void {
+function bootstrapReceive(crypto: RatchetCrypto, state: RatchetState, headerDh: Uint8Array): void {
   const { rk, ck } = kdfRk(crypto, state.RK, headerDh);
   state.RK = rk;
   state.CKr = ck;
@@ -214,12 +170,7 @@ export function decodeHeader(buf: Uint8Array): RatchetHeader {
 /**
  * Wire blob: version(1) || header(40) || nonce(24) || ciphertext
  */
-export function seal(
-  crypto: RatchetCrypto,
-  state: RatchetState,
-  plaintext: Uint8Array,
-  aad: Uint8Array
-): Uint8Array {
+export function seal(crypto: RatchetCrypto, state: RatchetState, plaintext: Uint8Array, aad: Uint8Array): Uint8Array {
   ensureSendingChain(crypto, state);
   if (state.CKs === null) throw new Error("ratchet: no sending chain");
 
@@ -248,12 +199,7 @@ export function seal(
   return out;
 }
 
-export function open(
-  crypto: RatchetCrypto,
-  state: RatchetState,
-  blob: Uint8Array,
-  aad: Uint8Array
-): Uint8Array {
+export function open(crypto: RatchetCrypto, state: RatchetState, blob: Uint8Array, aad: Uint8Array): Uint8Array {
   if (blob.length < 1 + HEADER_LEN + NONCE_LEN + 1) {
     throw new Error("ratchet blob too short");
   }
@@ -278,9 +224,7 @@ export function open(
   }
 
   const sameDh =
-    state.DHr !== null &&
-    state.DHr.length === header.dh.length &&
-    state.DHr.every((b, i) => b === header.dh[i]);
+    state.DHr !== null && state.DHr.length === header.dh.length && state.DHr.every((b, i) => b === header.dh[i]);
 
   if (!sameDh) {
     // Pure responder, never sent/received: bootstrap from root SK + their DH public.
@@ -318,10 +262,7 @@ export function setSessionBackend(b: SessionBackend | null): void {
   backend = b;
 }
 
-export function sessionStoreKey(
-  conversationId: Uint8Array,
-  peerId: Uint8Array
-): string {
+export function sessionStoreKey(conversationId: Uint8Array, peerId: Uint8Array): string {
   return `${Buffer.from(conversationId).toString("hex")}:${Buffer.from(peerId).toString("hex")}`;
 }
 
@@ -381,9 +322,7 @@ export function deserializeState(blob: Uint8Array): RatchetState {
     Ns: obj.Ns,
     Nr: obj.Nr,
     PN: obj.PN,
-    skipped: new Map(
-      obj.skipped.map(([k, v]) => [k, new Uint8Array(v)] as [string, Uint8Array])
-    ),
+    skipped: new Map(obj.skipped.map(([k, v]) => [k, new Uint8Array(v)] as [string, Uint8Array])),
   };
 }
 
@@ -416,11 +355,7 @@ export function clearSessions(): void {
   backend?.clear?.();
 }
 
-export function getOrCreateSendSession(
-  key: string,
-  sk: Uint8Array,
-  crypto: RatchetCrypto
-): RatchetState {
+export function getOrCreateSendSession(key: string, sk: Uint8Array, crypto: RatchetCrypto): RatchetState {
   let state = load(key);
   if (!state) {
     state = initInitiator(sk, crypto);
@@ -429,11 +364,7 @@ export function getOrCreateSendSession(
   return state;
 }
 
-export function getOrCreateRecvSession(
-  key: string,
-  sk: Uint8Array,
-  crypto: RatchetCrypto
-): RatchetState {
+export function getOrCreateRecvSession(key: string, sk: Uint8Array, crypto: RatchetCrypto): RatchetState {
   let state = load(key);
   if (!state) {
     state = initResponder(sk, crypto);

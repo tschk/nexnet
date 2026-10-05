@@ -31,18 +31,25 @@ export function LoginScreen() {
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      <box
-        flexDirection="column"
-        alignItems="center"
-        justifyContent="center"
-        flexGrow={1}
-      >
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{"  _   _      _ _ _       "}</text>
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | \\ | |    | (_) |      "}</text>
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" |  \\| | ___| |_| |_ ___ "}</text>
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | . ` |/ _ \\ | | __/ _ \\"}</text>
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" | |\\  |  __/ | | ||  __/"}</text>
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>{" \\_| \\_/\\___|_|_|\\__\\___|"}</text>
+      <box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1}>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {"  _   _      _ _ _       "}
+        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {" | \\ | |    | (_) |      "}
+        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {" |  \\| | ___| |_| |_ ___ "}
+        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {" | . ` |/ _ \\ | | __/ _ \\"}
+        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {" | |\\  |  __/ | | ||  __/"}
+        </text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          {" \\_| \\_/\\___|_|_|\\__\\___|"}
+        </text>
 
         <text fg={theme.textDim}> peer-to-peer chat · v0.1</text>
 
@@ -78,9 +85,7 @@ export function LoginScreen() {
           />
         </box>
 
-        {mode() === "connecting" && (
-          <text fg={theme.warning}>◌ Connecting to relay…</text>
-        )}
+        {mode() === "connecting" && <text fg={theme.warning}>◌ Connecting to relay…</text>}
       </box>
 
       <box

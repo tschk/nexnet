@@ -9,7 +9,7 @@ blockchain-backed identity and scarce usernames. Local-first private
 history. Sender-held offline messages. Public ownerless rooms. E2EE private
 chat. Privacy-routed stranger discovery.
 
-**Status:** TypeScript/Bun foundation implemented; end-to-end MVP remains.
+**Status:** TypeScript/Bun foundation, authenticated gateway, Linux terminal agent and Rust terminal UI implemented against the in-memory development chain; no consensus chain yet.
 
 ## Non-negotiables
 

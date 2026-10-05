@@ -1,0 +1,111 @@
+div w-full h-full flex-col bg-[#10131c] text-[#d8dbe2]
+  div h-[1] flex-row gap-1 bg-[#10131c]
+    span w-fit text-[#d8a8e8] font-bold
+      "nexnet"
+    if {page_updates}
+      span w-fit bg-[#7ea6e8] text-[#10131c] font-bold
+        "{tab_updates}"
+    else
+      span w-fit text-[#8890a0]
+        "{tab_updates}"
+    if {page_public}
+      span w-fit bg-[#7ea6e8] text-[#10131c] font-bold
+        "{tab_public}"
+    else
+      span w-fit text-[#8890a0]
+        "{tab_public}"
+    if {page_identity}
+      span w-fit bg-[#7ea6e8] text-[#10131c] font-bold
+        "{tab_identity}"
+    else
+      span w-fit text-[#8890a0]
+        "{tab_identity}"
+    span flex-1
+    if {owner}
+      span w-fit text-[#d8a8e8] font-bold
+        "[owner]"
+    if {link_ok}
+      span w-fit text-[#a8d68a]
+        "{link_label}"
+    if {link_warn}
+      span w-fit text-[#f0c674]
+        "{link_label}"
+    if {link_bad}
+      span w-fit text-[#ff8888] font-bold
+        "{link_label}"
+  if {page_identity}
+    div flex-1 flex-col px-1
+      for row in {irows}
+        div h-[1] flex-row gap-1
+          span w-[12] text-[#8890a0]
+            "{i_label}"
+          if {i_ok}
+            span flex-1 text-[#a8d68a]
+              "{i_value}"
+          if {i_warn}
+            span flex-1 text-[#f0c674]
+              "{i_value}"
+          if {i_bad}
+            span flex-1 text-[#ff8888]
+              "{i_value}"
+          if {i_dim}
+            span flex-1 text-[#8890a0]
+              "{i_value}"
+          if {i_plain}
+            span flex-1 text-[#d8dbe2]
+              "{i_value}"
+  else
+    div flex-1 flex-col
+      for row in {rows}
+        if {r_head}
+          div h-[1] flex-row gap-1
+            span w-fit text-[#8890a0]
+              "{r_time}"
+            if {r_own}
+              span w-fit text-[#a8d68a] font-bold
+                "{r_author}"
+            else
+              span w-fit text-[#7ea6e8] font-bold
+                "{r_author}"
+            span flex-1 text-[#8890a0]
+              "{r_short}"
+        if {r_body}
+          div h-[1] text-[#d8dbe2]
+            "{r_text}"
+        if {r_dim}
+          div h-[1] text-[#8890a0]
+            "{r_text}"
+        if {r_blank}
+          div h-[1]
+  div h-[1] flex-row bg-[#10131c]
+    if {editing}
+      span w-[2] text-[#a8d68a] font-bold
+        ">"
+      if {ed_has_before}
+        span w-fit text-[#d8dbe2]
+          "{ed_before}"
+      span w-fit bg-[#d8dbe2] text-[#10131c]
+        "{ed_cur}"
+      span flex-1 text-[#d8dbe2]
+        "{ed_after}"
+      span w-fit text-[#8890a0]
+        "{ed_count}"
+    else
+      span flex-1 text-[#8890a0]
+        "{ed_hint}"
+  div h-[1] flex-row bg-[#10131c] text-[#8890a0]
+    span flex-1
+      "{hints}"
+  div h-[1] flex-row gap-1 bg-[#10131c]
+    if {status_ok}
+      span flex-1 text-[#a8d68a]
+        "{status}"
+    if {status_info}
+      span flex-1 text-[#d8dbe2]
+        "{status}"
+    if {status_err}
+      span flex-1 text-[#ff8888] font-bold
+        "{status}"
+    if {has_skipped}
+      span w-fit text-[#f0c674]
+        "{skipped}"

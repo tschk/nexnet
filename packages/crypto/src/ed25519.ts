@@ -13,17 +13,14 @@ export function generateSigningKeyPair(): {
   return { secretKey, publicKey };
 }
 
-export function sign(
-  secretKey: Uint8Array,
-  message: Uint8Array
-): Signature {
+export function sign(secretKey: Uint8Array, message: Uint8Array): Signature {
   return ed25519.sign(message, secretKey);
 }
 
-export function verify(
-  publicKey: PublicKey,
-  message: Uint8Array,
-  signature: Signature
-): boolean {
+export function verify(publicKey: PublicKey, message: Uint8Array, signature: Signature): boolean {
   return ed25519.verify(signature, message, publicKey);
+}
+
+export function publicKeyFromSecret(secretKey: Uint8Array): PublicKey {
+  return ed25519.getPublicKey(secretKey);
 }

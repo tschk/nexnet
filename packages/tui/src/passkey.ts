@@ -27,8 +27,7 @@ export type PasskeyAssertionResponse = {
 };
 
 type BridgeInput =
-  | ({ operation: "register" } & PasskeyRegistrationRequest)
-  | ({ operation: "assert" } & PasskeyAssertionRequest);
+  ({ operation: "register" } & PasskeyRegistrationRequest) | ({ operation: "assert" } & PasskeyAssertionRequest);
 
 const base64url = /^[A-Za-z0-9_-]+$/;
 
@@ -42,7 +41,10 @@ function requireBase64url(value: unknown, field: string): string {
   return value;
 }
 
-export function parsePasskeyBridgeResponse(value: string, operation: BridgeInput["operation"]): PasskeyRegistrationResponse | PasskeyAssertionResponse {
+export function parsePasskeyBridgeResponse(
+  value: string,
+  operation: BridgeInput["operation"],
+): PasskeyRegistrationResponse | PasskeyAssertionResponse {
   let output: Record<string, unknown>;
   try {
     output = JSON.parse(value) as Record<string, unknown>;
@@ -52,7 +54,11 @@ export function parsePasskeyBridgeResponse(value: string, operation: BridgeInput
   const credentialId = requireBase64url(output.credentialId, "credentialId");
   const clientDataJSON = requireBase64url(output.clientDataJSON, "clientDataJSON");
   if (operation === "register") {
-    return { credentialId, clientDataJSON, attestationObject: requireBase64url(output.attestationObject, "attestationObject") };
+    return {
+      credentialId,
+      clientDataJSON,
+      attestationObject: requireBase64url(output.attestationObject, "attestationObject"),
+    };
   }
   const userId = output.userId === undefined ? undefined : requireBase64url(output.userId, "userId");
   return {

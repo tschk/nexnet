@@ -1,10 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import type {
-  DataChannelLike,
-  PeerConnectionFactory,
-  PeerConnectionLike,
-  SessionDescriptionLike,
-} from "../webrtc.js";
+import type { DataChannelLike, PeerConnectionFactory, PeerConnectionLike, SessionDescriptionLike } from "../webrtc.js";
 import { PeerManager } from "../webrtc.js";
 import type { NexnetClient } from "../client.js";
 
@@ -26,11 +21,7 @@ function mockClient() {
     emit(event: string, data: unknown) {
       for (const h of handlers.get(event) ?? []) h(data);
     },
-    sendSignaling(
-      type: string,
-      to: string,
-      data: Record<string, unknown>
-    ) {
+    sendSignaling(type: string, to: string, data: Record<string, unknown>) {
       sent.push({ type, to, ...data });
     },
   };

@@ -168,3 +168,22 @@ interactive Nexnet session. The SSH gateway creates an approval request for
 that device; a live, passkey-authenticated OpenTUI client approves it. The
 gateway then grants the SSH process a device-scoped session that expires when
 the SSH connection closes.
+
+### SSH keys as a wallet-authorised sign-in method
+
+The wallet may also authorise an SSH ed25519 key directly, the same way it
+authorises a passkey: a wallet signature over the account and the key. A
+registered key signs in by signing the gateway's single-use challenge with
+`ssh-keygen -Y sign -n nexnet-auth` (the OpenSSH `SSHSIG` format), which also
+works through `ssh-agent`. The signature authorises one device certificate; it
+never signs messages. Revoking the key (wallet-signed revocation, strictly
+increasing sequence) kills every device certificate it authorised. An SSH key
+the wallet has not registered still cannot sign in; the approval flow above
+covers that case and is not implemented yet.
+
+### Identity without a username
+
+An identity is created from a wallet proof alone. The identity id is
+`BLAKE3 derive_key("nexnet identity id v1", wallet)`. Posting requires a
+registered identity and a live session, not a username; the 7-day account age
+applies only to registering a username (AD-10).

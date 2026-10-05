@@ -1,0 +1,27 @@
+{
+  "name": "@nexnet/agent",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "nexnet-agent": "src/main.ts"
+  },
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "build:browser": "bun build src/browser.ts --target browser --format esm --minify --outfile dist/nexnet-bridge.js"
+  },
+  "dependencies": {
+    "@nexnet/crypto": "workspace:*",
+    "@nexnet/protocol": "workspace:*",
+    "@nexnet/types": "workspace:*",
+    "cbor2": "^1.7.0"
+  },
+  "devDependencies": {
+    "@nexnet/client": "workspace:*",
+    "@nexnet/gateway": "workspace:*",
+    "bun-types": "^1.4.2",
+    "fake-indexeddb": "^6.0.0"
+  }
+}

@@ -44,6 +44,7 @@ export const DOMAIN_EVENT_ID = "nexnet event id v1";
 export const DOMAIN_ROOM_ID = "nexnet room id v1";
 export const DOMAIN_ATTACHMENT_ID = "nexnet attachment id v1";
 export const DOMAIN_GROUP_ID = "nexnet group id v1";
+export const DOMAIN_IDENTITY_ID = "nexnet identity id v1";
 
 // Size limits (initial)
 export const MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KiB
@@ -71,6 +72,7 @@ export type KnownEventType =
   | "group.closed"
   | "group.message"
   | "identity.device_authorized"
+  | "channel.post"
   | "test.ping";
 
 /** Canonical signed event (AD-4b: CDE-encoded for signatures) */
@@ -128,8 +130,36 @@ export interface DeviceCertificate {
 
 export type DeviceCertificateResolver = (
   identityId: IdentityId,
-  deviceId: DeviceId
+  deviceId: DeviceId,
 ) => Promise<DeviceCertificate | null>;
+
+export interface IdentityRecord {
+  identityId: IdentityId;
+  wallet: WalletAddress;
+  createdAt: number;
+  username: string | null;
+}
+
+export type CredentialKind = "device" | "ssh" | "passkey";
+
+export interface SshKeyCommitment {
+  algorithm: "ssh-ed25519";
+  publicKey: PublicKey;
+  fingerprint: string;
+}
+
+export interface Revocation {
+  accountId: IdentityId;
+  kind: CredentialKind;
+  credentialId: string;
+  sequence: number;
+  rootSignature: Signature;
+}
+
+export interface DeviceAuthorization {
+  kind: "root" | "ssh" | "passkey";
+  credentialId: string | null;
+}
 
 export interface PasskeyCredential {
   credentialId: string;
@@ -221,11 +251,7 @@ export interface PresenceLease {
 // ── Groups (AD-23: on-chain creator) ─────────────────────────────────
 
 export type GroupEventType =
-  | "group_created"
-  | "group_member_added"
-  | "group_member_removed"
-  | "group_metadata_changed"
-  | "group_closed";
+  "group_created" | "group_member_added" | "group_member_removed" | "group_metadata_changed" | "group_closed";
 
 export interface GroupEvent {
   groupId: GroupId;
@@ -293,48 +319,49 @@ export interface ValidatorRecord {
 
 /** Chain client interface (talks to .in chain or dev stub) */
 export interface ChainApiClient {
-  registerUsername(
-    username: string,
-    wallet: WalletAddress,
-    identityId: IdentityId
-  ): Promise<UsernameRecord>;
+  registerUsername(username: string, wallet: WalletAddress, identityId: IdentityId): Promise<UsernameRecord>;
   resolveUsername(username: string): Promise<UsernameRecord | null>;
-  transferUsername(
-    username: string,
-    newOwner: WalletAddress
-  ): Promise<UsernameRecord>;
+  transferUsername(username: string, newOwner: WalletAddress): Promise<UsernameRecord>;
   getUsernameHistory(username: string): Promise<UsernameRecord[]>;
-  getIdentityRoot(
-    identityId: IdentityId
-  ): Promise<{ wallet: WalletAddress } | null>;
-  registerDeviceCertificate(
-    wallet: WalletAddress,
-    certificate: DeviceCertificate
-  ): Promise<DeviceCertificate>;
-  resolveDeviceCertificate(
-    identityId: IdentityId,
-    deviceId: DeviceId
-  ): Promise<DeviceCertificate | null>;
+  getIdentityRoot(identityId: IdentityId): Promise<{ wallet: WalletAddress } | null>;
+  registerDeviceCertificate(wallet: WalletAddress, certificate: DeviceCertificate): Promise<DeviceCertificate>;
+  resolveDeviceCertificate(identityId: IdentityId, deviceId: DeviceId): Promise<DeviceCertificate | null>;
   registerPasskeyCredential(
     wallet: WalletAddress,
     identityId: IdentityId,
     credential: PasskeyCredential,
-    rootSignature: Signature
+    rootSignature: Signature,
   ): Promise<PasskeyCredential>;
   beginPasskeyDeviceCertificateAuthorization(
     identityId: IdentityId,
-    certificate: DeviceCertificate
+    certificate: DeviceCertificate,
   ): Promise<PasskeyCertificateChallenge>;
   authorizeDeviceCertificateWithPasskey(
     identityId: IdentityId,
     certificate: DeviceCertificate,
-    assertion: PasskeyAssertion
+    assertion: PasskeyAssertion,
+    expectedChallenge?: string,
   ): Promise<DeviceCertificate>;
-  /** Optional AD-14 validator set (dev stub implements) */
-  joinValidatorSet?(
+  hasLivePasskey(identityId: IdentityId): Promise<boolean>;
+  registerIdentity(wallet: WalletAddress, identityId: IdentityId, proof: Signature): Promise<IdentityRecord>;
+  getIdentity(identityId: IdentityId): Promise<IdentityRecord | null>;
+  registerSshKey(
     wallet: WalletAddress,
-    bondedStake: number
-  ): Promise<ValidatorRecord>;
+    identityId: IdentityId,
+    commitment: SshKeyCommitment,
+    rootSignature: Signature,
+  ): Promise<SshKeyCommitment>;
+  resolveSshKey(identityId: IdentityId, fingerprint: string): Promise<SshKeyCommitment | null>;
+  authorizeDeviceCertificateWithSshKey(
+    identityId: IdentityId,
+    certificate: DeviceCertificate,
+    fingerprint: string,
+  ): Promise<DeviceCertificate>;
+  revokeCredential(wallet: WalletAddress, revocation: Revocation): Promise<void>;
+  isRevoked(identityId: IdentityId, kind: CredentialKind, credentialId: string): Promise<boolean>;
+  getDeviceAuthorization(identityId: IdentityId, deviceId: DeviceId): Promise<DeviceAuthorization | null>;
+  /** Optional AD-14 validator set (dev stub implements) */
+  joinValidatorSet?(wallet: WalletAddress, bondedStake: number): Promise<ValidatorRecord>;
   leaveValidatorSet?(wallet: WalletAddress): Promise<void>;
   listValidators?(): Promise<ValidatorRecord[]>;
 }
@@ -347,36 +374,17 @@ export interface CryptoProvider {
   /** Ed25519 sign */
   sign(secretKey: Uint8Array, message: Uint8Array): Signature;
   /** Ed25519 verify */
-  verify(
-    publicKey: PublicKey,
-    message: Uint8Array,
-    signature: Signature
-  ): boolean;
+  verify(publicKey: PublicKey, message: Uint8Array, signature: Signature): boolean;
   /** Generate Ed25519 keypair */
   generateSigningKeyPair(): { secretKey: Uint8Array; publicKey: PublicKey };
   /** XChaCha20-Poly1305 encrypt (AD-5) */
-  encrypt(
-    key: Uint8Array,
-    nonce: Uint8Array,
-    aad: Uint8Array,
-    plaintext: Uint8Array
-  ): Uint8Array;
+  encrypt(key: Uint8Array, nonce: Uint8Array, aad: Uint8Array, plaintext: Uint8Array): Uint8Array;
   /** XChaCha20-Poly1305 decrypt (AD-5) */
-  decrypt(
-    key: Uint8Array,
-    nonce: Uint8Array,
-    aad: Uint8Array,
-    ciphertext: Uint8Array
-  ): Uint8Array;
+  decrypt(key: Uint8Array, nonce: Uint8Array, aad: Uint8Array, ciphertext: Uint8Array): Uint8Array;
   /** Generate 32 random bytes */
   randomBytes(n: number): Uint8Array;
   /** HKDF-SHA256 */
-  hkdf(
-    ikm: Uint8Array,
-    salt: Uint8Array,
-    info: Uint8Array,
-    length: number
-  ): Uint8Array;
+  hkdf(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): Uint8Array;
 }
 
 // ── CBOR CDE API interface ───────────────────────────────────────────

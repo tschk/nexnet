@@ -47,7 +47,9 @@ export function DiscoverScreen() {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>Discover — find people</text>
+        <text fg={theme.accent} attributes={createTextAttributes({ bold: true })}>
+          Discover — find people
+        </text>
         <text fg={theme.textDim}>Esc back · Enter message</text>
       </box>
 
@@ -79,8 +81,14 @@ export function DiscoverScreen() {
                     {`${isSel() ? "▸" : " "} ${user.online ? "●" : "○"} ${user.username} (${hexToShort(user.identityHex)})`}
                   </text>
                 </box>
-                <text fg={theme.textDim}>{"    "}{truncate(user.bio, 60)}</text>
-                <text fg={theme.accentDim}>{"    "}{user.interests.join(", ")}</text>
+                <text fg={theme.textDim}>
+                  {"    "}
+                  {truncate(user.bio, 60)}
+                </text>
+                <text fg={theme.accentDim}>
+                  {"    "}
+                  {user.interests.join(", ")}
+                </text>
               </box>
             );
           }}

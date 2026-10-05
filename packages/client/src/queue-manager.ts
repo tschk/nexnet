@@ -24,7 +24,7 @@ export class QueueManager {
 
   constructor(
     queue: OutboundQueueLike,
-    private readonly getReceiptPublicKey?: (identityId: IdentityId) => PublicKey | undefined
+    private readonly getReceiptPublicKey?: (identityId: IdentityId) => PublicKey | undefined,
   ) {
     this.queue = queue;
   }
@@ -38,11 +38,7 @@ export class QueueManager {
 
     this.presenceHandler = (data) => {
       const msg = data as { status?: string; identityId?: string };
-      if (
-        msg.status === "online" &&
-        typeof msg.identityId === "string" &&
-        /^[0-9a-f]{64}$/i.test(msg.identityId)
-      ) {
+      if (msg.status === "online" && typeof msg.identityId === "string" && /^[0-9a-f]{64}$/i.test(msg.identityId)) {
         this.processQueue(client, msg.identityId);
       }
     };
@@ -57,18 +53,31 @@ export class QueueManager {
       const messageId = toBytes(msg.messageId, 32);
       const recipientDeviceId = toBytes(msg.recipientDeviceId, 32);
       const signature = toBytes(msg.signature, 64);
-      if (!messageId || !recipientDeviceId || !signature || typeof msg.storedAt !== "number" ||
-        typeof msg.from !== "string" || !/^[0-9a-f]{64}$/i.test(msg.from)) return;
+      if (
+        !messageId ||
+        !recipientDeviceId ||
+        !signature ||
+        typeof msg.storedAt !== "number" ||
+        typeof msg.from !== "string" ||
+        !/^[0-9a-f]{64}$/i.test(msg.from)
+      )
+        return;
       const identityId = new Uint8Array(Buffer.from(msg.from, "hex"));
-      const item = this.queue.pendingForRecipient(identityId).find((pending) =>
-        Buffer.from(pending.messageId).equals(Buffer.from(messageId))
-      );
+      const item = this.queue
+        .pendingForRecipient(identityId)
+        .find((pending) => Buffer.from(pending.messageId).equals(Buffer.from(messageId)));
       const publicKey = this.getReceiptPublicKey?.(identityId);
-      if (!item || item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT || !publicKey || !this.client?.crypto.verify(
-        publicKey,
-        this.client.codec.encode({ messageId, recipientDeviceId, storedAt: msg.storedAt }),
-        signature
-      )) return;
+      if (
+        !item ||
+        item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT ||
+        !publicKey ||
+        !this.client?.crypto.verify(
+          publicKey,
+          this.client.codec.encode({ messageId, recipientDeviceId, storedAt: msg.storedAt }),
+          signature,
+        )
+      )
+        return;
       this.queue.markDelivered(messageId);
     };
     client.on("presence", this.presenceHandler);
@@ -118,10 +127,11 @@ export class QueueManager {
 }
 
 function toBytes(value: Uint8Array | number[] | undefined, length: number): Uint8Array | null {
-  const bytes = value instanceof Uint8Array
-    ? value
-    : Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-      ? new Uint8Array(value)
-      : null;
+  const bytes =
+    value instanceof Uint8Array
+      ? value
+      : Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
+        ? new Uint8Array(value)
+        : null;
   return bytes?.length === length ? bytes : null;
 }

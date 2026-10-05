@@ -116,11 +116,11 @@ flowchart LR
   end
 ```
 
-| Mode | Use | Trade-off |
-|---|---|---|
-| Direct | Trusted contacts, attachments | Peers may see each other's IPs |
-| Private routed | Random matching default | Higher latency/cost; path partial visibility |
-| Fallback relay | NAT failure | Transient encrypted relay only; no history store |
+| Mode           | Use                           | Trade-off                                        |
+| -------------- | ----------------------------- | ------------------------------------------------ |
+| Direct         | Trusted contacts, attachments | Peers may see each other's IPs                   |
+| Private routed | Random matching default       | Higher latency/cost; path partial visibility     |
+| Fallback relay | NAT failure                   | Transient encrypted relay only; no history store |
 
 Default policy:
 

@@ -92,22 +92,13 @@ export function clearMlsGroups(): void {
 }
 
 export function listGroupMembers(client: NexnetClient, groupId: GroupId): IdentityId[] {
-  return [...getSession(client, groupId).members].map(
-    (value) => new Uint8Array(Buffer.from(value, "hex"))
-  );
+  return [...getSession(client, groupId).members].map((value) => new Uint8Array(Buffer.from(value, "hex")));
 }
 
-export async function createGroup(
-  client: NexnetClient,
-  name: string,
-  memberIds: IdentityId[]
-): Promise<GroupId> {
+export async function createGroup(client: NexnetClient, name: string, memberIds: IdentityId[]): Promise<GroupId> {
   const normalized = name.trim();
   if (!normalized) throw new Error("Group name is required");
-  const groupId = client.crypto.deriveId(
-    DOMAIN_GROUP_ID,
-    new TextEncoder().encode(normalized)
-  );
+  const groupId = client.crypto.deriveId(DOMAIN_GROUP_ID, new TextEncoder().encode(normalized));
   const member = await getMember(client);
   groupSessions(client).set(hex(groupId), {
     creator: hex(client.identityId),
@@ -125,11 +116,7 @@ export async function createGroup(
   return groupId;
 }
 
-export async function addMember(
-  client: NexnetClient,
-  groupId: GroupId,
-  identityId: IdentityId
-): Promise<void> {
+export async function addMember(client: NexnetClient, groupId: GroupId, identityId: IdentityId): Promise<void> {
   const session = getSession(client, groupId);
   if (session.creator !== hex(client.identityId)) throw new Error("Only the group creator can change membership");
   const member = publishedPackages.get(hex(identityId));
@@ -147,11 +134,7 @@ export async function addMember(
   });
 }
 
-export async function removeMember(
-  client: NexnetClient,
-  groupId: GroupId,
-  identityId: IdentityId
-): Promise<void> {
+export async function removeMember(client: NexnetClient, groupId: GroupId, identityId: IdentityId): Promise<void> {
   const session = getSession(client, groupId);
   if (session.creator !== hex(client.identityId)) throw new Error("Only the group creator can change membership");
   const index = leafIndex(session.state, identityId);
@@ -168,10 +151,7 @@ export async function removeMember(
   });
 }
 
-export async function applyGroupMembershipMessage(
-  client: NexnetClient,
-  message: MembershipMessage
-): Promise<boolean> {
+export async function applyGroupMembershipMessage(client: NexnetClient, message: MembershipMessage): Promise<boolean> {
   const groupId = new Uint8Array(message.groupId);
   const groupKey = hex(groupId);
   const memberId = new Uint8Array(message.memberId);
@@ -194,11 +174,7 @@ export async function applyGroupMembershipMessage(
   return true;
 }
 
-export async function sendGroupMessage(
-  client: NexnetClient,
-  groupId: GroupId,
-  text: string
-): Promise<void> {
+export async function sendGroupMessage(client: NexnetClient, groupId: GroupId, text: string): Promise<void> {
   const session = getSession(client, groupId);
   if (session.state.groupActiveState.kind !== "active") throw new Error("Removed from group");
   const encrypted = await mlsEncrypt(session.state, client.codec.encode({ text }));
@@ -215,14 +191,21 @@ export async function sendGroupMessage(
 export function onGroupMessage(
   client: NexnetClient,
   groupId: GroupId,
-  callback: (data: { text: string; senderId: IdentityId }) => void
+  callback: (data: { text: string; senderId: IdentityId }) => void,
 ): void {
   const groupKey = hex(groupId);
   client.on("group_message", (data) => {
-    const message = data as { type?: string; groupId?: number[] | string; wire?: number[]; sender?: number[]; action?: "add" | "remove"; commit?: number[]; memberId?: number[]; welcome?: number[] };
-    const incomingGroup = Array.isArray(message.groupId)
-      ? hex(new Uint8Array(message.groupId))
-      : message.groupId;
+    const message = data as {
+      type?: string;
+      groupId?: number[] | string;
+      wire?: number[];
+      sender?: number[];
+      action?: "add" | "remove";
+      commit?: number[];
+      memberId?: number[];
+      welcome?: number[];
+    };
+    const incomingGroup = Array.isArray(message.groupId) ? hex(new Uint8Array(message.groupId)) : message.groupId;
     if (incomingGroup !== groupKey) return;
     if (message.type === "group.membership" && message.action && message.commit && message.memberId) {
       void applyGroupMembershipMessage(client, {
@@ -232,10 +215,12 @@ export function onGroupMessage(
       return;
     }
     if (!message.wire) return;
-    void mlsDecrypt(getSession(client, groupId).state, new Uint8Array(message.wire)).then((result) => {
-      getSession(client, groupId).state = result.state;
-      const payload = client.codec.decode<{ text: string }>(result.plaintext);
-      callback({ text: payload.text, senderId: new Uint8Array(message.sender ?? []) });
-    }).catch(() => {});
+    void mlsDecrypt(getSession(client, groupId).state, new Uint8Array(message.wire))
+      .then((result) => {
+        getSession(client, groupId).state = result.state;
+        const payload = client.codec.decode<{ text: string }>(result.plaintext);
+        callback({ text: payload.text, senderId: new Uint8Array(message.sender ?? []) });
+      })
+      .catch(() => {});
   });
 }

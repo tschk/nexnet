@@ -44,9 +44,7 @@ class MockWebSocket {
             const sm = this.url.match(/identity=([0-9a-f]+)/i);
             if (sm) (payload as { from: string }).from = sm[1]!;
           }
-          queueMicrotask(() =>
-            ws.onmessage?.({ data: JSON.stringify(payload) })
-          );
+          queueMicrotask(() => ws.onmessage?.({ data: JSON.stringify(payload) }));
         }
       }
     }

@@ -24,7 +24,7 @@ describe("DeviceCertificate", () => {
       accountId,
       now,
       now + 86_400_000,
-      0xff
+      0xff,
     );
     expect(verifyDeviceCert(cert, root.publicKey)).toBe(true);
   });
@@ -39,7 +39,7 @@ describe("DeviceCertificate", () => {
       accountId,
       now,
       now + 86_400_000,
-      0xff
+      0xff,
     );
     expect(verifyDeviceCert(cert, otherRoot.publicKey)).toBe(false);
   });
@@ -53,7 +53,7 @@ describe("DeviceCertificate", () => {
       accountId,
       now,
       now + 86_400_000,
-      0xff
+      0xff,
     );
     cert.capabilities = 0x00;
     expect(verifyDeviceCert(cert, root.publicKey)).toBe(false);
@@ -68,7 +68,7 @@ describe("DeviceCertificate", () => {
       accountId,
       now,
       now + 86_400_000,
-      0xff
+      0xff,
     );
     expect(cert.accountId).toEqual(accountId);
     expect(cert.deviceId).toEqual(deviceId);
@@ -91,8 +91,8 @@ describe("DeviceCertificate", () => {
         root.publicKey,
         accountId,
         { ...credential, rpId: "other.example" },
-        signature
-      )
+        signature,
+      ),
     ).toBe(false);
   });
 });

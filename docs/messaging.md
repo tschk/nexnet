@@ -145,10 +145,10 @@ Optional `parent_ids[]` = messages visible to sender at composition time.
 
 ### Stable local display order
 
-1. causal dependencies  
-2. sender sequence  
-3. creation timestamp  
-4. message ID as deterministic tie-breaker  
+1. causal dependencies
+2. sender sequence
+3. creation timestamp
+4. message ID as deterministic tie-breaker
 
 Timestamps are not fully trusted.
 

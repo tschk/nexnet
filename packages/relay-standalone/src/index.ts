@@ -225,65 +225,67 @@ export function createRelay() {
   };
 
   /** Room subscriptions: roomId -> Set of identity hexes */
-  return new Elysia()
-    // Health check
-    .get("/health", () => ({
-      status: "ok",
-      clients: state.clients.size,
-      rooms: state.roomSubscriptions.size,
-      uptime: process.uptime(),
-    }))
-    // Status page
-    .get("/", () => ({
-      name: "nexnet-relay-standalone",
-      version: "0.0.1",
-      clients: Array.from(state.clients.values()).map((client) => ({
-        identity: `${client.identityId.slice(0, 16)}...`,
-        deviceId: `${client.deviceId.slice(0, 16)}...`,
-        rooms: Array.from(client.subscribedRooms),
-        connectedAt: new Date(client.connectedAt).toISOString(),
-      })),
-      roomCount: state.roomSubscriptions.size,
-      uptime: process.uptime(),
-    }))
-    // WebSocket upgrade
-    .ws("/ws", {
-      // Attach metadata for lifecycle handlers
-      query: t.Object({ identity: t.String(), device: t.String() }),
-      open(ws) {
-        const client: ClientInfo = {
-          identityId: ws.data.query.identity,
-          deviceId: ws.data.query.device,
-          ws,
-          subscribedRooms: new Set(),
-          connectedAt: Date.now(),
-        };
+  return (
+    new Elysia()
+      // Health check
+      .get("/health", () => ({
+        status: "ok",
+        clients: state.clients.size,
+        rooms: state.roomSubscriptions.size,
+        uptime: process.uptime(),
+      }))
+      // Status page
+      .get("/", () => ({
+        name: "nexnet-relay-standalone",
+        version: "0.0.1",
+        clients: Array.from(state.clients.values()).map((client) => ({
+          identity: `${client.identityId.slice(0, 16)}...`,
+          deviceId: `${client.deviceId.slice(0, 16)}...`,
+          rooms: Array.from(client.subscribedRooms),
+          connectedAt: new Date(client.connectedAt).toISOString(),
+        })),
+        roomCount: state.roomSubscriptions.size,
+        uptime: process.uptime(),
+      }))
+      // WebSocket upgrade
+      .ws("/ws", {
+        // Attach metadata for lifecycle handlers
+        query: t.Object({ identity: t.String(), device: t.String() }),
+        open(ws) {
+          const client: ClientInfo = {
+            identityId: ws.data.query.identity,
+            deviceId: ws.data.query.device,
+            ws,
+            subscribedRooms: new Set(),
+            connectedAt: Date.now(),
+          };
 
-        // Register client (replace existing connection if any)
-        const existing = state.clients.get(client.identityId);
-        if (existing) {
-          send(existing.ws, { type: "error", message: "Replaced by new connection" });
-          existing.ws.close();
-        }
+          // Register client (replace existing connection if any)
+          const existing = state.clients.get(client.identityId);
+          if (existing) {
+            send(existing.ws, { type: "error", message: "Replaced by new connection" });
+            existing.ws.close();
+          }
 
-        // Store connection
-        state.clients.set(client.identityId, client);
-        log(`Connected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
-        send(ws, { type: "connected", identity: client.identityId, relay_time: Date.now() });
-      },
-      message(ws, message) {
-        const client = state.clients.get(ws.data.query.identity);
-        if (client?.ws.raw === ws.raw) {
-          handleMessage(state, client, typeof message === "string" ? message : JSON.stringify(message));
-        }
-      },
-      close(ws) {
-        const client = state.clients.get(ws.data.query.identity);
-        if (client?.ws.raw !== ws.raw) return;
-        removeClient(state, client);
-        log(`Disconnected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
-      },
-    });
+          // Store connection
+          state.clients.set(client.identityId, client);
+          log(`Connected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
+          send(ws, { type: "connected", identity: client.identityId, relay_time: Date.now() });
+        },
+        message(ws, message) {
+          const client = state.clients.get(ws.data.query.identity);
+          if (client?.ws.raw === ws.raw) {
+            handleMessage(state, client, typeof message === "string" ? message : JSON.stringify(message));
+          }
+        },
+        close(ws) {
+          const client = state.clients.get(ws.data.query.identity);
+          if (client?.ws.raw !== ws.raw) return;
+          removeClient(state, client);
+          log(`Disconnected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
+        },
+      })
+  );
 }
 
 if (import.meta.main) {

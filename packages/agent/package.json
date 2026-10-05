@@ -21,7 +21,7 @@
   "devDependencies": {
     "@nexnet/client": "workspace:*",
     "@nexnet/gateway": "workspace:*",
-    "bun-types": "latest",
+    "bun-types": "^1.4.2",
     "fake-indexeddb": "^6.0.0"
   }
 }

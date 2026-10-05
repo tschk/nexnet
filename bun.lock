@@ -5,7 +5,7 @@
     "": {
       "name": "nexnet",
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.3.0",
         "prettier": "^3.9.0",
         "typescript": "^5.9.0",
       },
@@ -25,7 +25,7 @@
       "devDependencies": {
         "@nexnet/client": "workspace:*",
         "@nexnet/gateway": "workspace:*",
-        "bun-types": "latest",
+        "bun-types": "^1.4.2",
         "fake-indexeddb": "^6.0.0",
       },
     },
@@ -45,7 +45,7 @@
         "werift": "0.23.0",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.4.2",
       },
     },
     "packages/crypto": {
@@ -68,7 +68,7 @@
         "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.4.2",
         "cbor2": "^1.7.0",
       },
     },
@@ -97,7 +97,7 @@
         "@nexnet/types": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.4.2",
       },
     },
     "packages/tui": {

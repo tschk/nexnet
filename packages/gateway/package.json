@@ -15,7 +15,7 @@
     "@nexnet/types": "workspace:*"
   },
   "devDependencies": {
-    "bun-types": "latest",
+    "bun-types": "^1.4.2",
     "cbor2": "^1.7.0"
   }
 }

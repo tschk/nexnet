@@ -120,6 +120,17 @@ test("an own DM is marked delivered only after the recipient's receipt", async (
   bob.disconnect();
 });
 
+test("a DM accepted by the relay but never receipted is shown as undelivered", async () => {
+  const dave = await peer();
+  const daveHex = dave.identityHex;
+  await dave.disconnect(); // bundle stays published; dave is offline
+  const result = await sendDevMessage(daveHex, "you there?", 200);
+  expect(result.error).toBeUndefined();
+  await until(() => messagesWith(daveHex)[0]?.error !== undefined);
+  expect(messagesWith(daveHex)[0]).toMatchObject({ delivered: false });
+  expect(messagesWith(daveHex)[0]!.error).toContain("no delivery receipt");
+});
+
 test("an inbound DM from a peer the TUI has never seen is shown", async () => {
   const carol = await peer();
   await sendDirectMessage(carol, new Uint8Array(Buffer.from(identity()!.publicKeyHex, "hex")), "hello tui");

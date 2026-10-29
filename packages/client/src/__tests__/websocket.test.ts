@@ -490,6 +490,31 @@ describe("NexnetClient WebSocket", () => {
   });
 });
 
+test("connect rejects when the relay never sends an auth challenge", async () => {
+  const origWebSocket = globalThis.WebSocket;
+  class SilentRelay {
+    onopen: ((e: unknown) => void) | null = null;
+    onclose: ((e: unknown) => void) | null = null;
+    onerror: ((e: unknown) => void) | null = null;
+    onmessage: ((e: unknown) => void) | null = null;
+    constructor(_url: string) {
+      queueMicrotask(() => this.onopen?.({}));
+    }
+    send(): void {}
+    close(): void {
+      this.onclose?.({ code: 1000 });
+    }
+  }
+  (globalThis as any).WebSocket = SilentRelay;
+  try {
+    const { client } = createTestClient({ handshakeTimeoutMs: 20, maxReconnectAttempts: 1, reconnectBaseMs: 10_000 });
+    await expect(client.connect()).rejects.toThrow("relay authentication");
+    await client.disconnect();
+  } finally {
+    (globalThis as any).WebSocket = origWebSocket;
+  }
+});
+
 describe("NexnetClient two-instance DM flow", () => {
   let origWebSocket: typeof globalThis.WebSocket;
 

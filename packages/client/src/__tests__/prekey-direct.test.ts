@@ -3,7 +3,13 @@ import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import { setupLocalPrekeys, clearPrekeyDirectory, fetchBundle, getLocalPrekeys } from "../prekeys.js";
-import { publishBundleRemote, fetchBundleRemote, bundleToNetwork, bundleFromNetwork } from "../prekey-network.js";
+import {
+  publishBundleRemote,
+  fetchBundleRemote,
+  bundleToNetwork,
+  bundleFromNetwork,
+  publishLocalPrekeys,
+} from "../prekey-network.js";
 import { setDirectTransport, trySendDirect } from "../transport.js";
 import { sendDirectMessage, onDirectMessage } from "../dm.js";
 import { clearSessions } from "../double-ratchet.js";
@@ -115,6 +121,31 @@ describe("prekey network helpers", () => {
       expect(fetchBundle(victimId)).toBeUndefined();
     }
   });
+});
+
+test("publishLocalPrekeys keeps the current keys when presence rejects the new bundle", async () => {
+  clearPrekeyDirectory();
+  const root = cryptoProvider.generateSigningKeyPair();
+  const id = identityIdFromWallet(root.publicKey);
+  const client = new NexnetClient({
+    identityId: id,
+    deviceId: new Uint8Array(32).fill(1),
+    crypto: cryptoProvider,
+    codec,
+    relayUrl: "ws://relay.example",
+    presenceUrl: "https://presence.example",
+    storagePath: "",
+    signingSecretKey: root.secretKey,
+    rootPublicKey: root.publicKey,
+  });
+  const ok = (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;
+  const down = (async () => new Response("down", { status: 503 })) as unknown as typeof fetch;
+  await publishLocalPrekeys(client, 1, ok);
+  const before = getLocalPrekeys(id);
+  await expect(publishLocalPrekeys(client, 1, down)).rejects.toThrow("503");
+  expect(getLocalPrekeys(id)).toBe(before!);
+  expect(fetchBundle(id)?.signedPrekeyPublic).toEqual(before!.signedPrekey.publicKey);
+  clearPrekeyDirectory();
 });
 
 describe("direct transport DM path", () => {

@@ -46,9 +46,18 @@ export function setupLocalPrekeys(
   oneTimeCount = 10,
 ): LocalPrekeyMaterial {
   const material = createLocalPrekeys(crypto, identitySignSecret, oneTimeCount);
+  installLocalPrekeys(identityId, material, identitySignPublic);
+  return material;
+}
+
+/** Make `material` this identity's current local prekeys and directory bundle. */
+export function installLocalPrekeys(
+  identityId: IdentityId,
+  material: LocalPrekeyMaterial,
+  identitySignPublic: PublicKey,
+): void {
   localByIdentity.set(idHex(identityId), material);
   publishBundle(identityId, exportBundle(material, identitySignPublic));
-  return material;
 }
 
 export function getLocalPrekeys(identityId: IdentityId): LocalPrekeyMaterial | undefined {

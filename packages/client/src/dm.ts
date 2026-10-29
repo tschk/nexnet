@@ -227,9 +227,14 @@ export async function sendDirectMessage(
   });
   const sessionKey = x3dhSessionStoreKey(conversationId, recipientId);
 
-  // A peer in another process is only reachable through its published bundle.
-  if (!getSession(sessionKey) && !fetchBundle(recipientId) && client.presenceUrl) {
-    await fetchBundleRemote(client.presenceUrl, recipientId);
+  // A new session uses the peer's current published bundle (it may have rotated);
+  // fall back to a cached bundle only if presence cannot be reached.
+  if (!getSession(sessionKey) && client.presenceUrl) {
+    try {
+      await fetchBundleRemote(client.presenceUrl, recipientId);
+    } catch (error) {
+      if (!fetchBundle(recipientId)) throw error;
+    }
   }
 
   let ciphertext: Uint8Array;
@@ -393,7 +398,7 @@ const rootLookups = new Map<string, Promise<Uint8Array | undefined>>();
 
 /** One in-flight presence lookup per sender, so a burst of first messages fetches once. */
 function senderRootFromPresence(presenceUrl: string, senderId: IdentityId): Promise<Uint8Array | undefined> {
-  const key = Buffer.from(senderId).toString("hex");
+  const key = `${presenceUrl} ${Buffer.from(senderId).toString("hex")}`;
   let lookup = rootLookups.get(key);
   if (!lookup) {
     lookup = fetchBundleRemote(presenceUrl, senderId)

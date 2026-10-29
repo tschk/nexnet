@@ -147,6 +147,12 @@ describe("RelaySession", () => {
     expect(owner._closed).toBeNull();
   });
 
+  test("a null auth reply is rejected immediately", async () => {
+    const { ws } = await open(relay, alice);
+    await relay.webSocketMessage(ws, "null");
+    expect(ws._closed).toBe(4401);
+  });
+
   test("a proof for a different nonce is rejected", async () => {
     const first = await open(relay, alice);
     const second = await open(relay, alice);

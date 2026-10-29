@@ -60,6 +60,8 @@ export interface NexnetClientConfig {
   reconnectBaseMs?: number;
   /** Max backoff delay in ms. Default: 30000 */
   reconnectMaxMs?: number;
+  /** Close the socket if the relay has not authenticated it within this many ms. Default: 15000 */
+  handshakeTimeoutMs?: number;
 }
 
 // ponytail: single-class client, no abstraction layers. Upgrade if state grows.
@@ -89,6 +91,7 @@ export class NexnetClient {
   private _maxReconnectAttempts: number;
   private _reconnectBaseMs: number;
   private _reconnectMaxMs: number;
+  private _handshakeTimeoutMs: number;
 
   private readonly _identityHex: string;
   private readonly _deviceHex: string;
@@ -110,6 +113,7 @@ export class NexnetClient {
     this._maxReconnectAttempts = config.maxReconnectAttempts ?? 0;
     this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;
     this._reconnectMaxMs = config.reconnectMaxMs ?? 30_000;
+    this._handshakeTimeoutMs = config.handshakeTimeoutMs ?? 15_000;
 
     this._identityHex = Buffer.from(config.identityId).toString("hex");
     this._deviceHex = Buffer.from(config.deviceId).toString("hex");
@@ -310,6 +314,9 @@ export class NexnetClient {
       }
 
       let authenticated = false;
+      // A relay that never challenges (or confirms) would otherwise hang connect();
+      // closing triggers onclose, which rejects and schedules a reconnect.
+      const handshakeTimer = setTimeout(() => ws.close(), this._handshakeTimeoutMs);
       ws.onopen = () => {
         this._ws = ws;
       };
@@ -332,6 +339,7 @@ export class NexnetClient {
             ws.close();
           }
         } else if (msg.type === "authenticated") {
+          clearTimeout(handshakeTimer);
           authenticated = true;
           this._online = true;
           this._reconnectAttempts = 0;
@@ -346,6 +354,7 @@ export class NexnetClient {
       };
 
       ws.onclose = () => {
+        clearTimeout(handshakeTimer);
         this._online = false;
         this._ws = null;
         this.emit("disconnected", null);
@@ -359,6 +368,7 @@ export class NexnetClient {
       };
 
       ws.onerror = (_err: Event) => {
+        clearTimeout(handshakeTimer);
         if (!settled) {
           settled = true;
           reject(new Error("WebSocket connection failed"));

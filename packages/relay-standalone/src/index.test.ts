@@ -173,6 +173,17 @@ test("messages sent before authenticating are not routed", async () => {
   peer.socket.close();
 });
 
+test("a null auth reply is rejected immediately", async () => {
+  app.listen(0);
+  const port = app.server!.port!;
+  const who = makeIdentity(5);
+  const socket = new WebSocket(`ws://localhost:${port}/ws?identity=${who.hex}&device=${who.device}`);
+  const done = closed(socket);
+  await opened(socket);
+  socket.send("null");
+  expect(await within(done, 2000)).toBe(4401);
+});
+
 /** Resolve with the value, or null if it does not settle within `ms`. */
 function within<T>(promise: Promise<T>, ms = 300): Promise<T | null> {
   return Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);

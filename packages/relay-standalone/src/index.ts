@@ -71,6 +71,9 @@ function handleMessage(state: RelayState, sender: ClientInfo, raw: string): void
   try {
     msg = JSON.parse(raw) as RelayMessage;
   } catch {
+    msg = null as unknown as RelayMessage;
+  }
+  if (typeof msg !== "object" || msg === null) {
     send(sender.ws, { type: "error", message: "Invalid JSON" });
     return;
   }
@@ -123,6 +126,7 @@ function handleAuth(state: RelayState, ws: RelaySocket, pending: PendingAuth, ra
   } catch {
     msg = { type: "invalid" };
   }
+  if (typeof msg !== "object" || msg === null) msg = { type: "invalid" };
   const verified =
     msg.type === "auth" && typeof msg.auth === "object" && msg.auth !== null
       ? verifyIdentityAuthJson(

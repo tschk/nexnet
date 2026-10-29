@@ -15,8 +15,8 @@ import {
   type IdentitySigner,
 } from "@nexnet/protocol";
 import type { NexnetClient } from "./client.js";
-import { exportBundle, type PrekeyBundle } from "./x3dh.js";
-import { publishBundle, setupLocalPrekeys } from "./prekeys.js";
+import { createLocalPrekeys, exportBundle, type PrekeyBundle } from "./x3dh.js";
+import { installLocalPrekeys, publishBundle } from "./prekeys.js";
 
 /** Root public keys proven by a fetched bundle's identity proof (identity hex → key). */
 const verifiedRootKeys = new Map<string, Uint8Array>();
@@ -166,7 +166,9 @@ export async function publishLocalPrekeys(
   if (!client.presenceUrl) throw new Error("presenceUrl is required to publish prekeys");
   const signer = client.identitySigner();
   const signPublic = signer.certificate?.deviceSigningPublicKey ?? signer.rootPublicKey;
-  const material = setupLocalPrekeys(client.crypto, client.identityId, signer.secretKey, signPublic, oneTimeCount);
+  const material = createLocalPrekeys(client.crypto, signer.secretKey, oneTimeCount);
+  // Keep the previous keys until presence holds the new bundle: a sender may
+  // still use the old one, and we must be able to answer it.
   await publishBundleRemote(
     client.presenceUrl,
     client.identityId,
@@ -174,4 +176,5 @@ export async function publishLocalPrekeys(
     signer,
     fetchImpl,
   );
+  installLocalPrekeys(client.identityId, material, signPublic);
 }

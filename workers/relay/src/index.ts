@@ -181,6 +181,7 @@ export class RelaySession {
     } catch {
       msg = { type: "invalid" } as unknown as RelayMessage;
     }
+    if (typeof msg !== "object" || msg === null) msg = { type: "invalid" } as unknown as RelayMessage;
 
     const pending = this.pending.get(ws);
     if (pending) {

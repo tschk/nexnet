@@ -21,6 +21,18 @@ export {
 } from "./credentials.js";
 export type { SignInChallengeFields, SignInMethod } from "./credentials.js";
 export {
+  IDENTITY_AUTH_MAX_SKEW_MS,
+  identityAuthPreimage,
+  identityProofFromJson,
+  identityProofToJson,
+  isFreshIssuedAt,
+  signIdentityAuth,
+  signIdentityAuthJson,
+  verifyIdentityAuth,
+  verifyIdentityAuthJson,
+} from "./identity-auth.js";
+export type { IdentityProof, IdentityProofJson, IdentitySigner, VerifiedIdentity } from "./identity-auth.js";
+export {
   SSH_SIGNATURE_NAMESPACE,
   formatSshPublicKey,
   parseSshPublicKey,

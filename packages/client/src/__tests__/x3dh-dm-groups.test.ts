@@ -40,10 +40,17 @@ class MockWebSocket {
     queueMicrotask(() => {
       this.readyState = 1;
       this.onopen?.({});
+      // Relay auth handshake: challenge, then confirm any `auth` reply.
+      this.onmessage?.({ data: JSON.stringify({ type: "auth_challenge", nonce: "00" }) });
     });
   }
 
   send(data: string): void {
+    if (data.includes('"type":"auth"')) {
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "authenticated" }) }));
+
+      return;
+    }
     this.sent.push(data);
     let msg: { type?: string; to?: string; [k: string]: unknown };
     try {

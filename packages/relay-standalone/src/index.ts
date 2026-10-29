@@ -11,6 +11,11 @@
 
 import { Elysia, t } from "elysia";
 import type { ElysiaWS } from "elysia/ws";
+import { toHex, verifyIdentityAuthJson } from "@nexnet/protocol";
+
+/** Unauthenticated sockets are closed after this long. */
+const AUTH_TIMEOUT_MS = 10_000;
+const IDENTITY_HEX = /^[0-9a-f]{64}$/;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -19,6 +24,7 @@ interface SocketData {
     identity: string;
     device: string;
   };
+  headers: Record<string, string | undefined>;
 }
 
 type RelaySocket = ElysiaWS<SocketData>;
@@ -38,10 +44,20 @@ interface RelayMessage {
 
 // ── State ────────────────────────────────────────────────────────────
 
+/** A socket that has been challenged but has not proven its identity yet. */
+interface PendingAuth {
+  identityId: string;
+  deviceId: string;
+  audience: string;
+  nonce: string;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** Connected clients by identity hex */
 interface RelayState {
   clients: Map<string, ClientInfo>;
   roomSubscriptions: Map<string, Set<string>>;
+  pending: WeakMap<object, PendingAuth>;
 }
 
 // ── Message handlers ─────────────────────────────────────────────────
@@ -93,6 +109,57 @@ function handleMessage(state: RelayState, sender: ClientInfo, raw: string): void
     default:
       send(sender.ws, { type: "error", message: `Unknown type: ${msg.type}` });
   }
+}
+
+/**
+ * Verify the client's `auth` reply against the challenge issued on open. The
+ * identity is only registered (and so only routable) once its root key, or a
+ * device certificate issued by it, has signed this socket's nonce.
+ */
+function handleAuth(state: RelayState, ws: RelaySocket, pending: PendingAuth, raw: string): void {
+  let msg: RelayMessage;
+  try {
+    msg = JSON.parse(raw) as RelayMessage;
+  } catch {
+    msg = { type: "invalid" };
+  }
+  const verified =
+    msg.type === "auth" && typeof msg.auth === "object" && msg.auth !== null
+      ? verifyIdentityAuthJson(
+          {
+            audience: pending.audience,
+            nonce: pending.nonce,
+            deviceId: pending.deviceId,
+            auth: msg.auth,
+          },
+          "relay.connect",
+          pending.identityId,
+        )
+      : null;
+  if (!verified || (verified.deviceId && toHex(verified.deviceId) !== pending.deviceId)) {
+    send(ws, { type: "error", message: "authentication failed" });
+    ws.close(4401, "authentication failed");
+    return;
+  }
+  clearTimeout(pending.timer);
+  state.pending.delete(ws.raw);
+
+  const client: ClientInfo = {
+    identityId: pending.identityId,
+    deviceId: pending.deviceId,
+    ws,
+    subscribedRooms: new Set(),
+    connectedAt: Date.now(),
+  };
+  const existing = state.clients.get(client.identityId);
+  if (existing) {
+    send(existing.ws, { type: "error", message: "Replaced by new connection" });
+    removeClient(state, existing);
+    existing.ws.close();
+  }
+  state.clients.set(client.identityId, client);
+  log(`Connected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
+  send(ws, { type: "authenticated", identity: client.identityId, relay_time: Date.now() });
 }
 
 function handleSignalling(state: RelayState, sender: ClientInfo, msg: RelayMessage): void {
@@ -222,6 +289,7 @@ export function createRelay() {
   const state: RelayState = {
     clients: new Map(),
     roomSubscriptions: new Map(),
+    pending: new WeakMap(),
   };
 
   /** Room subscriptions: roomId -> Set of identity hexes */
@@ -249,36 +317,42 @@ export function createRelay() {
       }))
       // WebSocket upgrade
       .ws("/ws", {
-        // Attach metadata for lifecycle handlers
         query: t.Object({ identity: t.String(), device: t.String() }),
         open(ws) {
-          const client: ClientInfo = {
-            identityId: ws.data.query.identity,
-            deviceId: ws.data.query.device,
-            ws,
-            subscribedRooms: new Set(),
-            connectedAt: Date.now(),
-          };
-
-          // Register client (replace existing connection if any)
-          const existing = state.clients.get(client.identityId);
-          if (existing) {
-            send(existing.ws, { type: "error", message: "Replaced by new connection" });
-            existing.ws.close();
+          const { identity, device } = ws.data.query;
+          const audience = ws.data.headers?.host;
+          if (!IDENTITY_HEX.test(identity) || !IDENTITY_HEX.test(device) || !audience) {
+            send(ws, { type: "error", message: "identity and device must be 32-byte hex" });
+            ws.close(4400, "bad request");
+            return;
           }
-
-          // Store connection
-          state.clients.set(client.identityId, client);
-          log(`Connected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
-          send(ws, { type: "connected", identity: client.identityId, relay_time: Date.now() });
+          const pending: PendingAuth = {
+            identityId: identity,
+            deviceId: device,
+            audience,
+            nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
+            timer: setTimeout(() => ws.close(4401, "authentication timeout"), AUTH_TIMEOUT_MS),
+          };
+          state.pending.set(ws.raw, pending);
+          send(ws, { type: "auth_challenge", nonce: pending.nonce });
         },
         message(ws, message) {
-          const client = state.clients.get(ws.data.query.identity);
-          if (client?.ws.raw === ws.raw) {
-            handleMessage(state, client, typeof message === "string" ? message : JSON.stringify(message));
+          const raw = typeof message === "string" ? message : JSON.stringify(message);
+          const pending = state.pending.get(ws.raw);
+          if (pending) {
+            handleAuth(state, ws, pending, raw);
+            return;
           }
+          const client = state.clients.get(ws.data.query.identity);
+          if (client?.ws.raw === ws.raw) handleMessage(state, client, raw);
         },
         close(ws) {
+          const pending = state.pending.get(ws.raw);
+          if (pending) {
+            clearTimeout(pending.timer);
+            state.pending.delete(ws.raw);
+            return;
+          }
           const client = state.clients.get(ws.data.query.identity);
           if (client?.ws.raw !== ws.raw) return;
           removeClient(state, client);

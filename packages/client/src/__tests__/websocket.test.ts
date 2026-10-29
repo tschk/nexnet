@@ -82,12 +82,19 @@ class MockWebSocket {
         } else {
           this.readyState = 1; // OPEN
           this.onopen?.({});
+          // Relay auth handshake: challenge, then confirm any `auth` reply.
+          this.onmessage?.({ data: JSON.stringify({ type: "auth_challenge", nonce: "00" }) });
         }
       });
     }
   }
 
   send(data: string): void {
+    if (data.includes('"type":"auth"')) {
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "authenticated" }) }));
+
+      return;
+    }
     this.sent.push(data);
   }
 
@@ -124,7 +131,7 @@ function createTestClient(overrides?: Partial<ConstructorParameters<typeof Nexne
     codec: createMockCodec(),
     relayUrl: "https://relay.example.com",
     storagePath: "/tmp/nexnet-test",
-    signingSecretKey: new Uint8Array(64).fill(0xcc),
+    signingSecretKey: new Uint8Array(32).fill(0xcc),
     maxReconnectAttempts: 3,
     reconnectBaseMs: 10,
     reconnectMaxMs: 50,
@@ -533,7 +540,7 @@ describe("NexnetClient two-instance DM flow", () => {
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-a",
-      signingSecretKey: new Uint8Array(64).fill(0xcc),
+      signingSecretKey: new Uint8Array(32).fill(0xcc),
     });
 
     const clientB = new NexnetClient({
@@ -543,7 +550,7 @@ describe("NexnetClient two-instance DM flow", () => {
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-b",
-      signingSecretKey: new Uint8Array(64).fill(0xdd),
+      signingSecretKey: new Uint8Array(32).fill(0xdd),
     });
 
     await clientA.connect();

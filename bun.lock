@@ -86,8 +86,12 @@
       "name": "@nexnet/relay-standalone",
       "version": "0.0.1",
       "dependencies": {
+        "@nexnet/protocol": "workspace:*",
         "@nexnet/types": "workspace:*",
         "elysia": "^1.4.29",
+      },
+      "devDependencies": {
+        "@nexnet/crypto": "workspace:*",
       },
     },
     "packages/storage": {
@@ -131,11 +135,13 @@
       "name": "@nexnet/worker-discovery",
       "version": "0.0.1",
       "dependencies": {
+        "@nexnet/protocol": "workspace:*",
         "@nexnet/types": "workspace:*",
         "hono": "^4.12.30",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^5.20260717.1",
+        "@nexnet/crypto": "workspace:*",
         "wrangler": "^3",
       },
     },
@@ -143,12 +149,14 @@
       "name": "@nexnet/worker-presence",
       "version": "0.0.1",
       "dependencies": {
+        "@nexnet/protocol": "workspace:*",
         "@nexnet/types": "workspace:*",
         "@noble/curves": "^1.8.0",
         "hono": "^4.12.30",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^5.20260717.1",
+        "@nexnet/crypto": "workspace:*",
         "wrangler": "^3",
       },
     },
@@ -156,11 +164,13 @@
       "name": "@nexnet/worker-relay",
       "version": "0.0.1",
       "dependencies": {
+        "@nexnet/protocol": "workspace:*",
         "@nexnet/types": "workspace:*",
         "hono": "^4.12.30",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^5.20260717.1",
+        "@nexnet/crypto": "workspace:*",
         "wrangler": "^3",
       },
     },

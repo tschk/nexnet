@@ -15,6 +15,8 @@ import type {
   DeviceCertificateResolver,
 } from "@nexnet/types";
 import { EventLog } from "@nexnet/storage";
+import { publicKeyFromSecret } from "@nexnet/crypto";
+import { signIdentityAuthJson, type IdentitySigner } from "@nexnet/protocol";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { consumePresenceMessage } from "./presence.js";
@@ -42,7 +44,10 @@ export interface NexnetClientConfig {
   crypto: CryptoProvider;
   codec: CborCdeCodec;
   relayUrl: string;
+  /** Presence service base URL; used to publish and fetch X3DH prekey bundles. */
+  presenceUrl?: string;
   storagePath: string;
+  /** Root identity secret key (identityId = identityIdFromWallet(its public key)). */
   signingSecretKey: Uint8Array;
   deviceSigningSecretKey?: Uint8Array;
   deviceSigningPublicKey?: Uint8Array;
@@ -65,6 +70,7 @@ export class NexnetClient {
   readonly crypto: CryptoProvider;
   readonly codec: CborCdeCodec;
   readonly relayUrl: string;
+  readonly presenceUrl?: string;
   readonly storagePath: string;
   readonly signingSecretKey: Uint8Array;
   readonly deviceSigningSecretKey?: Uint8Array;
@@ -93,6 +99,7 @@ export class NexnetClient {
     this.crypto = config.crypto;
     this.codec = config.codec;
     this.relayUrl = config.relayUrl;
+    this.presenceUrl = config.presenceUrl;
     this.storagePath = config.storagePath;
     this.signingSecretKey = config.signingSecretKey;
     this.deviceSigningSecretKey = config.deviceSigningSecretKey;
@@ -123,8 +130,29 @@ export class NexnetClient {
   }
 
   /**
-   * Connect to relay via WebSocket.
+   * Key material that proves possession of this identity to relays and
+   * services: the device key under its root-signed certificate when present,
+   * otherwise the root key itself.
+   */
+  identitySigner(): IdentitySigner {
+    if (this.deviceCertificate && this.deviceSigningSecretKey && this.rootPublicKey) {
+      return {
+        rootPublicKey: this.rootPublicKey,
+        secretKey: this.deviceSigningSecretKey,
+        certificate: this.deviceCertificate,
+      };
+    }
+    return {
+      rootPublicKey: this.rootPublicKey ?? publicKeyFromSecret(this.signingSecretKey),
+      secretKey: this.signingSecretKey,
+    };
+  }
+
+  /**
+   * Connect to relay via WebSocket and authenticate.
    * URL: ws[s]://relayUrl/ws?identity=<hex>&device=<hex>
+   * The relay replies with `auth_challenge`; the client signs the relay's
+   * host, the nonce and its device id. Resolves once the relay confirms.
    */
   async connect(): Promise<void> {
     if (this._online) return;
@@ -281,19 +309,40 @@ export class NexnetClient {
         return;
       }
 
+      let authenticated = false;
       ws.onopen = () => {
-        this._online = true;
         this._ws = ws;
-        this._reconnectAttempts = 0;
-        this.emit("connected", null);
-        if (!settled) {
-          settled = true;
-          resolve();
-        }
       };
 
       ws.onmessage = (event: MessageEvent) => {
-        this._handleMessage(event.data as string);
+        if (authenticated) {
+          this._handleMessage(event.data as string);
+          return;
+        }
+        let msg: { type?: string; nonce?: unknown; message?: unknown };
+        try {
+          msg = JSON.parse(event.data as string);
+        } catch {
+          return;
+        }
+        if (msg.type === "auth_challenge" && typeof msg.nonce === "string") {
+          try {
+            ws.send(JSON.stringify({ type: "auth", auth: this._relayAuth(msg.nonce).auth }));
+          } catch {
+            ws.close();
+          }
+        } else if (msg.type === "authenticated") {
+          authenticated = true;
+          this._online = true;
+          this._reconnectAttempts = 0;
+          this.emit("connected", null);
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        } else if (msg.type === "error") {
+          this.emit("error", msg);
+        }
       };
 
       ws.onclose = () => {
@@ -302,7 +351,7 @@ export class NexnetClient {
         this.emit("disconnected", null);
         if (!settled) {
           settled = true;
-          reject(new Error("WebSocket closed before open"));
+          reject(new Error("WebSocket closed before relay authentication"));
         }
         if (!this._intentionalClose) {
           this._scheduleReconnect();
@@ -318,11 +367,22 @@ export class NexnetClient {
     });
   }
 
+  /** Relay URL normalised to ws:/wss:; accepts http(s) and ws(s) inputs. */
+  private _relayEndpoint(): URL {
+    return new URL(this.relayUrl.replace(/^http/, "ws"));
+  }
+
+  private _relayAuth(nonce: string) {
+    return signIdentityAuthJson(this.identitySigner(), "relay.connect", this.identityId, {
+      audience: this._relayEndpoint().host,
+      nonce,
+      deviceId: this._deviceHex,
+    });
+  }
+
   private _buildWsUrl(): string {
-    const base = this.relayUrl.replace(/\/+$/, "");
-    const protocol = base.startsWith("https") ? "wss" : "ws";
-    const host = base.replace(/^https?:\/\//, "");
-    return `${protocol}://${host}/ws?identity=${this._identityHex}&device=${this._deviceHex}`;
+    const { protocol, host } = this._relayEndpoint();
+    return `${protocol}//${host}/ws?identity=${this._identityHex}&device=${this._deviceHex}`;
   }
 
   private _scheduleReconnect(): void {

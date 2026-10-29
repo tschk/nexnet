@@ -3,6 +3,19 @@
 Multiple discovery systems. Private contact graphs must not be uploaded in
 plaintext.
 
+Profile upserts accept only identity proof fields, username (1–32 characters),
+optional bio (truncated to 160), and optional interests/languages (up to 16
+non-empty strings of at most 32 characters each). Unknown fields, including
+client-supplied online state, reputation and creation dates, are rejected;
+malformed legacy profiles are skipped on load.
+
+Public profiles expose only identityId, username, bio, interests, languages and
+online. Online state comes from the relay's authenticated connection table via
+the optional `RELAY_SERVICE` binding (`GET /online/:identityId`), never from a
+profile publication or signed freshness claim. Missing/unavailable/invalid
+relay evidence yields `online: null` (unknown), not an asserted offline state;
+random matching requires an explicit `online: true`. No last-seen is exposed.
+
 ## Interest discovery
 
 Users select interests from freeform tags, canonical tag IDs, public room

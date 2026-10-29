@@ -100,7 +100,12 @@ function handleAuthorizedDirectMessage(
   try {
     const cert = envelope.senderCertificate;
     if (!cert || !client.crypto.verify(cert.deviceSigningPublicKey, preimage, envelope.signature)) return;
-    if (client.hasIncomingMessage(envelope.messageId)) return;
+    if (client.hasIncomingMessage(envelope.messageId)) {
+      // A receipt can be lost. Acknowledge a signed retry without decrypting or
+      // displaying it again, so the sender can discharge its retry obligation.
+      client.sendDeliveryReceipt(Buffer.from(envelope.senderIdentityId).toString("hex"), envelope.messageId);
+      return;
+    }
 
     if (envelope.ciphertext.length < 2) return;
 
@@ -298,6 +303,21 @@ export async function sendDirectMessage(
   const recipientHex = Buffer.from(recipientId).toString("hex");
   const encoded = client.codec.encode(envelope);
 
+  // A socket write is not delivery. Persist before any attempt and keep the
+  // encrypted envelope until a verified recipient receipt arrives. Relays
+  // never hold the offline queue or private message bodies.
+  if (!options.directOnly) {
+    (queue ?? client.outboundQueue()).enqueue({
+      messageId,
+      recipientIdentityId: recipientId,
+      encryptedEnvelope: encoded,
+      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
+      createdAt: now,
+      attemptCount: 0,
+      deliveryState: "pending",
+    });
+  }
+
   // Prefer open WebRTC data channel (AD-20 style direct)
   if (trySendDirect(recipientHex, encoded)) {
     return messageId;
@@ -312,20 +332,7 @@ export async function sendDirectMessage(
     if (sent) return messageId;
   }
 
-  if (queue) {
-    queue.enqueue({
-      messageId,
-      recipientIdentityId: recipientId,
-      encryptedEnvelope: client.codec.encode(envelope),
-      encryptionFormat: DM_X3DH_QUEUE_FORMAT,
-      createdAt: now,
-      attemptCount: 0,
-      deliveryState: "pending",
-    });
-    return messageId;
-  }
-
-  throw new Error("Not connected and no queue provided");
+  return messageId; // safely queued on the sender, even if either peer is offline
 }
 
 /**

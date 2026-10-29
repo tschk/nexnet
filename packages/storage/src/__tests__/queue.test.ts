@@ -59,6 +59,11 @@ describe("OutboundQueue", () => {
     const pending = q.pending();
     expect(pending).toHaveLength(0); // backoff set — not ready yet
 
+    for (let attempt = 1; attempt < 12; attempt++) q.markAttempt(item.messageId);
+    const retained = q.pendingForRecipient(item.recipientIdentityId);
+    expect(retained).toHaveLength(1);
+    expect(retained[0].attemptCount).toBe(12); // retries never silently abandon delivery
+    expect(retained[0].nextAttemptAt! - retained[0].lastAttemptAt!).toBe(30 * 60 * 1000);
     q.close();
   });
 

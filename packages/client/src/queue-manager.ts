@@ -11,10 +11,6 @@ import { PRESENCE_POLL_INTERVAL_MS, DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import type { IdentityId, OutboundQueueLike, OutboundQueueItem, PublicKey } from "@nexnet/types";
 import type { NexnetClient } from "./client.js";
 
-const MAX_ATTEMPTS = 10;
-const BASE_BACKOFF_MS = 30_000;
-const MAX_BACKOFF_MS = 30 * 60 * 1000;
-
 export class QueueManager {
   private queue: OutboundQueueLike;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -24,7 +20,9 @@ export class QueueManager {
 
   constructor(
     queue: OutboundQueueLike,
-    private readonly getReceiptPublicKey?: (identityId: IdentityId) => PublicKey | undefined,
+    private readonly getReceiptPublicKey?: (
+      identityId: IdentityId,
+    ) => PublicKey | undefined | Promise<PublicKey | undefined>,
   ) {
     this.queue = queue;
   }
@@ -35,6 +33,7 @@ export class QueueManager {
     this.pollTimer = setInterval(() => {
       this.processQueue(client);
     }, PRESENCE_POLL_INTERVAL_MS);
+    this.pollTimer.unref?.();
 
     this.presenceHandler = (data) => {
       const msg = data as { status?: string; identityId?: string };
@@ -42,7 +41,7 @@ export class QueueManager {
         this.processQueue(client, msg.identityId);
       }
     };
-    this.receiptHandler = (data) => {
+    this.receiptHandler = async (data) => {
       const msg = data as {
         from?: string;
         messageId?: Uint8Array | number[];
@@ -66,9 +65,16 @@ export class QueueManager {
       const item = this.queue
         .pendingForRecipient(identityId)
         .find((pending) => Buffer.from(pending.messageId).equals(Buffer.from(messageId)));
-      const publicKey = this.getReceiptPublicKey?.(identityId);
+      if (!item) return;
+      let publicKey: PublicKey | undefined;
+      try {
+        const lookup = this.getReceiptPublicKey?.(identityId);
+        publicKey = lookup instanceof Promise ? await lookup : lookup;
+      } catch {
+        return; // unavailable proof cannot discharge the sender's retry obligation
+      }
       if (
-        !item ||
+        this.client !== client ||
         item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT ||
         !publicKey ||
         !this.client?.crypto.verify(
@@ -79,6 +85,7 @@ export class QueueManager {
       )
         return;
       this.queue.markDelivered(messageId);
+      client.emit("verified_delivery_receipt", data);
     };
     client.on("presence", this.presenceHandler);
     client.on("delivery_receipt", this.receiptHandler);
@@ -112,7 +119,7 @@ export class QueueManager {
       ? this.queue.pendingForRecipient(Buffer.from(recipientHex, "hex"))
       : this.queue.pending();
     for (const item of pending) {
-      if (item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT || item.attemptCount >= MAX_ATTEMPTS) continue;
+      if (item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT) continue;
 
       const recipientHex = Buffer.from(item.recipientIdentityId).toString("hex");
       if (client.sendDm(recipientHex, Array.from(item.encryptedEnvelope))) {

@@ -14,12 +14,14 @@ import type {
   DeviceCertificate,
   DeviceCertificateResolver,
 } from "@nexnet/types";
-import { EventLog } from "@nexnet/storage";
+import { EventLog, OutboundQueue } from "@nexnet/storage";
 import { publicKeyFromSecret } from "@nexnet/crypto";
 import { signIdentityAuthJson, type IdentitySigner } from "@nexnet/protocol";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { consumePresenceMessage } from "./presence.js";
+import { QueueManager } from "./queue-manager.js";
+import { fetchBundleRemote, verifiedRootPublicKey } from "./prekey-network.js";
 
 export type EventType =
   | "dm"
@@ -31,6 +33,7 @@ export type EventType =
   | "candidate"
   | "presence"
   | "delivery_receipt"
+  | "verified_delivery_receipt"
   | "connected"
   | "disconnected"
   | "reconnecting"
@@ -90,6 +93,8 @@ export class NexnetClient {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _intentionalClose = false;
   private _eventLog: EventLog | null = null;
+  private _outboundQueue: OutboundQueue | null = null;
+  private _queueManager: QueueManager | null = null;
   private _maxReconnectAttempts: number;
   private _reconnectBaseMs: number;
   private _reconnectMaxMs: number;
@@ -192,12 +197,33 @@ export class NexnetClient {
   async disconnect(): Promise<void> {
     this._intentionalClose = true;
     this._clearReconnectTimer();
+    this._queueManager?.stop();
+    this._queueManager = null;
+    this._outboundQueue?.close();
+    this._outboundQueue = null;
     if (this._ws) {
       this._ws.close();
       this._ws = null;
     }
     this._online = false;
     this._reconnectAttempts = 0;
+  }
+
+  /** Sender-held encrypted envelopes, retained until a verified receipt arrives. */
+  outboundQueue(): OutboundQueue {
+    if (!this.storagePath) throw new Error("storagePath is required for the sender's offline DM queue");
+    if (!this._outboundQueue) {
+      mkdirSync(this.storagePath, { recursive: true });
+      this._outboundQueue = OutboundQueue.open(join(this.storagePath, "outbound.db"));
+      this._queueManager = new QueueManager(this._outboundQueue, async (identityId) => {
+        if (!verifiedRootPublicKey(identityId) && this.presenceUrl) {
+          await fetchBundleRemote(this.presenceUrl, identityId);
+        }
+        return verifiedRootPublicKey(identityId);
+      });
+      this._queueManager.start(this);
+    }
+    return this._outboundQueue;
   }
 
   /**
@@ -374,6 +400,10 @@ export class NexnetClient {
           authenticated = true;
           this._online = true;
           this._reconnectAttempts = 0;
+          // Resume persisted retry obligations, including after restarting the sender.
+          if (this.storagePath && existsSync(join(this.storagePath, "outbound.db"))) this.outboundQueue();
+          this._queueManager?.start(this);
+          this._queueManager?.processQueue(this);
           this.emit("connected", null);
           if (!settled) {
             settled = true;

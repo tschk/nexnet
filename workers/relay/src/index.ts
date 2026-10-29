@@ -134,6 +134,12 @@ export class RelaySession {
       return this.handleWebSocketUpgrade(request);
     }
 
+    if (url.pathname.startsWith("/online/")) {
+      const identityId = url.pathname.slice("/online/".length);
+      if (!ID_HEX.test(identityId)) return jsonResponse({ error: "invalid identityId" }, 400);
+      return jsonResponse({ identityId, online: this.connections.has(identityId) });
+    }
+
     if (url.pathname === "/status") {
       return jsonResponse({
         connections: this.connections.size,
@@ -272,6 +278,17 @@ export class RelaySession {
     });
     this.socketIdentity.set(ws, pending.identity);
     this.sendWs(ws, { type: "authenticated", identity: pending.identity });
+    this.sendWs(ws, {
+      type: "presence_snapshot",
+      leases: Object.fromEntries([...this.connections.keys()].map((id) => [id, { status: "online" }])),
+    });
+    this.notifyPresence(pending.identity, "online");
+  }
+
+  private notifyPresence(identityId: string, status: "online" | "offline"): void {
+    for (const connection of this.connections.values()) {
+      this.sendWs(connection.ws, { type: "presence_update", identityId, status });
+    }
   }
 
   private rejectAuth(ws: WebSocket, message: string): void {
@@ -390,6 +407,7 @@ export class RelaySession {
     }
 
     this.connections.delete(identity);
+    this.notifyPresence(identity, "offline");
   }
 
   private sendWs(ws: WebSocket, data: unknown): void {
@@ -415,6 +433,11 @@ app.use(
 );
 
 app.get("/ws", (c) => handleWebSocket(c.req.raw, c.env));
+app.get("/online/:identityId", (c) => {
+  const identityId = c.req.param("identityId");
+  if (!ID_HEX.test(identityId)) return c.json({ error: "invalid identityId" }, 400);
+  return c.env.RELAY.get(c.env.RELAY.idFromName("default")).fetch(c.req.raw);
+});
 app.post("/relay/path", (c) => handleRelayPath(c.req.raw, c.env));
 app.get("/health", (c) => handleHealth(c.req.raw, c.env));
 app.notFound((c) => c.json({ error: "not found" }, 404));

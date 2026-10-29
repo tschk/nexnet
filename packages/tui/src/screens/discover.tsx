@@ -78,7 +78,7 @@ export function DiscoverScreen() {
               <box flexDirection="column" paddingBottom={1}>
                 <box flexDirection="row" justifyContent="space-between">
                   <text fg={isSel() ? theme.textBright : theme.text} attributes={createTextAttributes({ bold: true })}>
-                    {`${isSel() ? "▸" : " "} ${user.online ? "●" : "○"} ${user.username} (${hexToShort(user.identityHex)})`}
+                    {`${isSel() ? "▸" : " "} ${user.online == null ? "? status unknown" : user.online ? "●" : "○"} ${user.username} (${hexToShort(user.identityHex)})`}
                   </text>
                 </box>
                 <text fg={theme.textDim}>

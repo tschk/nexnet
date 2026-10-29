@@ -1,6 +1,10 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, beforeEach, afterEach, setSystemTime } from "bun:test";
 import { fromHex, identityIdFromWallet, signIdentityAuthJson, toHex } from "@nexnet/protocol";
+import { REPUTATION_AGE_CAP_MS } from "@nexnet/types";
 import worker, { DiscoveryIndex } from "./index.js";
+
+const onlineIdentities = new Set<string>();
+afterEach(() => setSystemTime());
 
 interface TestIdentity {
   id: string;
@@ -64,8 +68,7 @@ async function block(index: DiscoveryIndex, name: string, blockedName: string) {
   );
 }
 
-function createMockState() {
-  const store = new Map<string, unknown>();
+function createMockState(store = new Map<string, unknown>()) {
   return {
     storage: {
       get: async (key: string) => store.get(key),
@@ -82,7 +85,23 @@ function createMockState() {
 }
 
 function createMockEnv() {
-  return { DISCOVERY: {} as DurableObjectNamespace };
+  return {
+    DISCOVERY: {} as DurableObjectNamespace,
+    RELAY_SERVICE: {
+      fetch: async (request: Request) => {
+        const url = new URL(request.url);
+        expect(url.origin).toBe("https://relay");
+        expect(url.pathname).toMatch(/^\/online\/[0-9a-f]{64}$/);
+        const identityId = url.pathname.slice("/online/".length);
+        return Response.json({ identityId, online: onlineIdentities.has(identityId) });
+      },
+    } as Fetcher,
+  };
+}
+
+async function matureCandidates(...names: string[]) {
+  setSystemTime(Date.now() + REPUTATION_AGE_CAP_MS + 1);
+  for (const name of names) onlineIdentities.add((await who(name)).id);
 }
 
 function jsonPost(path: string, body: unknown) {
@@ -112,6 +131,9 @@ describe("DiscoveryIndex", () => {
   let index: DiscoveryIndex;
 
   beforeEach(() => {
+    setSystemTime(new Date("2026-10-29T12:00:00Z"));
+    issuedAtCounter = 0;
+    onlineIdentities.clear();
     index = new DiscoveryIndex(createMockState(), createMockEnv());
   });
 
@@ -167,6 +189,247 @@ describe("DiscoveryIndex", () => {
     const resp = await upsert(index, "verbose", { bio: "x".repeat(300) });
     const body = (await resp.json()) as { profile: { bio: string } };
     expect(body.profile.bio.length).toBe(160);
+  });
+
+  test("rejects string interests without breaking interest search", async () => {
+    expect((await upsert(index, "good", { interests: ["music"] })).status).toBe(200);
+    expect((await upsert(index, "bad", { interests: "music" })).status).toBe(400);
+    const response = await index.fetch(jsonPost("/do/search/interest", { tag: "music" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ count: 1, profiles: [{ username: "good" }] });
+  });
+
+  test("rejects invalid profile shapes and unknown fields", async () => {
+    for (const fields of [
+      { username: 5 },
+      { username: "" },
+      { username: " " },
+      { username: "x".repeat(33) },
+      { bio: 5 },
+      { bio: null },
+      { interests: [1] },
+      { interests: [""] },
+      { interests: ["x".repeat(33)] },
+      { interests: Array(17).fill("music") },
+      { languages: "en" },
+      { languages: null },
+      { languages: [1] },
+      { languages: [""] },
+      { languages: ["x".repeat(33)] },
+      { languages: Array(17).fill("en") },
+      { createdAt: 0 },
+      { firstSeenAt: 0 },
+      { lastSeenAt: 0 },
+      { extra: "field" },
+    ]) {
+      expect((await upsert(index, "invalid", fields)).status).toBe(400);
+    }
+    expect(
+      (
+        await upsert(index, "valid", {
+          username: "x".repeat(32),
+          interests: Array(16).fill("x".repeat(32)),
+          languages: ["en"],
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  test("malformed stored profiles cannot break interest, language or random search", async () => {
+    const bad = await who("legacy-bad");
+    const store = new Map<string, unknown>([
+      [
+        `profile:${bad.id}`,
+        {
+          identityId: bad.id,
+          username: "x",
+          interests: "music",
+          languages: null,
+          online: true,
+          reputationScore: 1,
+        },
+      ],
+    ]);
+    const recreated = new DiscoveryIndex(createMockState(store), createMockEnv());
+    onlineIdentities.add(bad.id);
+    await upsert(recreated, "good", { interests: ["music"], languages: ["en"] });
+    for (const [path, fields] of [
+      ["/do/search/interest", { tag: "music" }],
+      ["/do/search/language", { language: "en" }],
+    ] as const) {
+      const response = await recreated.fetch(jsonPost(path, fields));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ count: 1, profiles: [{ username: "good" }] });
+    }
+    expect((await randomMatch(recreated, "requester", { interests: ["music"], languages: ["en"] })).status).toBe(200);
+  });
+
+  test("rejects non-string search tags and languages", async () => {
+    for (const value of [5, true, ["music"], {}, null]) {
+      expect((await index.fetch(jsonPost("/do/search/interest", { tag: value }))).status).toBe(400);
+      expect((await index.fetch(jsonPost("/do/search/language", { language: value }))).status).toBe(400);
+    }
+    expect((await index.fetch(jsonPost("/do/search/interest", null))).status).toBe(400);
+    expect((await index.fetch(jsonPost("/do/search/language", null))).status).toBe(400);
+  });
+
+  test("rejects self-asserted reputation and online fields", async () => {
+    expect((await upsert(index, "claim", { reputationScore: 1 })).status).toBe(400);
+    expect((await upsert(index, "claim", { online: true })).status).toBe(400);
+  });
+
+  test("relay observations alone decide public online state", async () => {
+    const identity = await who("alice");
+    const response = await upsert(index, "alice", { interests: ["music"], languages: ["en"] });
+    expect(await response.json()).toMatchObject({ profile: { online: false } });
+    onlineIdentities.add(identity.id);
+    expect(await (await getProfile(index, "alice")).json()).toMatchObject({ online: true });
+    setSystemTime(Date.now() + 90_001);
+    expect(await (await getProfile(index, "alice")).json()).toMatchObject({ online: true });
+    onlineIdentities.delete(identity.id);
+    for (const [path, fields] of [
+      ["/do/search/interest", { tag: "music" }],
+      ["/do/search/language", { language: "en" }],
+    ] as const) {
+      expect(await (await index.fetch(jsonPost(path, fields))).json()).toMatchObject({ profiles: [{ online: false }] });
+    }
+    expect(await (await getProfile(index, "alice")).json()).toMatchObject({ online: false });
+  });
+
+  test("missing, failed or invalid relay observations are unknown and cannot match", async () => {
+    const state = createMockState();
+    const first = new DiscoveryIndex(state, createMockEnv());
+    await upsert(first, "candidate", { interests: ["music"], languages: ["en"] });
+    await matureCandidates("candidate");
+    const failures = [
+      undefined,
+      async () => {
+        throw new Error("unavailable");
+      },
+      async () => new Response("unavailable", { status: 503 }),
+      async () => new Response("not JSON"),
+      async () => Response.json(null),
+      async () => Response.json({ identityId: (await who("candidate")).id, online: "true" }),
+      async () => Response.json({ identityId: (await who("other")).id, online: true }),
+    ];
+    for (const fetch of failures) {
+      const recreated = new DiscoveryIndex(state, {
+        DISCOVERY: {} as DurableObjectNamespace,
+        // These failure stubs exercise fetch only, not Fetcher's connect API.
+        ...(fetch ? { RELAY_SERVICE: { fetch } as unknown as Fetcher } : {}),
+      });
+      expect(await (await getProfile(recreated, "candidate")).json()).toMatchObject({ online: null });
+      for (const [path, fields] of [
+        ["/do/search/interest", { tag: "music" }],
+        ["/do/search/language", { language: "en" }],
+      ] as const) {
+        expect(await (await recreated.fetch(jsonPost(path, fields))).json()).toMatchObject({
+          profiles: [{ online: null }],
+        });
+      }
+      const response = await randomMatch(recreated, `requester-${failures.indexOf(fetch)}`, {
+        interests: ["music"],
+        languages: ["en"],
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ match: null });
+    }
+  });
+
+  test("partial reputation gates fresh profiles but permits mature relay-online profiles", async () => {
+    const fields = { interests: ["music"], languages: ["en"] };
+    await upsert(index, "candidate", fields);
+    onlineIdentities.add((await who("candidate")).id);
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({ match: null });
+    await matureCandidates("candidate");
+    expect((await upsert(index, "candidate", fields)).status).toBe(200);
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
+      match: { identityId: (await who("candidate")).id },
+    });
+  });
+
+  test("verified distinct blockers lower the partial score at the matching gate", async () => {
+    const fields = { interests: ["music"], languages: ["en"] };
+    await upsert(index, "candidate", fields);
+    onlineIdentities.add((await who("candidate")).id);
+    setSystemTime(Date.now() + REPUTATION_AGE_CAP_MS * 0.6); // age contribution 0.21
+    await block(index, "blocker-a", "candidate");
+    await block(index, "blocker-a", "candidate"); // duplicate is not another identity
+    await block(index, "blocker-b", "candidate"); // 0.21 + 0.15/3 = 0.26
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
+      match: { username: "candidate" },
+    });
+    await block(index, "blocker-c", "candidate"); // 0.21 + 0.15/4 = 0.2475
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({ match: null });
+    await block(index, "blocker-d", "candidate");
+    await matureCandidates("candidate"); // capped age: 0.35 + 0.15/5 = 0.38
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
+      match: { username: "candidate" },
+    });
+  });
+
+  test("legacy self-asserted scores and creation dates grant no matching reputation", async () => {
+    const candidate = await who("candidate");
+    const fields = { interests: ["music"], languages: ["en"] };
+    const store = new Map<string, unknown>([
+      [
+        `profile:${candidate.id}`,
+        {
+          identityId: candidate.id,
+          username: "candidate",
+          ...fields,
+          online: true,
+          reputationScore: 1,
+          createdAt: Date.now() - REPUTATION_AGE_CAP_MS * 2,
+        },
+      ],
+    ]);
+    onlineIdentities.add(candidate.id);
+    const recreated = new DiscoveryIndex(createMockState(store), createMockEnv());
+    expect(await (await randomMatch(recreated, "requester", fields)).json()).toMatchObject({ match: null });
+  });
+
+  test("observed publication age survives upserts and Durable Object recreation", async () => {
+    const state = createMockState();
+    const first = new DiscoveryIndex(state, createMockEnv());
+    const fields = { interests: ["music"], languages: ["en"] };
+    await upsert(first, "candidate", fields);
+    await matureCandidates("candidate");
+    const recreated = new DiscoveryIndex(state, createMockEnv());
+    expect((await upsert(recreated, "candidate", fields)).status).toBe(200);
+    expect(await (await randomMatch(recreated, "requester", fields)).json()).toMatchObject({
+      match: { username: "candidate" },
+    });
+  });
+
+  test("public upsert, get and search profiles expose no internal reputation or timestamps", async () => {
+    const response = await upsert(index, "alice", { bio: "hello", interests: ["music"], languages: ["en"] });
+    const { profile } = (await response.json()) as { profile: Record<string, unknown> };
+    const profiles = [profile, await (await getProfile(index, "alice")).json()];
+    for (const [path, fields] of [
+      ["/do/search/interest", { tag: "music" }],
+      ["/do/search/language", { language: "en" }],
+    ] as const) {
+      const body = (await (await index.fetch(jsonPost(path, fields))).json()) as {
+        profiles: Record<string, unknown>[];
+      };
+      profiles.push(...body.profiles);
+    }
+    for (const publicProfile of profiles) {
+      expect(Object.keys(publicProfile as object).sort()).toEqual(
+        ["identityId", "username", "bio", "interests", "languages", "online"].sort(),
+      );
+    }
+  });
+
+  test("malformed random-match lists return 400 rather than throwing", async () => {
+    for (const fields of [
+      { interests: [1], languages: ["en"] },
+      { interests: ["music"], languages: [1] },
+      { interests: ["music"], languages: ["en"], exclude: 5 },
+    ]) {
+      expect((await randomMatch(index, "requester", fields)).status).toBe(400);
+    }
   });
 
   // ── Identity proof ───────────────────────────────────────────────
@@ -225,8 +488,9 @@ describe("DiscoveryIndex", () => {
   test("rejects block on behalf of another identity", async () => {
     const mallory = await who("mallory");
     const victim = await who("victim");
-    await upsert(index, "victim", { interests: ["shared"], languages: ["en"], online: true, reputationScore: 1 });
-    await upsert(index, "friend", { interests: ["shared"], languages: ["en"], online: true, reputationScore: 1 });
+    await upsert(index, "victim", { interests: ["shared"], languages: ["en"] });
+    await upsert(index, "friend", { interests: ["shared"], languages: ["en"] });
+    await matureCandidates("friend");
 
     const resp = await index.fetch(
       jsonPost(
@@ -331,13 +595,12 @@ describe("DiscoveryIndex", () => {
   // ── Random match ─────────────────────────────────────────────────
 
   test("random match finds candidate with overlapping interests", async () => {
-    await upsert(index, "alice", { interests: ["music.jazz"], languages: ["en"], online: true, reputationScore: 0.8 });
+    await upsert(index, "alice", { interests: ["music.jazz"], languages: ["en"] });
     await upsert(index, "bob", {
       interests: ["music.jazz", "cooking"],
       languages: ["en"],
-      online: true,
-      reputationScore: 0.9,
     });
+    await matureCandidates("alice", "bob");
 
     const resp = await randomMatch(index, "alice", { interests: ["music.jazz"], languages: ["en"] });
     const body = (await resp.json()) as { match: { identityId: string } | null };
@@ -346,7 +609,8 @@ describe("DiscoveryIndex", () => {
   });
 
   test("random match excludes self", async () => {
-    await upsert(index, "solo", { interests: ["solo"], languages: ["en"], online: true, reputationScore: 1.0 });
+    await upsert(index, "solo", { interests: ["solo"], languages: ["en"] });
+    await matureCandidates("solo");
 
     const resp = await randomMatch(index, "solo", { interests: ["solo"], languages: ["en"] });
     const body = (await resp.json()) as { match: unknown };
@@ -354,7 +618,8 @@ describe("DiscoveryIndex", () => {
   });
 
   test("random match excludes offline users", async () => {
-    await upsert(index, "offline-user", { interests: ["shared"], online: false, reputationScore: 1.0 });
+    await upsert(index, "offline-user", { interests: ["shared"] });
+    await matureCandidates();
 
     const resp = await randomMatch(index, "requester", { interests: ["shared"], languages: ["en"] });
     const body = (await resp.json()) as { match: unknown };
@@ -364,9 +629,8 @@ describe("DiscoveryIndex", () => {
   test("random match excludes low reputation", async () => {
     await upsert(index, "lowrep", {
       interests: ["shared"],
-      online: true,
-      reputationScore: 0.01, // below DEFAULT_REPUTATION_THRESHOLD (0.25)
     });
+    onlineIdentities.add((await who("lowrep")).id);
 
     const resp = await randomMatch(index, "requester", { interests: ["shared"], languages: ["en"] });
     const body = (await resp.json()) as { match: unknown };
@@ -374,7 +638,8 @@ describe("DiscoveryIndex", () => {
   });
 
   test("random match returns null when no overlap", async () => {
-    await upsert(index, "alice", { interests: ["cooking"], languages: ["fr"], online: true, reputationScore: 0.8 });
+    await upsert(index, "alice", { interests: ["cooking"], languages: ["fr"] });
+    await matureCandidates("alice");
 
     const resp = await randomMatch(index, "requester", { interests: ["music"], languages: ["en"] });
     const body = (await resp.json()) as { match: unknown };
@@ -382,7 +647,8 @@ describe("DiscoveryIndex", () => {
   });
 
   test("random match with exclude list", async () => {
-    await upsert(index, "bob", { interests: ["shared"], online: true, reputationScore: 0.9 });
+    await upsert(index, "bob", { interests: ["shared"] });
+    await matureCandidates("bob");
 
     const resp = await randomMatch(index, "requester", {
       interests: ["shared"],
@@ -395,8 +661,9 @@ describe("DiscoveryIndex", () => {
 
   test("random match excludes identities blocked in either direction", async () => {
     for (const name of ["alice", "bob"]) {
-      await upsert(index, name, { interests: ["shared"], languages: ["en"], online: true, reputationScore: 1 });
+      await upsert(index, name, { interests: ["shared"], languages: ["en"] });
     }
+    await matureCandidates("alice", "bob");
 
     expect((await block(index, "alice", "bob")).status).toBe(200);
     const response = await randomMatch(index, "bob", { interests: ["shared"], languages: ["en"] });
@@ -410,8 +677,9 @@ describe("DiscoveryIndex", () => {
     expect((await block(first, "alice", "bob")).status).toBe(200);
     const recreated = new DiscoveryIndex(state, createMockEnv());
     for (const name of ["alice", "bob"]) {
-      await upsert(recreated, name, { interests: ["shared"], languages: ["en"], online: true, reputationScore: 1 });
+      await upsert(recreated, name, { interests: ["shared"], languages: ["en"] });
     }
+    await matureCandidates("alice", "bob");
 
     const response = await randomMatch(recreated, "alice", { interests: ["shared"], languages: ["en"] });
     const body = (await response.json()) as { match: unknown };

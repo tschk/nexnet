@@ -109,7 +109,8 @@ describe("RelaySession", () => {
 
   test("upgrade issues a challenge and a valid proof authenticates", async () => {
     const ws = await connect(relay, alice);
-    expect(ws._sent).toEqual([{ type: "authenticated", identity: alice.hex }]);
+    expect(ws._sent).toContainEqual({ type: "authenticated", identity: alice.hex });
+    expect(ws._sent).toContainEqual({ type: "presence_snapshot", leases: { [alice.hex]: { status: "online" } } });
     expect(ws._closed).toBeNull();
   });
 
@@ -119,6 +120,11 @@ describe("RelaySession", () => {
     const resp = await relay.fetch(new Request("https://relay/status"));
     expect(resp.status).toBe(200);
     expect((await resp.json()) as unknown).toEqual({ connections: 1, rooms: 0 });
+    const online = async (id: string) => (await relay.fetch(new Request(`https://relay/online/${id}`))).json();
+    expect(await online(alice.hex)).toEqual({ identityId: alice.hex, online: true });
+    expect(await online(bob.hex)).toEqual({ identityId: bob.hex, online: false }); // unproven socket
+    await relay.webSocketClose(await connect(relay, bob));
+    expect(await online(bob.hex)).toEqual({ identityId: bob.hex, online: false });
     await relay.webSocketClose(pending.ws);
   });
 

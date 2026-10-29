@@ -433,6 +433,7 @@ export const DEFAULT_REPUTATION_WEIGHTS: ReputationWeights = {
   blockInverse: 0.15,
 };
 
+export const REPUTATION_AGE_CAP_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEFAULT_REPUTATION_THRESHOLD = 0.25;
 
 // ── Storage queue interface ─────────────────────────────────────────

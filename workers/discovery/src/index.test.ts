@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, afterEach, setSystemTime } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterEach, setSystemTime } from "bun:test";
 import { fromHex, identityIdFromWallet, signIdentityAuthJson, toHex } from "@nexnet/protocol";
 import { REPUTATION_AGE_CAP_MS } from "@nexnet/types";
 import worker, { DiscoveryIndex } from "./index.js";
@@ -336,11 +336,13 @@ describe("DiscoveryIndex", () => {
     }
   });
 
-  test("partial reputation gates fresh profiles but permits mature relay-online profiles", async () => {
+  test("an all-new network can random-match without invented reputation credit", async () => {
     const fields = { interests: ["music"], languages: ["en"] };
     await upsert(index, "candidate", fields);
     onlineIdentities.add((await who("candidate")).id);
-    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({ match: null });
+    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
+      match: { identityId: (await who("candidate")).id, reputationEvidence: "insufficient" },
+    });
     await matureCandidates("candidate");
     expect((await upsert(index, "candidate", fields)).status).toBe(200);
     expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
@@ -348,24 +350,47 @@ describe("DiscoveryIndex", () => {
     });
   });
 
-  test("verified distinct blockers lower the partial score at the matching gate", async () => {
+  test("observed negative signals lower rank but incomplete evidence never excludes a lone candidate", async () => {
     const fields = { interests: ["music"], languages: ["en"] };
     await upsert(index, "candidate", fields);
     onlineIdentities.add((await who("candidate")).id);
-    setSystemTime(Date.now() + REPUTATION_AGE_CAP_MS * 0.6); // age contribution 0.21
     await block(index, "blocker-a", "candidate");
     await block(index, "blocker-a", "candidate"); // duplicate is not another identity
-    await block(index, "blocker-b", "candidate"); // 0.21 + 0.15/3 = 0.26
+    await block(index, "blocker-b", "candidate");
+    // Negative partial rank is not an eligibility failure or a public rating.
     expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
-      match: { username: "candidate" },
+      match: { username: "candidate", reputationEvidence: "insufficient" },
     });
-    await block(index, "blocker-c", "candidate"); // 0.21 + 0.15/4 = 0.2475
-    expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({ match: null });
-    await block(index, "blocker-d", "candidate");
-    await matureCandidates("candidate"); // capped age: 0.35 + 0.15/5 = 0.38
+    await upsert(index, "other", fields);
+    onlineIdentities.add((await who("other")).id);
+    // Same observed age, but only candidate has signed negative feedback.
     expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
-      match: { username: "candidate" },
+      match: { username: "other", reputationEvidence: "insufficient" },
+      candidatesConsidered: 2,
     });
+  });
+
+  test("all equally new candidates remain selectable at the ranking cutoff", async () => {
+    const fields = { interests: ["music"], languages: ["en"] };
+    for (const name of ["first", "second"]) {
+      await upsert(index, name, fields);
+      onlineIdentities.add((await who(name)).id);
+    }
+    const random = spyOn(Math, "random");
+    try {
+      for (const [roll, name] of [
+        [0, "first"],
+        [0.999, "second"],
+      ] as const) {
+        random.mockReturnValue(roll);
+        expect(await (await randomMatch(index, "requester", fields)).json()).toMatchObject({
+          match: { username: name, reputationEvidence: "insufficient" },
+          candidatesConsidered: 2,
+        });
+      }
+    } finally {
+      random.mockRestore();
+    }
   });
 
   test("legacy self-asserted scores and creation dates grant no matching reputation", async () => {
@@ -384,9 +409,23 @@ describe("DiscoveryIndex", () => {
         },
       ],
     ]);
+    const established = await who("established");
+    store.set(`profile:${established.id}`, {
+      identityId: established.id,
+      username: "established",
+      ...fields,
+      firstSeenAt: Date.now() - REPUTATION_AGE_CAP_MS / 2,
+    });
     onlineIdentities.add(candidate.id);
+    onlineIdentities.add(established.id);
     const recreated = new DiscoveryIndex(createMockState(store), createMockEnv());
-    expect(await (await randomMatch(recreated, "requester", fields)).json()).toMatchObject({ match: null });
+    expect(await (await getProfile(recreated, "candidate")).json()).toMatchObject({
+      reputationEvidence: "insufficient",
+    });
+    // The forged old creation date must not outrank a genuinely observed older profile.
+    expect(await (await randomMatch(recreated, "requester", fields)).json()).toMatchObject({
+      match: { username: "established" },
+    });
   });
 
   test("observed publication age survives upserts and Durable Object recreation", async () => {
@@ -403,6 +442,7 @@ describe("DiscoveryIndex", () => {
   });
 
   test("public upsert, get and search profiles expose no internal reputation or timestamps", async () => {
+    await block(index, "blocker", "alice");
     const response = await upsert(index, "alice", { bio: "hello", interests: ["music"], languages: ["en"] });
     const { profile } = (await response.json()) as { profile: Record<string, unknown> };
     const profiles = [profile, await (await getProfile(index, "alice")).json()];
@@ -417,8 +457,9 @@ describe("DiscoveryIndex", () => {
     }
     for (const publicProfile of profiles) {
       expect(Object.keys(publicProfile as object).sort()).toEqual(
-        ["identityId", "username", "bio", "interests", "languages", "online"].sort(),
+        ["identityId", "username", "bio", "interests", "languages", "online", "reputationEvidence"].sort(),
       );
+      expect(publicProfile).toMatchObject({ reputationEvidence: "insufficient" });
     }
   });
 
@@ -626,7 +667,7 @@ describe("DiscoveryIndex", () => {
     expect(body.match).toBeNull();
   });
 
-  test("random match excludes low reputation", async () => {
+  test("a new profile remains discoverable with insufficient evidence", async () => {
     await upsert(index, "lowrep", {
       interests: ["shared"],
     });
@@ -634,7 +675,7 @@ describe("DiscoveryIndex", () => {
 
     const resp = await randomMatch(index, "requester", { interests: ["shared"], languages: ["en"] });
     const body = (await resp.json()) as { match: unknown };
-    expect(body.match).toBeNull();
+    expect(body.match).toMatchObject({ username: "lowrep", reputationEvidence: "insufficient" });
   });
 
   test("random match returns null when no overlap", async () => {

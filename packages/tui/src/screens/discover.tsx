@@ -89,6 +89,7 @@ export function DiscoverScreen() {
                   {"    "}
                   {user.interests.join(", ")}
                 </text>
+                <text fg={theme.textDim}> Insufficient reputation evidence · not an adverse rating</text>
               </box>
             );
           }}

@@ -151,6 +151,8 @@ export interface DiscoveredUser {
   interests: string[];
   /** null: no relay observation available; do not present a claimed status as fact. */
   online: boolean | null;
+  /** Missing evidence is not an adverse rating; never publish scores or block history. */
+  reputationEvidence?: "insufficient";
 }
 
 const [discoveredUsers, setDiscoveredUsers] = createSignal<DiscoveredUser[]>([]);

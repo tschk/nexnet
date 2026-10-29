@@ -4,7 +4,7 @@
  * Durable Object: DiscoveryIndex
  * - Stores discovery profiles (interests, languages, bio)
  * - Search by interest / language
- * - Random match with reputation gating (AD-18)
+ * - Random match with hard gates and partial reputation ranking (AD-18)
  * - Group discovery
  *
  * AD-24: profile = username + bio, no avatar.
@@ -18,7 +18,7 @@
  */
 
 import { isFreshIssuedAt, verifyIdentityAuthJson } from "@nexnet/protocol";
-import { DEFAULT_REPUTATION_THRESHOLD, DEFAULT_REPUTATION_WEIGHTS, REPUTATION_AGE_CAP_MS } from "@nexnet/types";
+import { DEFAULT_REPUTATION_WEIGHTS, REPUTATION_AGE_CAP_MS } from "@nexnet/types";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -266,6 +266,7 @@ export class DiscoveryIndex {
       interests: profile.interests,
       languages: profile.languages,
       online: await this.relayOnline(profile.identityId),
+      reputationEvidence: "insufficient",
     };
   }
 
@@ -416,7 +417,7 @@ export class DiscoveryIndex {
     const requesterInterests = new Set(body.interests.map((i) => i.toLowerCase()));
     const requesterLangs = new Set(body.languages.map((l) => l.toLowerCase()));
 
-    // Filter candidates: online + reputation + not excluded + overlap
+    // Eligibility uses hard gates only while reputation evidence is incomplete (AD-18).
     const candidates: { profile: StoredProfile; score: number }[] = [];
 
     for (const profile of this.profiles.values()) {
@@ -436,9 +437,10 @@ export class DiscoveryIndex {
       }
       const age = Math.min(1, Math.max(0, now - profile.firstSeenAt) / REPUTATION_AGE_CAP_MS);
       const w = DEFAULT_REPUTATION_WEIGHTS;
-      // Completed and continuity components are zero: no signed evidence exists yet.
-      const score = w.age * age + w.blockInverse / (1 + blocksReceived);
-      if (score < DEFAULT_REPUTATION_THRESHOLD) continue;
+      // Missing session history and absence of reports earn no credit. Centering
+      // the inverse-block term at zero preserves ordering, but only observed
+      // signed blocks lower rank. This partial score is never an eligibility gate.
+      const score = w.age * age - w.blockInverse * (1 - 1 / (1 + blocksReceived));
 
       candidates.push({ profile, score });
     }
@@ -447,23 +449,14 @@ export class DiscoveryIndex {
       return jsonResponse({ match: null, reason: "no candidates" });
     }
 
-    // Weighted random selection from top candidates
+    // Published weights determine rank, not eligibility. Include ties at the
+    // cutoff so every equally new profile can be found, even when all rank zero.
     candidates.sort((a, b) => b.score - a.score);
 
-    // Simple weighted pick from top half
     const topN = Math.max(1, Math.ceil(candidates.length / 2));
-    const top = candidates.slice(0, topN);
-    const totalScore = top.reduce((sum, c) => sum + c.score, 0);
-    let roll = Math.random() * totalScore;
-    let chosen = top[0];
-
-    for (const c of top) {
-      roll -= c.score;
-      if (roll <= 0) {
-        chosen = c;
-        break;
-      }
-    }
+    const cutoff = candidates[topN - 1].score;
+    const top = candidates.filter((candidate) => candidate.score >= cutoff);
+    const chosen = top[Math.floor(Math.random() * top.length)];
 
     return jsonResponse({
       match: {
@@ -472,6 +465,7 @@ export class DiscoveryIndex {
         bio: chosen.profile.bio,
         interests: chosen.profile.interests,
         languages: chosen.profile.languages,
+        reputationEvidence: "insufficient",
       },
       candidatesConsidered: candidates.length,
     });

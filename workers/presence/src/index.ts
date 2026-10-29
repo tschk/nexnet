@@ -8,8 +8,18 @@
  * - WebSocket subscriptions for live updates
  *
  * AD: no read receipts / last-seen in v1 — only online/offline status.
+ *
+ * Every identity-scoped write (prekey publish/remove, lease publish/remove)
+ * carries an identity proof (`auth`, see @nexnet/protocol identity-auth) over
+ * the rest of the body. Writes are rejected unless the proof verifies for the
+ * claimed identity, `issuedAt` is fresh, and `issuedAt` is strictly greater
+ * than the last accepted one for that identity and operation family.
+ *
+ * Status codes: 400 malformed body, 401 missing/invalid proof,
+ * 409 stale or replayed issuedAt.
  */
 
+import { isFreshIssuedAt, toHex, verifyIdentityAuthJson } from "@nexnet/protocol";
 import { PRESENCE_LEASE_TTL_MS } from "@nexnet/types";
 import { ed25519 } from "@noble/curves/ed25519";
 import { Hono } from "hono";
@@ -17,26 +27,26 @@ import { cors } from "hono/cors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
+/** Stored lease: the signed request fields without `auth`. */
 interface PresenceLeaseData {
   identityId: string;
   deviceId: string;
-  publicKey?: string; // hex-encoded Ed25519 public key
   relayHint?: string;
   issuedAt: number;
   expiresAt: number;
-  nonce?: string; // hex-encoded 32-byte nonce
-  signature?: string; // hex-encoded Ed25519 signature
+  nonce?: string;
 }
 
 interface Env {
   PRESENCE: DurableObjectNamespace;
-  /** Set "1" to allow unsigned presence leases (preview/dev only). */
-  ALLOW_UNSIGNED_LEASES?: string;
 }
 
 // ── Durable Object: PresenceTracker ──────────────────────────────────
 
-/** X3DH prekey bundle (hex fields for JSON) */
+/**
+ * X3DH prekey bundle (hex fields for JSON). Signed fields are stored verbatim
+ * with the proof so clients can re-verify end to end; `updatedAt` is server-set.
+ */
 interface PrekeyBundleData {
   identityId: string;
   identityDhPublic: string;
@@ -45,8 +55,47 @@ interface PrekeyBundleData {
   identitySignPublic: string;
   oneTimePrekeyPublic?: string;
   oneTimePrekeyId?: number;
+  issuedAt: number;
+  auth: unknown;
   updatedAt: number;
 }
+
+const HEX32 = /^[0-9a-f]{64}$/;
+const PREKEY_PUBLISH_KEYS = new Set([
+  "identityId",
+  "identityDhPublic",
+  "signedPrekeyPublic",
+  "signedPrekeySig",
+  "identitySignPublic",
+  "oneTimePrekeyPublic",
+  "oneTimePrekeyId",
+  "issuedAt",
+  "auth",
+]);
+const LEASE_PUBLISH_KEYS = new Set(["identityId", "deviceId", "issuedAt", "expiresAt", "nonce", "relayHint", "auth"]);
+const REMOVE_KEYS = new Set(["identityId", "issuedAt", "auth"]);
+
+type Body = Record<string, unknown>;
+
+/** Parse a JSON object body whose keys are all in `allowed`; null when malformed. */
+async function readBody(request: Request, allowed: Set<string>): Promise<Body | null> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return null;
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  for (const key of Object.keys(body)) if (!allowed.has(key)) return null;
+  const input = body as Body;
+  if (typeof input.identityId !== "string" || !HEX32.test(input.identityId)) return null;
+  if (typeof input.issuedAt !== "number" || !Number.isSafeInteger(input.issuedAt)) return null;
+  return input;
+}
+
+const malformed = () => jsonResponse({ error: "malformed request body" }, 400);
+const unauthorized = () => jsonResponse({ error: "missing or invalid identity proof" }, 401);
+const stale = () => jsonResponse({ error: "stale or replayed issuedAt" }, 409);
 
 export class PresenceTracker {
   private state: DurableObjectState;
@@ -77,13 +126,13 @@ export class PresenceTracker {
       case "/do/subscribe":
         return this.handleSubscribe(request);
       case "/do/remove":
-        return this.handleRemove(url);
+        return this.handleRemove(request, url);
       case "/do/prekeys/publish":
         return this.handlePrekeyPublish(request);
       case "/do/prekeys/get":
         return this.handlePrekeyGet(url);
       case "/do/prekeys/remove":
-        return this.handlePrekeyRemove(url);
+        return this.handlePrekeyRemove(request, url);
       case "/do/status":
         return jsonResponse({
           leases: this.leases.size,
@@ -115,53 +164,48 @@ export class PresenceTracker {
 
   // ── Publish lease ──────────────────────────────────────────────────
 
+  /**
+   * Accept `issuedAt` for `key` only when fresh and strictly greater than the
+   * last accepted value; persists it so replays fail across reloads/removals.
+   */
+  private async claimIssuedAt(key: string, issuedAt: number, now: number): Promise<boolean> {
+    if (!isFreshIssuedAt(issuedAt, now)) return false;
+    const last = await this.state.storage.get<number>(key);
+    if (typeof last === "number" && issuedAt <= last) return false;
+    await this.state.storage.put(key, issuedAt);
+    return true;
+  }
+
   private async handlePublish(request: Request): Promise<Response> {
-    let lease: PresenceLeaseData;
-    try {
-      const body = (await request.json()) as PresenceLeaseData;
-      if (!body.identityId || !body.deviceId || !body.expiresAt) {
-        return jsonResponse({ error: "identityId, deviceId, expiresAt required" }, 400);
-      }
-      lease = body;
-    } catch {
-      return jsonResponse({ error: "invalid JSON" }, 400);
+    const body = await readBody(request, LEASE_PUBLISH_KEYS);
+    if (
+      !body ||
+      typeof body.deviceId !== "string" ||
+      !HEX32.test(body.deviceId) ||
+      typeof body.expiresAt !== "number" ||
+      !Number.isSafeInteger(body.expiresAt) ||
+      (body.nonce !== undefined && typeof body.nonce !== "string") ||
+      (body.relayHint !== undefined && typeof body.relayHint !== "string")
+    ) {
+      return malformed();
     }
+    const now = Date.now();
+    const verified = verifyIdentityAuthJson(body, "presence.publish", body.identityId, now);
+    if (!verified) return unauthorized();
+    if (verified.deviceId && toHex(verified.deviceId) !== body.deviceId) return unauthorized();
 
     // Validate expiresAt in future
-    if (lease.expiresAt <= Date.now()) {
+    if (body.expiresAt <= now) {
       return jsonResponse({ error: "lease already expired" }, 400);
     }
+    if (!(await this.claimIssuedAt(`presence-seq:${body.identityId}`, body.issuedAt as number, now))) return stale();
 
+    const { auth: _auth, ...fields } = body;
+    const lease = fields as unknown as PresenceLeaseData;
     // Cap to max TTL (AD-11)
-    const maxExpiry = Date.now() + PRESENCE_LEASE_TTL_MS;
+    const maxExpiry = now + PRESENCE_LEASE_TTL_MS;
     if (lease.expiresAt > maxExpiry) {
       lease.expiresAt = maxExpiry;
-    }
-
-    // Verify Ed25519 signature when present (AD-11)
-    if (lease.signature && lease.publicKey) {
-      try {
-        const pk = hexToBytes(lease.publicKey);
-        const sig = hexToBytes(lease.signature);
-        const msg = new TextEncoder().encode(
-          `nexnet presence lease v1:${lease.identityId}:${lease.deviceId}:${lease.issuedAt}:${lease.expiresAt}:${lease.nonce ?? ""}`,
-        );
-        if (!ed25519.verify(sig, msg, pk)) {
-          return jsonResponse({ error: "invalid lease signature" }, 403);
-        }
-      } catch {
-        return jsonResponse({ error: "malformed signature or public key" }, 400);
-      }
-    } else {
-      // Unsigned leases only when explicitly allowed (preview/tests).
-      const allow =
-        this.env.ALLOW_UNSIGNED_LEASES === "1" ||
-        (typeof process !== "undefined" &&
-          process.env?.NODE_ENV !== "production" &&
-          process.env?.ALLOW_UNSIGNED_LEASES !== "0");
-      if (!allow) {
-        return jsonResponse({ error: "lease must be signed" }, 403);
-      }
     }
 
     this.leases.set(lease.identityId, lease);
@@ -246,26 +290,22 @@ export class PresenceTracker {
   // ── Prekeys (X3DH public bundles only) ─────────────────────────────
 
   private async handlePrekeyPublish(request: Request): Promise<Response> {
-    let body: PrekeyBundleData;
-    try {
-      body = (await request.json()) as PrekeyBundleData;
-    } catch {
-      return jsonResponse({ error: "invalid JSON" }, 400);
-    }
+    const body = await readBody(request, PREKEY_PUBLISH_KEYS);
     if (
-      !body.identityId ||
-      !body.identityDhPublic ||
-      !body.signedPrekeyPublic ||
-      !body.signedPrekeySig ||
-      !body.identitySignPublic
+      !body ||
+      typeof body.identityDhPublic !== "string" ||
+      typeof body.signedPrekeyPublic !== "string" ||
+      typeof body.signedPrekeySig !== "string" ||
+      typeof body.identitySignPublic !== "string" ||
+      (body.oneTimePrekeyPublic !== undefined && typeof body.oneTimePrekeyPublic !== "string") ||
+      (body.oneTimePrekeyId !== undefined &&
+        (typeof body.oneTimePrekeyId !== "number" || !Number.isSafeInteger(body.oneTimePrekeyId)))
     ) {
-      return jsonResponse(
-        {
-          error: "identityId, identityDhPublic, signedPrekeyPublic, signedPrekeySig, identitySignPublic required",
-        },
-        400,
-      );
+      return malformed();
     }
+    const now = Date.now();
+    if (!verifyIdentityAuthJson(body, "prekeys.publish", body.identityId, now)) return unauthorized();
+
     // Verify signed prekey over SPK bytes
     try {
       const pk = hexToBytes(body.identitySignPublic);
@@ -277,19 +317,12 @@ export class PresenceTracker {
     } catch {
       return jsonResponse({ error: "invalid prekey key material" }, 400);
     }
+    if (!(await this.claimIssuedAt(`prekey-seq:${body.identityId}`, body.issuedAt as number, now))) return stale();
 
-    const stored: PrekeyBundleData = {
-      identityId: body.identityId,
-      identityDhPublic: body.identityDhPublic,
-      signedPrekeyPublic: body.signedPrekeyPublic,
-      signedPrekeySig: body.signedPrekeySig,
-      identitySignPublic: body.identitySignPublic,
-      oneTimePrekeyPublic: body.oneTimePrekeyPublic,
-      oneTimePrekeyId: body.oneTimePrekeyId,
-      updatedAt: Date.now(),
-    };
-    this.prekeys.set(body.identityId, stored);
-    await this.state.storage.put(`prekey:${body.identityId}`, stored);
+    // Signed fields verbatim plus proof; only `updatedAt` is added.
+    const stored = { ...body, updatedAt: now } as unknown as PrekeyBundleData;
+    this.prekeys.set(stored.identityId, stored);
+    await this.state.storage.put(`prekey:${stored.identityId}`, stored);
     return jsonResponse({ ok: true, updatedAt: stored.updatedAt });
   }
 
@@ -305,11 +338,28 @@ export class PresenceTracker {
     return jsonResponse(bundle);
   }
 
-  private async handlePrekeyRemove(url: URL): Promise<Response> {
-    const identityId = url.searchParams.get("identityId");
-    if (!identityId) {
-      return jsonResponse({ error: "identityId param required" }, 400);
-    }
+  /**
+   * Verify a signed `{ identityId, issuedAt, auth }` removal whose identity
+   * matches the `identityId` path param. Returns the identity or an error.
+   */
+  private async authorizeRemove(
+    request: Request,
+    url: URL,
+    operation: string,
+    seqKey: string,
+  ): Promise<string | Response> {
+    const body = await readBody(request, REMOVE_KEYS);
+    if (!body || body.identityId !== url.searchParams.get("identityId")) return malformed();
+    const now = Date.now();
+    if (!verifyIdentityAuthJson(body, operation, body.identityId, now)) return unauthorized();
+    const identityId = body.identityId as string;
+    if (!(await this.claimIssuedAt(`${seqKey}:${identityId}`, body.issuedAt as number, now))) return stale();
+    return identityId;
+  }
+
+  private async handlePrekeyRemove(request: Request, url: URL): Promise<Response> {
+    const identityId = await this.authorizeRemove(request, url, "prekeys.remove", "prekey-seq");
+    if (identityId instanceof Response) return identityId;
     const removed = this.prekeys.delete(identityId);
     if (removed) {
       await this.state.storage.delete(`prekey:${identityId}`);
@@ -319,11 +369,9 @@ export class PresenceTracker {
 
   // ── Remove ─────────────────────────────────────────────────────────
 
-  private async handleRemove(url: URL): Promise<Response> {
-    const identityId = url.searchParams.get("identityId");
-    if (!identityId) {
-      return jsonResponse({ error: "identityId param required" }, 400);
-    }
+  private async handleRemove(request: Request, url: URL): Promise<Response> {
+    const identityId = await this.authorizeRemove(request, url, "presence.remove", "presence-seq");
+    if (identityId instanceof Response) return identityId;
 
     const existed = this.leases.delete(identityId);
     if (existed) {
@@ -409,9 +457,9 @@ app.post("/presence/publish", (c) => handlePublish(c.req.raw, c.env));
 app.get("/presence/subscribe", (c) => handleSubscribe(c.req.raw, c.env));
 app.post("/prekeys/publish", (c) => handlePrekeyPublishHttp(c.req.raw, c.env));
 app.get("/presence/:identityId", (c) => handleQueryIdentity(c.req.param("identityId"), c.env));
-app.delete("/presence/:identityId", (c) => handleRemoveIdentity(c.req.param("identityId"), c.env));
+app.delete("/presence/:identityId", (c) => handleRemoveIdentity(c.req.raw, c.req.param("identityId"), c.env));
 app.get("/prekeys/:identityId", (c) => handlePrekeyGetHttp(c.req.param("identityId"), c.env));
-app.delete("/prekeys/:identityId", (c) => handlePrekeyRemoveHttp(c.req.param("identityId"), c.env));
+app.delete("/prekeys/:identityId", (c) => handlePrekeyRemoveHttp(c.req.raw, c.req.param("identityId"), c.env));
 app.notFound((c) => c.json({ error: "not found" }, 404));
 app.onError((err, c) => c.json({ error: err instanceof Error ? err.message : "internal error" }, 500));
 
@@ -437,9 +485,19 @@ async function handleSubscribe(request: Request, env: Env): Promise<Response> {
   return stub.fetch(request);
 }
 
-async function handleRemoveIdentity(identityId: string, env: Env): Promise<Response> {
+/** Forward a signed removal body; the DO checks it against the path id. */
+async function forwardRemove(doPath: string, request: Request, identityId: string, env: Env): Promise<Response> {
+  const body = await request.text();
   const stub = getPresenceStub(env);
-  return stub.fetch(`https://presence/do/remove?identityId=${encodeURIComponent(identityId)}`);
+  return stub.fetch(`https://presence${doPath}?identityId=${encodeURIComponent(identityId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+}
+
+async function handleRemoveIdentity(request: Request, identityId: string, env: Env): Promise<Response> {
+  return forwardRemove("/do/remove", request, identityId, env);
 }
 
 async function handlePrekeyPublishHttp(request: Request, env: Env): Promise<Response> {
@@ -457,9 +515,8 @@ async function handlePrekeyGetHttp(identityId: string, env: Env): Promise<Respon
   return stub.fetch(`https://presence/do/prekeys/get?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handlePrekeyRemoveHttp(identityId: string, env: Env): Promise<Response> {
-  const stub = getPresenceStub(env);
-  return stub.fetch(`https://presence/do/prekeys/remove?identityId=${encodeURIComponent(identityId)}`);
+async function handlePrekeyRemoveHttp(request: Request, identityId: string, env: Env): Promise<Response> {
+  return forwardRemove("/do/prekeys/remove", request, identityId, env);
 }
 
 function getPresenceStub(env: Env): DurableObjectStub {

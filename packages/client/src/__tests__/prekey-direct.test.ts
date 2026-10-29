@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import { setupLocalPrekeys, clearPrekeyDirectory, fetchBundle, getLocalPrekeys } from "../prekeys.js";
 import { publishBundleRemote, fetchBundleRemote, bundleToNetwork, bundleFromNetwork } from "../prekey-network.js";
@@ -54,7 +54,8 @@ describe("prekey network helpers", () => {
     };
 
     const kp = cryptoProvider.generateSigningKeyPair();
-    const id = new Uint8Array(32).fill(0xab);
+    const id = identityIdFromWallet(kp.publicKey);
+    const signer = { rootPublicKey: kp.publicKey, secretKey: kp.secretKey };
     const mat = setupLocalPrekeys(cryptoProvider, id, kp.secretKey, kp.publicKey, 1);
     const bundle = {
       identityDhPublic: mat.identityDh.publicKey,
@@ -65,16 +66,54 @@ describe("prekey network helpers", () => {
       oneTimePrekeyId: 1,
     };
 
-    await publishBundleRemote("https://presence.example", id, bundle, fetchImpl as typeof fetch);
+    await publishBundleRemote("https://presence.example", id, bundle, signer, fetchImpl as typeof fetch);
 
     clearPrekeyDirectory();
     // re-setup empty local — fetch should re-cache
-    const peer = new Uint8Array(32).fill(0xab);
+    const peer = id;
     const got = await fetchBundleRemote("https://presence.example", peer, fetchImpl as typeof fetch);
     expect(got).not.toBeNull();
     expect(got!.signedPrekeyPublic).toEqual(bundle.signedPrekeyPublic);
     // cached locally
     expect(fetchBundle(peer)?.oneTimePrekeyId).toBe(1);
+  });
+
+  test("fetchBundleRemote rejects a bundle the presence server swapped", async () => {
+    const victim = cryptoProvider.generateSigningKeyPair();
+    const victimId = identityIdFromWallet(victim.publicKey);
+    const attacker = cryptoProvider.generateSigningKeyPair();
+    const attackerId = identityIdFromWallet(attacker.publicKey);
+    const mat = setupLocalPrekeys(cryptoProvider, attackerId, attacker.secretKey, attacker.publicKey, 0);
+    const attackerBundle = {
+      identityDhPublic: mat.identityDh.publicKey,
+      signedPrekeyPublic: mat.signedPrekey.publicKey,
+      signedPrekeySig: mat.signedPrekeySig,
+      identitySignPublic: attacker.publicKey,
+    };
+    let published = "";
+    const capture = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      published = String(init?.body);
+      return new Response("{}", { status: 200 });
+    };
+    await publishBundleRemote(
+      "https://presence.example",
+      attackerId,
+      attackerBundle,
+      { rootPublicKey: attacker.publicKey, secretKey: attacker.secretKey },
+      capture as typeof fetch,
+    );
+    clearPrekeyDirectory();
+
+    // Served under the victim's id: relabelled, and with no proof at all.
+    const relabelled = { ...JSON.parse(published), identityId: Buffer.from(victimId).toString("hex") };
+    const { auth: _auth, ...unsigned } = relabelled;
+    for (const body of [relabelled, unsigned]) {
+      const serve = async () => new Response(JSON.stringify(body), { status: 200 });
+      await expect(
+        fetchBundleRemote("https://presence.example", victimId, serve as unknown as typeof fetch),
+      ).rejects.toThrow();
+      expect(fetchBundle(victimId)).toBeUndefined();
+    }
   });
 });
 

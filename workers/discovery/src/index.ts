@@ -8,8 +8,16 @@
  * - Group discovery
  *
  * AD-24: profile = username + bio, no avatar.
+ *
+ * Identity-scoped operations (profile upsert/delete, block, random match)
+ * require a signed body `{ ...fields, identityId, issuedAt, auth }` proving
+ * possession of the identity's root key (or a root-certified device key).
+ * `issuedAt` must be fresh and strictly increasing per identity, so a
+ * captured request cannot be replayed. 400 malformed, 401 missing/invalid
+ * proof, 409 stale/replayed.
  */
 
+import { isFreshIssuedAt, verifyIdentityAuthJson } from "@nexnet/protocol";
 import { DEFAULT_REPUTATION_THRESHOLD, DEFAULT_REPUTATION_WEIGHTS } from "@nexnet/types";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -35,6 +43,14 @@ interface StoredGroup {
   createdAt: number;
 }
 
+const OP_PROFILE_UPSERT = "discovery.profile.upsert";
+const OP_PROFILE_DELETE = "discovery.profile.delete";
+const OP_BLOCK = "discovery.block";
+const OP_RANDOM_MATCH = "discovery.random-match";
+const IDENTITY_HEX = /^[0-9a-f]{64}$/;
+
+type AuthorizedBody = Record<string, unknown> & { identityId: string; issuedAt: number };
+
 const MATCH_RATE_LIMIT = 5;
 const MATCH_RATE_WINDOW_MS = 60_000;
 
@@ -50,6 +66,7 @@ export class DiscoveryIndex {
   private groups = new Map<string, StoredGroup>();
   private blocks = new Map<string, Set<string>>();
   private matchRequests = new Map<string, number[]>();
+  private lastIssuedAt = new Map<string, number>();
   private loaded = false;
 
   constructor(state: DurableObjectState, _env: Env) {
@@ -66,7 +83,7 @@ export class DiscoveryIndex {
       case "/do/profile/get":
         return this.handleProfileGet(url);
       case "/do/profile/delete":
-        return this.handleProfileDelete(url);
+        return this.handleProfileDelete(request);
       case "/do/search/interest":
         return this.handleSearchInterest(request);
       case "/do/search/language":
@@ -99,22 +116,65 @@ export class DiscoveryIndex {
         this.blocks.set(key.slice("blocks:".length), new Set(value as string[]));
       } else if (key.startsWith("match-requests:")) {
         this.matchRequests.set(key.slice("match-requests:".length), value as number[]);
+      } else if (key.startsWith("auth-issued-at:")) {
+        this.lastIssuedAt.set(key.slice("auth-issued-at:".length), value as number);
       }
     }
     this.loaded = true;
   }
 
+  // ── Identity proof ─────────────────────────────────────────────────
+
+  /**
+   * Parse and authorize an identity-scoped request body. Returns the body or
+   * an error response. On success the body's `issuedAt` becomes the newest
+   * accepted for that identity, so the same signed request cannot be reused.
+   */
+  private async authorize(request: Request, operation: string): Promise<AuthorizedBody | Response> {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "invalid JSON" }, 400);
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return jsonResponse({ error: "JSON object body required" }, 400);
+    }
+    const fields = body as Record<string, unknown>;
+    if (typeof fields.identityId !== "string" || !IDENTITY_HEX.test(fields.identityId)) {
+      return jsonResponse({ error: "identityId must be 64 lowercase hex characters" }, 400);
+    }
+    if (typeof fields.issuedAt !== "number" || !Number.isSafeInteger(fields.issuedAt)) {
+      return jsonResponse({ error: "issuedAt integer timestamp required" }, 400);
+    }
+    if (fields.auth === undefined) {
+      return jsonResponse({ error: "identity proof required" }, 401);
+    }
+    const now = Date.now();
+    if (!verifyIdentityAuthJson(fields, operation, fields.identityId, now)) {
+      return jsonResponse({ error: "invalid identity proof" }, 401);
+    }
+    const identityId = fields.identityId;
+    const issuedAt = fields.issuedAt;
+    if (!isFreshIssuedAt(issuedAt, now)) {
+      return jsonResponse({ error: "stale request" }, 409);
+    }
+    if (issuedAt <= (this.lastIssuedAt.get(identityId) ?? Number.NEGATIVE_INFINITY)) {
+      return jsonResponse({ error: "replayed request" }, 409);
+    }
+    this.lastIssuedAt.set(identityId, issuedAt);
+    await this.state.storage.put(`auth-issued-at:${identityId}`, issuedAt);
+    return { ...fields, identityId, issuedAt };
+  }
+
   // ── Profile CRUD ───────────────────────────────────────────────────
 
   private async handleProfileUpsert(request: Request): Promise<Response> {
-    let body: StoredProfile;
-    try {
-      body = (await request.json()) as StoredProfile;
-      if (!body.identityId || !body.username) {
-        return jsonResponse({ error: "identityId and username required" }, 400);
-      }
-    } catch {
-      return jsonResponse({ error: "invalid JSON" }, 400);
+    const authorized = await this.authorize(request, OP_PROFILE_UPSERT);
+    if (authorized instanceof Response) return authorized;
+    const body = authorized as unknown as StoredProfile;
+    if (!body.username) {
+      return jsonResponse({ error: "username required" }, 400);
     }
 
     const profile: StoredProfile = {
@@ -148,11 +208,10 @@ export class DiscoveryIndex {
     return jsonResponse(profile);
   }
 
-  private async handleProfileDelete(url: URL): Promise<Response> {
-    const identityId = url.searchParams.get("identityId");
-    if (!identityId) {
-      return jsonResponse({ error: "identityId param required" }, 400);
-    }
+  private async handleProfileDelete(request: Request): Promise<Response> {
+    const authorized = await this.authorize(request, OP_PROFILE_DELETE);
+    if (authorized instanceof Response) return authorized;
+    const identityId = authorized.identityId;
 
     const existed = this.profiles.delete(identityId);
     if (existed) {
@@ -215,14 +274,15 @@ export class DiscoveryIndex {
   // ── Random match (AD-18) ───────────────────────────────────────────
 
   private async handleBlock(request: Request): Promise<Response> {
-    let body: { identityId?: string; blockedIdentityId?: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return jsonResponse({ error: "invalid JSON" }, 400);
-    }
+    const authorized = await this.authorize(request, OP_BLOCK);
+    if (authorized instanceof Response) return authorized;
+    const body = authorized as { identityId: string; blockedIdentityId?: string };
 
-    if (!body.identityId || !body.blockedIdentityId || body.identityId === body.blockedIdentityId) {
+    if (
+      typeof body.blockedIdentityId !== "string" ||
+      !body.blockedIdentityId ||
+      body.identityId === body.blockedIdentityId
+    ) {
       return jsonResponse({ error: "distinct identityId and blockedIdentityId required" }, 400);
     }
 
@@ -235,20 +295,17 @@ export class DiscoveryIndex {
   }
 
   private async handleRandomMatch(request: Request): Promise<Response> {
-    let body: {
-      identityId?: string;
+    const authorized = await this.authorize(request, OP_RANDOM_MATCH);
+    if (authorized instanceof Response) return authorized;
+    const body = authorized as {
+      identityId: string;
       interests?: string[];
       languages?: string[];
       exclude?: string[];
     };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return jsonResponse({ error: "invalid JSON" }, 400);
-    }
 
-    if (!body.identityId || !body.interests || !body.languages) {
-      return jsonResponse({ error: "identityId, interests, languages required" }, 400);
+    if (!Array.isArray(body.interests) || !Array.isArray(body.languages)) {
+      return jsonResponse({ error: "interests, languages required" }, 400);
     }
 
     const now = Date.now();
@@ -356,7 +413,7 @@ app.use(
 
 app.post("/discovery/profile", (c) => handleProfileUpsert(c.req.raw, c.env));
 app.get("/discovery/profile/:identityId", (c) => handleProfileGet(c.req.param("identityId"), c.env));
-app.delete("/discovery/profile/:identityId", (c) => handleProfileDelete(c.req.param("identityId"), c.env));
+app.delete("/discovery/profile/:identityId", (c) => handleProfileDelete(c.req.param("identityId"), c.req.raw, c.env));
 app.post("/discovery/search/interest", (c) => handleSearchInterest(c.req.raw, c.env));
 app.post("/discovery/search/language", (c) => handleSearchLanguage(c.req.raw, c.env));
 app.post("/discovery/random-match", (c) => handleRandomMatch(c.req.raw, c.env));
@@ -382,9 +439,23 @@ async function handleProfileGet(identityId: string, env: Env): Promise<Response>
   return stub.fetch(`https://discovery/do/profile/get?identityId=${encodeURIComponent(identityId)}`);
 }
 
-async function handleProfileDelete(identityId: string, env: Env): Promise<Response> {
+async function handleProfileDelete(identityId: string, request: Request, env: Env): Promise<Response> {
+  const body = await request.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return jsonResponse({ error: "invalid JSON" }, 400);
+  }
+  if (typeof parsed !== "object" || parsed === null || (parsed as { identityId?: unknown }).identityId !== identityId) {
+    return jsonResponse({ error: "body identityId must match path" }, 400);
+  }
   const stub = getDiscoveryStub(env);
-  return stub.fetch(`https://discovery/do/profile/delete?identityId=${encodeURIComponent(identityId)}`);
+  return stub.fetch("https://discovery/do/profile/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
 }
 
 async function handleSearchInterest(request: Request, env: Env): Promise<Response> {

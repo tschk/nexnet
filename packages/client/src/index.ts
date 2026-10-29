@@ -17,6 +17,7 @@ export {
   publishBundleRemote,
   fetchBundleRemote,
   removeBundleRemote,
+  verifiedRootPublicKey,
   bundleToNetwork,
   bundleFromNetwork,
 } from "./prekey-network.js";

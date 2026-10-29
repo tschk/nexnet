@@ -14,8 +14,9 @@ import {
   verifyIdentityAuthJson,
   type IdentitySigner,
 } from "@nexnet/protocol";
-import type { PrekeyBundle } from "./x3dh.js";
-import { publishBundle } from "./prekeys.js";
+import type { NexnetClient } from "./client.js";
+import { exportBundle, type PrekeyBundle } from "./x3dh.js";
+import { publishBundle, setupLocalPrekeys } from "./prekeys.js";
 
 /** Root public keys proven by a fetched bundle's identity proof (identity hex → key). */
 const verifiedRootKeys = new Map<string, Uint8Array>();
@@ -151,4 +152,26 @@ export async function removeBundleRemote(
   if (!resp.ok && resp.status !== 404) {
     throw new Error(`prekey remove failed: ${resp.status}`);
   }
+}
+
+/**
+ * Create this device's X3DH prekeys and publish the bundle to the client's
+ * presence service, so peers in other processes can open sessions with it.
+ */
+export async function publishLocalPrekeys(
+  client: NexnetClient,
+  oneTimeCount = 10,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  if (!client.presenceUrl) throw new Error("presenceUrl is required to publish prekeys");
+  const signer = client.identitySigner();
+  const signPublic = signer.certificate?.deviceSigningPublicKey ?? signer.rootPublicKey;
+  const material = setupLocalPrekeys(client.crypto, client.identityId, signer.secretKey, signPublic, oneTimeCount);
+  await publishBundleRemote(
+    client.presenceUrl,
+    client.identityId,
+    exportBundle(material, signPublic),
+    signer,
+    fetchImpl,
+  );
 }

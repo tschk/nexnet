@@ -17,6 +17,7 @@ export {
   publishBundleRemote,
   fetchBundleRemote,
   removeBundleRemote,
+  publishLocalPrekeys,
   verifiedRootPublicKey,
   bundleToNetwork,
   bundleFromNetwork,

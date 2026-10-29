@@ -69,12 +69,14 @@ async function senderCertificate(client: NexnetClient): Promise<DeviceCertificat
   if (!cert || !client.deviceSigningPublicKey || !client.deviceSigningSecretKey) {
     throw new Error("A root-authorized device certificate is required");
   }
+  if (cert.expiresAt <= Date.now()) {
+    throw new Error("Device certificate expired; renew it to send direct messages");
+  }
   if (
     !sameBytes(cert.accountId, client.identityId) ||
     !sameBytes(cert.deviceId, client.deviceId) ||
     !sameBytes(cert.deviceSigningPublicKey, client.deviceSigningPublicKey) ||
-    cert.issuedAt > Date.now() ||
-    cert.expiresAt <= Date.now()
+    cert.issuedAt > Date.now()
   ) {
     throw new Error("Invalid device certificate");
   }
@@ -149,7 +151,11 @@ function handleAuthorizedDirectMessage(
         const refreshed = fetchBundle(client.identityId);
         if (client.presenceUrl && refreshed) {
           void publishBundleRemote(client.presenceUrl, client.identityId, refreshed, client.identitySigner()).catch(
-            () => {},
+            (error: unknown) =>
+              client.emit("error", {
+                type: "prekey_publish_failed",
+                message: error instanceof Error ? error.message : String(error),
+              }),
           );
         }
       }

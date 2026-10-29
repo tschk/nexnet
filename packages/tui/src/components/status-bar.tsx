@@ -1,4 +1,4 @@
-import { connStatus, identity } from "../state";
+import { connProblem, connStatus, identity } from "../state";
 import { theme, hexToShort } from "../theme";
 
 export function StatusBar() {
@@ -7,6 +7,7 @@ export function StatusBar() {
       case "connected":
         return theme.success;
       case "connecting":
+      case "reconnecting":
         return theme.warning;
       default:
         return theme.error;
@@ -19,6 +20,8 @@ export function StatusBar() {
         return "● online";
       case "connecting":
         return "◌ connecting…";
+      case "reconnecting":
+        return "◌ reconnecting…";
       default:
         return "○ offline";
     }
@@ -34,9 +37,15 @@ export function StatusBar() {
       paddingRight={1}
     >
       <text fg={statusColor()}>{statusText()}</text>
+      {connProblem() && <text fg={theme.error}>{`⚠ ${shorten(connProblem()!, 64)}`}</text>}
       <text fg={theme.textDim}>
         {identity()?.username ? identity()!.username : hexToShort(identity()?.publicKeyHex ?? "—")}
       </text>
     </box>
   );
+}
+
+/** Keep the one-line status bar from wrapping. */
+function shorten(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }

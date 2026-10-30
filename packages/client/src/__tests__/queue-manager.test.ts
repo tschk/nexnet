@@ -2,9 +2,44 @@ import { DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
 import { describe, test, expect } from "bun:test";
 import { QueueManager } from "../queue-manager.js";
 import { consumePresenceMessage } from "../presence.js";
-import { cdeEncode } from "@nexnet/protocol";
+import { cdeEncode, identityIdFromWallet, issueDeviceCert, signDeliveryReceipt } from "@nexnet/protocol";
 import { cryptoProvider } from "@nexnet/crypto";
 import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
+
+const senderIdentityId = new Uint8Array(32).fill(7);
+
+function recipientFixture() {
+  const root = cryptoProvider.generateSigningKeyPair();
+  const device = cryptoProvider.generateSigningKeyPair();
+  const identityId = identityIdFromWallet(root.publicKey);
+  const deviceId = new Uint8Array(32).fill(9);
+  const certificate = issueDeviceCert(
+    root.secretKey,
+    device.publicKey,
+    new Uint8Array(32).fill(8),
+    deviceId,
+    identityId,
+    Date.now() - 1000,
+    Date.now() + 60_000,
+    1,
+  );
+  return {
+    identityId,
+    receipt(messageId: Uint8Array, sender = senderIdentityId) {
+      return signDeliveryReceipt(
+        { rootPublicKey: root.publicKey, secretKey: device.secretKey, certificate },
+        {
+          version: 2,
+          senderIdentityId: sender,
+          recipientIdentityId: identityId,
+          recipientDeviceId: deviceId,
+          messageId,
+          storedAt: Date.now(),
+        },
+      );
+    },
+  };
+}
 
 function createMockQueue(): OutboundQueueLike & { _items: OutboundQueueItem[] } {
   const _items: OutboundQueueItem[] = [];
@@ -69,11 +104,12 @@ describe("QueueManager", () => {
 
   test("presence retries only the recipient and receipt marks delivered", () => {
     const queue = createMockQueue();
-    const recipientKeys = cryptoProvider.generateSigningKeyPair();
-    const manager = new QueueManager(queue, () => recipientKeys.publicKey);
+    const peer = recipientFixture();
+    const manager = new QueueManager(queue);
     const handlers = new Map<string, (data: unknown) => void>();
     const sent: string[] = [];
     const client = {
+      identityId: senderIdentityId,
       online: true,
       on(event: string, handler: (data: unknown) => void) {
         handlers.set(event, handler);
@@ -91,7 +127,7 @@ describe("QueueManager", () => {
         return true;
       },
     } as unknown as import("../client.js").NexnetClient;
-    const recipient = new Uint8Array(32).fill(2);
+    const recipient = peer.identityId;
     const otherRecipient = new Uint8Array(32).fill(3);
     const messageId = new Uint8Array(32).fill(1);
 
@@ -137,17 +173,16 @@ describe("QueueManager", () => {
       signature: new Uint8Array(64),
     });
     expect(queue._items[0]?.deliveryState).toBe("pending");
-    const signature = cryptoProvider.sign(
-      recipientKeys.secretKey,
-      cdeEncode({ messageId, recipientDeviceId, storedAt }),
-    );
-    handlers.get("delivery_receipt")?.({
-      from: Buffer.from(recipient).toString("hex"),
-      messageId,
-      recipientDeviceId,
-      storedAt,
-      signature,
-    });
+    for (const receipt of [
+      peer.receipt(messageId, otherRecipient),
+      peer.receipt(new Uint8Array(32).fill(6)),
+      { ...peer.receipt(messageId), recipientDeviceId: Array.from({ length: 32 }, () => 4) },
+      recipientFixture().receipt(messageId),
+    ]) {
+      handlers.get("delivery_receipt")?.({ receipt });
+      expect(queue._items[0]?.deliveryState).toBe("pending");
+    }
+    handlers.get("delivery_receipt")?.({ receipt: peer.receipt(messageId) });
     expect(queue._items[0]?.deliveryState).toBe("delivered");
     manager.stop();
   });
@@ -155,11 +190,12 @@ describe("QueueManager", () => {
 
 test("legacy custom-queue envelopes never retry or mutate, even with a valid receipt", () => {
   const queue = createMockQueue();
-  const keys = cryptoProvider.generateSigningKeyPair();
-  const recipient = new Uint8Array(32).fill(2);
+  const peer = recipientFixture();
+  const recipient = peer.identityId;
   const handlers = new Map<string, (data: unknown) => void>();
   let sends = 0;
   const client = {
+    identityId: senderIdentityId,
     online: true,
     crypto: cryptoProvider,
     codec: { encode: cdeEncode },
@@ -174,7 +210,7 @@ test("legacy custom-queue envelopes never retry or mutate, even with a valid rec
       return true;
     },
   } as unknown as import("../client.js").NexnetClient;
-  const manager = new QueueManager(queue, () => keys.publicKey);
+  const manager = new QueueManager(queue);
   for (const marker of [undefined, null, "unknown-format"]) {
     queue.enqueue({
       messageId: new Uint8Array(32).fill(queue._items.length + 1),
@@ -192,15 +228,8 @@ test("legacy custom-queue envelopes never retry or mutate, even with a valid rec
     manager.processQueue(client);
     handlers.get("presence")?.({ status: "online", identityId: Buffer.from(recipient).toString("hex") });
     for (const item of queue._items) {
-      const receipt = {
-        messageId: item.messageId,
-        recipientDeviceId: new Uint8Array(32).fill(9),
-        storedAt: Date.now(),
-      };
       handlers.get("delivery_receipt")?.({
-        ...receipt,
-        from: Buffer.from(recipient).toString("hex"),
-        signature: cryptoProvider.sign(keys.secretKey, cdeEncode(receipt)),
+        receipt: peer.receipt(item.messageId),
       });
       expect(() => manager.enqueue(item)).toThrow("Queue item lacks X3DH provenance");
     }

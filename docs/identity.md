@@ -185,10 +185,17 @@ This first implementation extracts lifecycle management from the development
 TUI. It does **not** yet provide the identity daemon, durable key recovery or
 delegated-grant enforcement, and is not an exposed agent execution service.
 The development TUI's existing in-process root signer is not the pilot's
-production key-custody design. Legacy delivery receipts still verify against
-root keys; certificate-aware receipts are required before exposing a root-free
-receiving client. This extraction proves renewal and transport reception, not
-that remaining receipt migration. Transport states remain queued and delivered;
+production key-custody design. The lifecycle extraction (#9) proves renewal and
+transport reception, not verified root-free receipts. The subsequent receipt
+migration binds device-signed storage assertions to the certified receiving
+device, recipient identity, message and intended sender; two device-only
+clients can now discharge the sender queue after verification. See
+[delivered receipts](messaging.md#delivered-receipt) for the incompatible wire
+upgrade and rejection rules. Neither piece provides grant enforcement, a
+usable delegated daemon, restart-safe ratchet/key recovery or single-writer
+locking. Revocation remains open in #4; certificate expiry limits exposure
+but does not revoke a compromised certificate immediately.
+Transport states remain queued and delivered;
 accepted, completed and failed execution belong to the later agent layer.
 
 ### SSH sessions

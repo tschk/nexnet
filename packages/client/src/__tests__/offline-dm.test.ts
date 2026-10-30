@@ -105,14 +105,14 @@ async function stack() {
 }
 
 async function until(check: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error("timed out waiting for delivery");
+    if (performance.now() > deadline) throw new Error("timed out waiting for delivery");
     await Bun.sleep(10);
   }
 }
 
-test("a headless device renews before reconnect and sends DMs after the original certificate expires", async () => {
+test("device-only clients renew, receive and clear the queue only after a verified device receipt", async () => {
   const { peer } = await stack();
   const alice = await peer(true);
   await alice.client.disconnect();
@@ -124,10 +124,33 @@ test("a headless device renews before reconnect and sends DMs after the original
   expect(alice.client.deviceCertificate!.expiresAt).toBeGreaterThan(originalExpiry);
   const bob = await peer(true);
   const received: string[] = [];
+  const receipt = bob.client.sendDeliveryReceipt.bind(bob.client);
+  bob.client.sendDeliveryReceipt = () => false;
   onDirectMessage(bob.client, (_envelope, payload) => received.push(payload.text!));
-  await sendDirectMessage(alice.client, bob.client.identityId, "headless after expiry");
+  const messageId = await sendDirectMessage(alice.client, bob.client.identityId, "headless after expiry");
   await until(() => received.length === 1);
   expect(received).toEqual(["headless after expiry"]);
+  const queue = alice.client.outboundQueue();
+  const verified: unknown[] = [];
+  alice.client.on("verified_delivery_receipt", (event) => verified.push(event));
+  const unverified = Promise.withResolvers<void>();
+  alice.client.on("delivery_receipt", () => unverified.resolve());
+  bob.client.sendWs({
+    type: "delivery_receipt",
+    to: alice.client.identityHex,
+    receipt: {
+      messageId: Array.from(messageId),
+      recipientDeviceId: Array.from(bob.client.deviceId),
+      storedAt: Date.now(),
+      signature: Array.from(new Uint8Array(64)),
+    },
+  });
+  await unverified.promise;
+  expect(queue.pendingForRecipient(bob.client.identityId)).toHaveLength(1);
+  expect(verified).toHaveLength(0);
+  expect(receipt(alice.client.identityHex, messageId)).toBe(true);
+  await until(() => queue.pendingForRecipient(bob.client.identityId).length === 0);
+  expect(verified).toHaveLength(1);
 });
 
 test("a DM to an offline peer stays on the sender, survives reconnect, and delivers when the peer authenticates", async () => {

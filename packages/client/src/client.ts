@@ -16,12 +16,11 @@ import type {
 } from "@nexnet/types";
 import { EventLog, OutboundQueue } from "@nexnet/storage";
 import { publicKeyFromSecret } from "@nexnet/crypto";
-import { signIdentityAuthJson, type IdentitySigner } from "@nexnet/protocol";
+import { signDeliveryReceipt, signIdentityAuthJson, type IdentitySigner } from "@nexnet/protocol";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { consumePresenceMessage } from "./presence.js";
 import { QueueManager } from "./queue-manager.js";
-import { fetchBundleRemote, verifiedRootPublicKey } from "./prekey-network.js";
 import { DeviceCertificateLifecycle, type DeviceCertificateRenewer } from "./device-lifecycle.js";
 
 export type EventType =
@@ -52,7 +51,7 @@ export interface NexnetClientConfig {
   /** Presence service base URL; used to publish and fetch X3DH prekey bundles. */
   presenceUrl?: string;
   storagePath: string;
-  /** Legacy receipt/local-storage signing key; certified auth and DMs use deviceSigningSecretKey. */
+  /** Local-storage key material; certified auth, receipts and DMs use deviceSigningSecretKey. */
   signingSecretKey: Uint8Array;
   deviceSigningSecretKey?: Uint8Array;
   deviceSigningPublicKey?: Uint8Array;
@@ -230,12 +229,7 @@ export class NexnetClient {
     if (!this._outboundQueue) {
       mkdirSync(this.storagePath, { recursive: true });
       this._outboundQueue = OutboundQueue.open(join(this.storagePath, "outbound.db"));
-      this._queueManager = new QueueManager(this._outboundQueue, async (identityId) => {
-        if (!verifiedRootPublicKey(identityId) && this.presenceUrl) {
-          await fetchBundleRemote(this.presenceUrl, identityId);
-        }
-        return verifiedRootPublicKey(identityId);
-      });
+      this._queueManager = new QueueManager(this._outboundQueue);
       this._queueManager.start(this);
     }
     return this._outboundQueue;
@@ -312,26 +306,24 @@ export class NexnetClient {
 
   sendDeliveryReceipt(toIdentityHex: string, messageId: Uint8Array): boolean {
     if (!this._online) return false;
-    const storedAt = Date.now();
-    const receipt = {
-      messageId,
-      recipientDeviceId: this.deviceId,
-      storedAt,
-    };
-    const signature = this.crypto.sign(this.signingSecretKey, this.codec.encode(receipt));
     try {
+      if (!/^[0-9a-f]{64}$/.test(toIdentityHex)) throw new Error("invalid receipt destination");
+      const receipt = signDeliveryReceipt(this.identitySigner(), {
+        version: 2,
+        senderIdentityId: new Uint8Array(Buffer.from(toIdentityHex, "hex")),
+        recipientIdentityId: this.identityId,
+        messageId,
+        recipientDeviceId: this.deviceId,
+        storedAt: Date.now(),
+      });
       this.sendWs({
         type: "delivery_receipt",
         to: toIdentityHex,
-        receipt: {
-          ...receipt,
-          messageId: Array.from(messageId),
-          recipientDeviceId: Array.from(this.deviceId),
-          signature: Array.from(signature),
-        },
+        receipt,
       });
       return true;
-    } catch {
+    } catch (error) {
+      this.emit("error", { code: "delivery_receipt_failed", error: String(error) });
       return false;
     }
   }
@@ -571,7 +563,7 @@ export class NexnetClient {
         consumePresenceMessage(this, msg);
         break;
       case "delivery_receipt":
-        this.emit("delivery_receipt", normalizeDeliveryReceipt(msg));
+        this.emit("delivery_receipt", msg);
         break;
       case "error":
         this.emit("error", msg);
@@ -595,25 +587,6 @@ export class NexnetClient {
     this._eventLog = EventLog.open(join(this.storagePath, "events.db"), key, this.crypto);
     return this._eventLog;
   }
-}
-
-function normalizeDeliveryReceipt(msg: Record<string, unknown>): Record<string, unknown> {
-  if (typeof msg.receipt !== "object" || msg.receipt === null) return msg;
-  const receipt = msg.receipt as Record<string, unknown>;
-  return {
-    ...msg,
-    ...receipt,
-    messageId: bytes(receipt.messageId),
-    recipientDeviceId: bytes(receipt.recipientDeviceId),
-    signature: bytes(receipt.signature),
-  };
-}
-
-function bytes(value: unknown): Uint8Array | null {
-  if (!Array.isArray(value) || value.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
-    return null;
-  }
-  return new Uint8Array(value);
 }
 
 function sameId(a: Uint8Array, b: Uint8Array): boolean {

@@ -374,11 +374,12 @@ export class NexnetClient {
       // A relay that never challenges (or confirms) would otherwise hang connect();
       // closing triggers onclose, which rejects and schedules a reconnect.
       const handshakeTimer = setTimeout(() => ws.close(), this._handshakeTimeoutMs);
-      ws.onopen = () => {
-        this._ws = ws;
-      };
+      // Own the pending socket immediately: an older socket can finish closing
+      // after disconnect() has returned and a replacement has started opening.
+      this._ws = ws;
 
       ws.onmessage = (event: MessageEvent) => {
+        if (this._ws !== ws) return;
         if (authenticated) {
           this._handleMessage(event.data as string);
           return;
@@ -416,6 +417,13 @@ export class NexnetClient {
 
       ws.onclose = (event: CloseEvent) => {
         clearTimeout(handshakeTimer);
+        if (this._ws !== ws) {
+          if (!settled) {
+            settled = true;
+            reject(new Error("WebSocket connection superseded"));
+          }
+          return;
+        }
         this._online = false;
         this._ws = null;
         this.emit("disconnected", null);

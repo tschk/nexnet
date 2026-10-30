@@ -94,6 +94,12 @@ flowchart TB
 service. The SDK is `LocalNexnet` from `@nexnet/client/local-sdk`; that entry
 imports no device storage, signing keys or Bun server code.
 
+**Keep the control token out of untrusted jobs.** It permits reading this
+device's allowed-peer inbox and sending to every configured peer. Keep it in
+the principal's trusted controller, not in job environments, container images
+or model context. A job-facing API requires scoped grant enforcement, which is
+not implemented. Loopback binding does not reduce the token's authority.
+
 Every route requires `Authorization: Bearer TOKEN`, including status. The token
 is a host-provided random 32-byte value encoded as 64 lowercase hex characters.
 The daemon rejects reuse of the database unlock key as the control token.
@@ -142,6 +148,18 @@ Manager. Missing, malformed or unavailable secrets reject startup without
 environment, file or generated-key fallback. A host can instead use another
 secret provider through the callbacks. The daemon does not create or modify
 OS credentials, and a compromised host can still read the keys and inbox.
+
+**The real OS Keychain path is untested.** Current tests stub `Bun.secrets.get`;
+they prove validation and failure propagation, not native credential access.
+A real macOS check requires permission to create, read and delete disposable
+Keychain entries in the daemon user's login session, using the deployment Bun
+runtime. Separate entries must supply the unlock key and control token. The
+check must start the daemon with those readers, persist a message, restart in
+a new process and recover it. Missing or malformed entries and an unavailable
+or locked credential store must fail without a fallback. The test must not
+print secrets, and must remove its entries and disposable database afterward.
+Headless service access and any Keychain approval prompts must be checked in
+the actual service account context, not inferred from an interactive shell.
 
 `trustedPeerRoots` pins principal public keys. Identity IDs are derived from
 those keys, not accepted as claims. Both sends and inbound DM processing

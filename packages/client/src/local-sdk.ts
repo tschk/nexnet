@@ -23,6 +23,16 @@ export type {
   AgentAdmissionDecision,
 } from "./agent-envelope.js";
 
+import {
+  CAPABILITY_TTL_MS,
+  isCapabilityName,
+  parseCapabilities,
+  parseIndexedCapabilityClaim,
+  type CapabilityDescription,
+  type IndexedCapabilityClaim,
+} from "./capability-claims.js";
+export type { CapabilityDescription, IndexedCapabilityClaim } from "./capability-claims.js";
+
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const id = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
@@ -197,5 +207,36 @@ export class LocalNexnet {
     if (result.kind !== "request" || result.peer !== peer || result.request.correlationId !== parsed.correlationId)
       throw invalid();
     return result;
+  }
+
+  async advertise(
+    peer: string,
+    capabilities: CapabilityDescription[],
+    ttlMs = CAPABILITY_TTL_MS,
+  ): Promise<{ messageId: string; revision: number }> {
+    if (!id(peer)) throw invalid();
+    const result = await this.request("/v1/agent/capabilities", {
+      peer,
+      capabilities: parseCapabilities(capabilities),
+      ttlMs,
+    });
+    if (
+      !object(result) ||
+      !id(result.messageId) ||
+      typeof result.revision !== "number" ||
+      !Number.isSafeInteger(result.revision) ||
+      result.revision < 1
+    )
+      throw invalid();
+    return { messageId: result.messageId, revision: result.revision };
+  }
+
+  async capabilities(capability?: string): Promise<IndexedCapabilityClaim[]> {
+    if (capability !== undefined && !isCapabilityName(capability)) throw invalid();
+    const result = await this.request(
+      `/v1/agent/capabilities${capability === undefined ? "" : `?capability=${encodeURIComponent(capability)}`}`,
+    );
+    if (!Array.isArray(result)) throw invalid();
+    return result.map(parseIndexedCapabilityClaim);
   }
 }

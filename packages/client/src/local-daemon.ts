@@ -11,6 +11,8 @@ import { onDirectMessage, sendDirectMessage } from "./dm.js";
 import type { LocalInboxMessage, LocalMessageState, LocalPresence, LocalStatus } from "./local-api.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { AgentProtocolError, isAgentPeer, isCorrelationId, parseAgentEnvelope } from "./agent-envelope.js";
+import { CapabilityIndex } from "./capability-index.js";
+import { claimObject, parseCapabilities } from "./capability-claims.js";
 
 type DeviceSource =
   | { mode: "create"; config: PersistentClientConfig; credentials: DeviceCredentials }
@@ -55,6 +57,7 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
       : openPersistentClient(source.config);
   const state = client.persistentState!;
   const agents = new AgentMailbox(client, allowed);
+  const capabilityIndex = new CapabilityIndex(client, roots);
   let stopping = false;
   let transportError = false;
   client.on("error", () => {
@@ -114,6 +117,31 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
                 createdAt: envelope.createdAt,
               }));
             return reply(inbox);
+          }
+          if (url.pathname === "/v1/agent/capabilities") {
+            if (request.method === "GET") {
+              if (
+                [...url.searchParams.keys()].some((name) => name !== "capability") ||
+                url.searchParams.getAll("capability").length > 1
+              )
+                return failure("invalid_capabilities", 400);
+              return reply(capabilityIndex.search(url.searchParams.get("capability") ?? undefined));
+            }
+            if (request.method === "POST") {
+              if (request.headers.get("content-type") !== "application/json") return failure("invalid_json", 415);
+              const body: unknown = await request.json();
+              if (
+                !claimObject(body) ||
+                Object.keys(body).length !== 3 ||
+                !isAgentPeer(body.peer) ||
+                typeof body.ttlMs !== "number"
+              )
+                return failure("invalid_capabilities", 400);
+              return reply(
+                await capabilityIndex.publish(body.peer, parseCapabilities(body.capabilities), body.ttlMs),
+                202,
+              );
+            }
           }
           if (request.method === "GET" && url.pathname === "/v1/agent/inbox") return reply(agents.inbox());
           const agentPath = url.pathname.match(/^\/v1\/agent\/requests\/([0-9a-f]{64})\/([A-Za-z0-9_-]{1,128})$/);
@@ -219,7 +247,7 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
                 ? 404
                 : error.code === "peer_not_allowed"
                   ? 403
-                  : error.code === "invalid_envelope"
+                  : error.code === "invalid_envelope" || error.code === "invalid_capabilities"
                     ? 400
                     : 409,
             );

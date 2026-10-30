@@ -510,3 +510,35 @@ test("agent API rejects malformed versions and forbidden peers before queueing",
   expect(invalid.status).toBe(400);
   expect(await allowed.sdk.agentInbox()).toEqual([]);
 });
+
+test("signed capabilities cross real relay, remain claims, recover revisions and permit signed withdrawal", async () => {
+  const { peer } = await setup();
+  const alice = await peer(),
+    bob = await peer();
+  let a = await alice.start([bob.root]);
+  let b = await bob.start([alice.root]);
+  expect(await b.sdk.capabilities()).toEqual([]);
+  const sent = await a.sdk.advertise(bob.id, [{ name: "sum", description: "I claim to add integers" }]);
+  await until(async () => (await b.sdk.capabilities("sum")).length === 1);
+  expect((await b.sdk.capabilities("sum"))[0]).toMatchObject({
+    evidence: "signed_self_description",
+    advertisement: { identityId: alice.id, revision: sent.revision },
+  });
+  expect(await b.sdk.capabilities("unknown")).toEqual([]);
+  await expect(a.sdk.advertise("0".repeat(64), [])).rejects.toMatchObject({ code: "peer_not_allowed", status: 403 });
+  await expect(
+    a.sdk.advertise(bob.id, [
+      { name: "sum", description: "" },
+      { name: "sum", description: "duplicate" },
+    ]),
+  ).rejects.toThrow("invalid_capabilities");
+  await a.close();
+  await b.close();
+  a = await alice.start([bob.root]);
+  b = await bob.start([alice.root]);
+  expect(await b.sdk.capabilities("sum")).toHaveLength(1);
+  const withdrawal = await a.sdk.advertise(bob.id, []);
+  expect(withdrawal.revision).toBe(sent.revision + 1);
+  await until(async () => (await b.sdk.capabilities("sum")).length === 0);
+  expect((await b.sdk.capabilities())[0]!.advertisement.capabilities).toEqual([]);
+});

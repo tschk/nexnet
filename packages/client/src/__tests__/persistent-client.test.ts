@@ -1,7 +1,14 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { cryptoProvider as crypto } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert, signDeliveryReceipt } from "@nexnet/protocol";
+import {
+  cdeEncode,
+  cdeDecode,
+  identityIdFromWallet,
+  issueDeviceCert,
+  signDeliveryReceipt,
+  signIdentityAuthJson,
+} from "@nexnet/protocol";
 import { createPersistentClient, openPersistentClient } from "../persistent-client.js";
 import { sendDirectMessage, onDirectMessage } from "../dm.js";
 import { clearPrekeyDirectory } from "../prekeys.js";
@@ -10,6 +17,7 @@ import { exportBundle } from "../x3dh.js";
 import { NexnetClient } from "../client.js";
 import { AgentMailbox } from "../agent-mailbox.js";
 import type { AgentRequest, AgentEvidence } from "../agent-envelope.js";
+import { CapabilityIndex } from "../capability-index.js";
 
 const scratch = `${import.meta.dir}/../../../../.amp/in/`;
 mkdirSync(scratch, { recursive: true });
@@ -453,4 +461,140 @@ test("slow preparation crossing admission deadline rolls back acceptance and sen
     entry: { execution: { state: "failed", error: { stage: "admission", code: "admission_expired" } } },
   });
   expect(bob.client.outboundQueue().pending()).toHaveLength(1);
+});
+
+test("capability claims isolate hostile/malformed advertisements and cached rows, preserve watermarks and expire without resurrection", async () => {
+  const alice = peer(),
+    bob = peer(),
+    charlie = peer();
+  const hex = (value: Uint8Array) => Buffer.from(value).toString("hex");
+  const aId = hex(alice.client.identityId),
+    cId = hex(charlie.client.identityId);
+  const roots = new Map([
+    [aId, alice.root.publicKey],
+    [cId, charlie.root.publicKey],
+  ]);
+  onDirectMessage(
+    bob.client,
+    () => {},
+    (id) => roots.get(hex(id)),
+  );
+  let index = new CapabilityIndex(bob.client, roots);
+  const now = Date.now();
+  const fields = {
+    version: 1,
+    kind: "capability_claims",
+    identityId: aId,
+    revision: 1,
+    issuedAt: now,
+    expiresAt: now + 5000,
+    capabilities: [{ name: "sum", description: "Claimed sum service" }],
+  };
+  const signed = signIdentityAuthJson(
+    alice.client.identitySigner(),
+    "agent.capabilities.v1",
+    alice.client.identityId,
+    fields,
+  );
+  async function deliver(value: unknown, sender = alice.client, receiver = bob.client) {
+    const id = await sendDirectMessage(sender, receiver.identityId, {
+      contentType: "agent_capabilities",
+      text: typeof value === "string" ? value : JSON.stringify(value),
+    });
+    receiver.emit("dm", {
+      envelope: Array.from(
+        sender
+          .outboundQueue()
+          .pending()
+          .find((item) => hex(item.messageId) === hex(id))!.encryptedEnvelope,
+      ),
+    });
+  }
+  await deliver(signed);
+  expect(index.search("sum")).toHaveLength(1);
+  for (const hostile of [
+    "{broken",
+    { ...signed, revision: 999 },
+    { ...signed, capabilities: [{ name: "evil", description: "" }] },
+    signIdentityAuthJson(alice.client.identitySigner(), "wrong-domain", alice.client.identityId, {
+      ...fields,
+      revision: 99,
+    }),
+    signIdentityAuthJson(
+      { rootPublicKey: alice.root.publicKey, secretKey: alice.root.secretKey },
+      "agent.capabilities.v1",
+      alice.client.identityId,
+      { ...fields, revision: 100 },
+    ),
+    signIdentityAuthJson(alice.client.identitySigner(), "agent.capabilities.v1", alice.client.identityId, {
+      ...fields,
+      revision: 101,
+      authority: true,
+    }),
+    signIdentityAuthJson(alice.client.identitySigner(), "agent.capabilities.v1", alice.client.identityId, {
+      ...fields,
+      revision: 102,
+      capabilities: [{ name: "evil", description: "", authority: true }],
+    }),
+  ]) {
+    await deliver(hostile);
+    expect(index.search("sum")).toHaveLength(1);
+    expect(index.search("sum")[0]!.advertisement.revision).toBe(1);
+  }
+  await deliver(signed, charlie.client);
+  expect(index.search("sum")).toHaveLength(1);
+  const store = bob.client.persistentState!.store;
+  store.put("inbox:malformed-cbor", new Uint8Array([255]));
+  store.put("capabilities:v1:index:malformed", cdeEncode({ garbage: true }));
+  await deliver(
+    signIdentityAuthJson(charlie.client.identitySigner(), "agent.capabilities.v1", charlie.client.identityId, {
+      ...fields,
+      identityId: cId,
+    }),
+    charlie.client,
+  );
+  expect(index.search("sum")).toHaveLength(2);
+  const newer = signIdentityAuthJson(alice.client.identitySigner(), "agent.capabilities.v1", alice.client.identityId, {
+    ...fields,
+    revision: 2,
+    expiresAt: now + 1000,
+    capabilities: [{ name: "subtract", description: "Claim" }],
+  });
+  await deliver(newer);
+  expect(index.search("subtract")[0]!.advertisement.revision).toBe(2);
+  expect(index.search("sum").map((entry) => entry.advertisement.identityId)).toEqual([cId]);
+  await bob.client.close();
+  const recovered = reopen(bob.config);
+  index = new CapabilityIndex(recovered, roots);
+  expect(index.search("subtract")).toHaveLength(1);
+  setSystemTime(now + 1001);
+  onDirectMessage(
+    recovered,
+    () => {},
+    (id) => roots.get(hex(id)),
+  );
+  await deliver(signed, alice.client, recovered);
+  expect(index.search("subtract")).toEqual([]);
+  expect(index.search("sum").map((entry) => entry.advertisement.identityId)).toEqual([cId]);
+  expect(index.search()[0]!.evidence).toBe("signed_self_description");
+});
+
+test("capability publication counter and immutable outbox roll back together", async () => {
+  const alice = peer(),
+    bob = peer();
+  const bId = Buffer.from(bob.client.identityId).toString("hex");
+  const index = new CapabilityIndex(alice.client, new Map([[bId, bob.root.publicKey]]));
+  const store = alice.client.persistentState!.store,
+    put = store.put.bind(store);
+  store.put = (name, value) => {
+    if (name === "capabilities:v1:revision") throw new Error("injected revision write failure");
+    put(name, value);
+  };
+  await expect(index.publish(bId, [{ name: "sum", description: "Claim" }], 1000)).rejects.toThrow(
+    "injected revision write failure",
+  );
+  expect(store.keys("queue:")).toHaveLength(0);
+  expect(store.keys("ratchet:")).toHaveLength(0);
+  store.put = put;
+  expect((await index.publish(bId, [{ name: "sum", description: "Claim" }], 1000)).revision).toBe(1);
 });

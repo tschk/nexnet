@@ -208,7 +208,7 @@ export interface MessageEnvelope {
 
 /** Decrypted message payload */
 export interface MessagePayload {
-  contentType: "text" | "attachment_offer" | "agent";
+  contentType: "text" | "attachment_offer" | "agent" | "agent_capabilities";
   text: string;
   replyToMessageId?: MessageId;
   attachmentOffer?: AttachmentOffer;

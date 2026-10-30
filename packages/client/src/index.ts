@@ -8,6 +8,7 @@ export { startLocalDaemon, readOsSecret32 } from "./local-daemon.js";
 export type { LocalDaemonConfig } from "./local-daemon.js";
 export { LocalNexnet, LocalApiError } from "./local-sdk.js";
 export type { LocalStatus, LocalMessageState, LocalInboxMessage, LocalPresence } from "./local-api.js";
+export type { CapabilityDescription, IndexedCapabilityClaim } from "./capability-claims.js";
 export type {
   AgentValue,
   AgentRequest,

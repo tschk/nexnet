@@ -74,6 +74,7 @@ export class DeviceCertificateLifecycle {
       if (previous.expiresAt - now <= RENEW_BEFORE_EXPIRY_MS) {
         const renewed = await this.requestRenewal(previous, now);
         if (generation !== this.generation) throw new Error("certificate renewal cancelled by disconnect");
+        const receivedAt = Date.now();
         const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
         if (
           !same(renewed.accountId, previous.accountId) ||
@@ -83,8 +84,8 @@ export class DeviceCertificateLifecycle {
           renewed.capabilities !== previous.capabilities ||
           !Number.isSafeInteger(renewed.issuedAt) ||
           !Number.isSafeInteger(renewed.expiresAt) ||
-          renewed.issuedAt > now ||
-          renewed.expiresAt <= Math.max(now, Date.now()) ||
+          renewed.issuedAt > receivedAt ||
+          renewed.expiresAt <= receivedAt ||
           renewed.expiresAt - renewed.issuedAt > DEVICE_CERT_LIFETIME_MS ||
           !verifyDeviceCert(renewed, client.rootPublicKey)
         ) {

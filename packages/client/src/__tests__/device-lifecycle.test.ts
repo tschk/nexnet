@@ -69,6 +69,16 @@ test("renewal begins at 80% lifetime, not before, and preserves certified device
   expect(verifyDeviceCert(client.deviceCertificate!, client.rootPublicKey!)).toBe(true);
 });
 
+test("accepts a certificate issued after the renewal request but before the signer response arrives", async () => {
+  const { client, certificate } = device((sign) => async (cert, now) => {
+    setSystemTime(new Date(now + 1000));
+    return sign(cert, Date.now());
+  });
+  setSystemTime(new Date(certificate.expiresAt - 1000));
+  await client.ensureDeviceCertificate();
+  expect(client.deviceCertificate!.issuedAt).toBe(certificate.expiresAt);
+});
+
 test("concurrent callers share renewal and disconnect discards an in-flight signer response", async () => {
   const gate = Promise.withResolvers<void>();
   let requests = 0;

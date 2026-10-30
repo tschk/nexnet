@@ -54,6 +54,13 @@ overlap, mutual blocks and rate limits remain hard gates. See the dated
 [decision and rationale](reputation.md#first-release-ad-18); this supersedes
 the earlier 0.25 gate while session-history evidence is unavailable.
 
+**AD-25 decided 2026-10-30:** restart-safe delegated device state uses a
+host-supplied 32-byte unlock key, never stored alongside the database. Missing
+or incorrect keys fail closed; no plaintext or empty-store fallback is
+permitted. A compromised host can still read everything. OS keychain and
+secret-provider integration is deferred to the identity daemon. See the
+[decision, limits and crash-consistency contract](storage.md#ad-25-restart-safe-delegated-device-storage-2026-10-30).
+
 ## Still open (non-blocking for Phase 1)
 
 | ID    | Topic                                 | Notes                                                            |

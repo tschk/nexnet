@@ -8,17 +8,18 @@ import type { DeviceCertificate } from "@nexnet/types";
 import { NexnetClient } from "../client.js";
 import { onDirectMessage, sendDirectMessage } from "../dm.js";
 import { publishLocalPrekeys } from "../prekey-network.js";
+import { createPersistentClient, openPersistentClient } from "../persistent-client.js";
 
 // Real relay + presence; no mock routing or fake success responses.
 const RELAY_MODULE = "../../../relay-standalone/src/index.ts";
 const PRESENCE_MODULE = "../../../../workers/presence/src/index.ts";
-const scratch = join(import.meta.dir, "../../../../../.amp/in");
+const scratch = join(import.meta.dir, "../../../../.amp/in");
 mkdirSync(scratch, { recursive: true });
 const clients: NexnetClient[] = [];
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
   setSystemTime();
-  for (const client of clients.splice(0)) await client.disconnect();
+  for (const client of clients.splice(0)) await client.close();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -49,7 +50,7 @@ async function stack() {
   cleanups.push(() => presence.stop(true));
   const relayUrl = `http://127.0.0.1:${relay.server!.port}`;
   const presenceUrl = `http://127.0.0.1:${presence.port}`;
-  async function peer(renew = false) {
+  async function peer(renew = false, persistent = false) {
     const root = generateSigningKeyPair();
     const device = generateSigningKeyPair();
     const identityId = identityIdFromWallet(root.publicKey);
@@ -95,7 +96,9 @@ async function stack() {
           }
         : {}),
     };
-    const client = new NexnetClient(config);
+    const client = persistent
+      ? createPersistentClient({ ...config, unlockKey: new Uint8Array(32).fill(77) }, config)
+      : new NexnetClient(config);
     clients.push(client);
     await client.connect();
     await publishLocalPrekeys(client);
@@ -103,6 +106,34 @@ async function stack() {
   }
   return { peer, relayUrl };
 }
+
+test("persistent clients recover prekeys, offline queue, inbox and verified receipts through the real relay", async () => {
+  const { peer } = await stack();
+  const alice = await peer(true, true);
+  const bob = await peer(true, true);
+  const originalPrekeys = bob.client.persistentState!.prekeys();
+  await bob.client.close();
+  const id = await sendDirectMessage(alice.client, bob.client.identityId, "recover end to end");
+  await alice.client.close();
+  const sender = openPersistentClient({ ...alice.config, unlockKey: new Uint8Array(32).fill(77) });
+  const receiver = openPersistentClient({ ...bob.config, unlockKey: new Uint8Array(32).fill(77) });
+  clients.push(sender, receiver);
+  expect(receiver.persistentState!.prekeys()).toEqual(originalPrekeys);
+  const visible: string[] = [];
+  onDirectMessage(receiver, (_envelope, payload) => visible.push(payload.text!));
+  await sender.connect();
+  await receiver.connect();
+  await until(() => receiver.inbox().length === 1);
+  await until(() => sender.outboundQueue().pendingForRecipient(receiver.identityId).length === 0);
+  expect(visible).toEqual(["recover end to end"]);
+  await sender.close();
+  await receiver.close();
+  const recoveredSender = openPersistentClient({ ...alice.config, unlockKey: new Uint8Array(32).fill(77) });
+  const recoveredReceiver = openPersistentClient({ ...bob.config, unlockKey: new Uint8Array(32).fill(77) });
+  clients.push(recoveredSender, recoveredReceiver);
+  expect(recoveredSender.outboundQueue().pending()).toHaveLength(0);
+  expect(recoveredReceiver.inbox().map((message) => message.envelope.messageId)).toEqual([id]);
+});
 
 async function until(check: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {
   const deadline = performance.now() + ms;

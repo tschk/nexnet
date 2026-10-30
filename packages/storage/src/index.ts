@@ -2,3 +2,4 @@ export { EventLog } from "./log.js";
 export { OutboundQueue } from "./queue.js";
 export type { OutboundQueueItem, DeliveryState } from "./queue.js";
 export { SessionStore } from "./sessions.js";
+export { DeviceStore } from "./device-store.js";

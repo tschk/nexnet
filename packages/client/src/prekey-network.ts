@@ -169,7 +169,8 @@ export async function publishLocalPrekeys(
   if (!client.presenceUrl) throw new Error("presenceUrl is required to publish prekeys");
   const signer = client.identitySigner();
   const signPublic = signer.certificate?.deviceSigningPublicKey ?? signer.rootPublicKey;
-  const material = createLocalPrekeys(client.crypto, signer.secretKey, oneTimeCount);
+  const material =
+    client.persistentState?.prekeys() ?? createLocalPrekeys(client.crypto, signer.secretKey, oneTimeCount);
   // Keep the previous keys until presence holds the new bundle: a sender may
   // still use the old one, and we must be able to answer it.
   await publishBundleRemote(
@@ -179,5 +180,6 @@ export async function publishLocalPrekeys(
     signer,
     fetchImpl,
   );
-  installLocalPrekeys(client.identityId, material, signPublic);
+  if (client.persistentState) publishBundle(client.identityId, exportBundle(material, signPublic));
+  else installLocalPrekeys(client.identityId, material, signPublic);
 }

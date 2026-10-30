@@ -464,6 +464,6 @@ export interface OutboundQueueLike {
   enqueue(item: OutboundQueueItem): void;
   pending(): OutboundQueueItem[];
   pendingForRecipient(identityId: IdentityId): OutboundQueueItem[];
-  markDelivered(messageId: MessageId): void;
+  markDelivered(messageId: MessageId, receipt?: unknown): void;
   markAttempt(messageId: MessageId): void;
 }

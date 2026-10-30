@@ -45,6 +45,8 @@ const X3DH_PREFIX_LEN = 1 + 32 + 32 + 4; // ver || IKa || EKa || otp_id
 
 export interface SendDirectMessageOptions {
   directOnly?: boolean;
+  /** Synchronous host-owned metadata write, atomic with ratchet/outbox. Persistent clients only. */
+  commitMetadata?: (messageId: MessageId) => void;
 }
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -242,6 +244,8 @@ export async function sendDirectMessage(
   if (client.persistentState && (queue || options.directOnly)) {
     throw new Error("Persistent DMs require the device's transactional outbox");
   }
+  if (options.commitMetadata && !client.persistentState)
+    throw new Error("Atomic metadata requires a persistent client");
   await client.ensureDeviceCertificate();
   const certificate = await senderCertificate(client);
   const conversationId = deriveConversationId(client.crypto, client.identityId, recipientId);
@@ -353,7 +357,7 @@ export async function sendDirectMessage(
       deliveryState: "pending" as const,
     };
     if (client.persistentState) {
-      client.persistentState.commitSend(sessionKey, advanced, item);
+      client.persistentState.commitSend(sessionKey, advanced, item, options.commitMetadata);
       client.outboundQueue();
     } else {
       (queue ?? client.outboundQueue()).enqueue(item);

@@ -127,8 +127,8 @@ are rejected, and request bodies are limited to 16 KiB. A send response does
 not imply delivery. `delivered` means verified durable recipient storage, not
 accepted or completed execution. SDK timeouts and lost responses can leave an
 ambiguous send result. The SDK does not retry automatically: durable request
-idempotency, correlation, deadlines and execution errors belong to the next
-piece. The inbox currently returns the complete allowed-peer snapshot;
+idempotency is available through the agent-envelope routes below, not the raw
+text-send route. The inbox currently returns the complete allowed-peer snapshot;
 pagination, quotas, backpressure and retention remain later work.
 
 ### Host ownership and trusted peers
@@ -187,3 +187,102 @@ Revocation remains open as #4. Certificate renewal does not revoke a stolen
 credential. Accepted, completed and failed execution are not inferred from
 queued or delivered transport states. A2A remains an optional future HTTP
 adapter at agent endpoints, not an A2A-over-Nexnet binding.
+
+## Agent envelopes v1: delivery is not execution
+
+The privileged controller can exchange versioned `request`, `result` and
+`error` envelopes over the existing authenticated, encrypted DM transport.
+This adds lifecycle records, **not a job executor or permission to execute**.
+The same control-token and trusted-peer restrictions above apply. Do not give
+these SDK methods or their token to untrusted jobs. Grants remain unimplemented.
+
+| Method | Route                                     | SDK method                       | Purpose                                                                   |
+| ------ | ----------------------------------------- | -------------------------------- | ------------------------------------------------------------------------- |
+| POST   | `/v1/agent/requests`                      | `submit(peer, request)`          | Durably queue a request or return the original request's state            |
+| GET    | `/v1/agent/requests/:peer/:correlationId` | `execution(peer, correlationId)` | Separate transport and peer-reported execution states                     |
+| GET    | `/v1/agent/inbox`                         | `agentInbox()`                   | Requests and explicit rejected-message records                            |
+| POST   | `/v1/agent/admit`                         | `admit(peer, correlationId)`     | Record admission or reject expired new admission                          |
+| POST   | `/v1/agent/respond`                       | `respond(peer, resultOrError)`   | Reject admission, or record completion or execution error after admission |
+
+POST bodies are `{peer, envelope}`, except admission's `{peer, correlationId}`.
+Each envelope has `version: 1`, `kind`, and `correlationId`. Requests additionally
+have `capability`, `acceptBefore` (Unix milliseconds) and JSON `input`. Results
+have `status: "accepted"`, or `status: "completed"` with JSON `value`. Errors
+have `stage: "admission" | "execution"`, `code` and `message`. Unknown versions,
+fields, invalid variants, non-JSON values, nesting beyond 12 levels and envelopes
+over 4096 UTF-8 bytes are rejected. Correlation IDs use 1–128 ASCII letters,
+digits, underscores or hyphens; controllers should generate at least 128 random
+bits and persist the ID before submitting. Capability names are identifiers,
+not verified capabilities or grant checks.
+
+The outer DM remains CDE-encoded and device-authenticated. Envelope JSON is
+inside its encrypted application payload (`contentType: "agent"`); it is not
+a separate signature format. Identity comes from the verified DM sender, never
+from an envelope's claimed sender. Request equality uses canonical CDE bytes,
+so JSON object key order does not create a conflict.
+
+### Admission deadlines do not bound execution
+
+`AgentOutgoing.transport.state` is `queued | delivered`. Separately,
+`execution` is one of:
+
+- `{state: "awaiting_evidence"}`: no execution evidence yet, **not failure**.
+- `{state: "accepted", outcome: "not_reported"}`: admitted, outcome unknown,
+  **not failure and never permission to re-execute**.
+- `{state: "completed", result}`: an explicit peer report of completion.
+- `{state: "failed", error}`: an explicit peer admission or execution error.
+
+Transport receipts only prove durable storage. There is no generic `unknown`
+failure variant and no automatic execution retry. `acceptBefore` only prevents
+**new admission** at or after the receiver's local wall-clock deadline. Admission
+is checked again at the transaction commit, including after slow certificate or
+bundle preparation. An expired request receives `admission_expired`, not a claim
+that accepted work was cancelled. Clock synchronisation is the host's concern.
+
+Once accepted, crossing that deadline leaves the state accepted with unknown
+outcome until an explicit result or error arrives. Late evidence still counts;
+reordered admission evidence cannot regress a terminal outcome. Conflicting
+terminal evidence is rejected and exposed in `agentInbox()`, not overwritten.
+A hard completion deadline or cancellation guarantee requires executor
+cooperation and a cancellation protocol; neither is provided here.
+The trusted controller can report an admission error before acceptance, such
+as an unsupported capability. An admission error cannot undo accepted work;
+only explicit execution evidence can settle its outcome.
+
+### Durable idempotency is not exactly-once side effects
+
+Incoming deduplication is scoped to the authenticated principal sender plus
+correlation ID, including messages from different sender devices, within one
+receiving device's store. The closed pilot requires one admitting device per
+principal endpoint: independent receiving devices do not share admission records
+and cannot promise cross-device deduplication. Outgoing records are scoped to recipient plus
+correlation ID in this device's store. An identical repeated submission returns
+the original message ID and state, even after restart. Changed content under the
+same ID returns `correlation_conflict` (HTTP 409); conflicting inbound messages
+are durable `rejected` entries rather than merged requests. Errors and results
+must match the original authenticated recipient and correlation ID.
+
+Admission returns `kind: "new_admission"` only for the operation that durably
+commits acceptance; its type guarantees accepted state. Repeated/concurrent
+admission or recovery returns `kind: "existing_decision"`, **never a new work
+claim**. No work starts automatically. A trusted external executor must enforce
+grants separately before executing anything. Do not treat admission as a grant.
+
+Ratchet advancement, immutable response/request outbox and associated lifecycle
+record commit in one encrypted SQLite transaction. Authenticated inbox messages
+are replayed into lifecycle records with transactional processed markers, so a
+crash between transport reception and application observation does not lose work.
+Accepted state commits with its response before the HTTP admission reply. A crash
+after that commit but before execution can therefore strand accepted work with
+unknown outcome. Recovery must reconcile it, not execute it again. No atomicity
+with external side effects or exactly-once execution is claimed.
+
+Idempotency records and inbox/outbox currently have no automatic expiry or
+pruning. Retention and quotas are later pieces; never delete deduplication records
+while their IDs could be replayed. AD-25's compromised-host and old-snapshot
+limitations still apply. Native Keychain round-trip remains untested as described
+above. The stack is #9 renewal/reception, #10 verified root-free receipts, #11
+crash-safe recovery/single-writer ownership, #12 privileged local daemon/SDK,
+and these envelopes. It is still not a usable delegated-agent execution service:
+receiver-verifiable grant enforcement is missing, revocation remains #4, and
+delivery is not execution.

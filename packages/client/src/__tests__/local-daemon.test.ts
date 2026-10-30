@@ -20,6 +20,7 @@ const scratch = `${import.meta.dir}/../../../../.amp/in/`;
 mkdirSync(scratch, { recursive: true });
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
+  setSystemTime();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   clearPrekeyDirectory();
 });
@@ -336,4 +337,176 @@ test("native OS secret reader rejects missing, malformed and unavailable secrets
   } finally {
     reader.mockRestore();
   }
+});
+
+test("agent delivery is not admission; concurrent replay and restart cannot re-admit, and late evidence completes", async () => {
+  const { peer } = await setup();
+  const alice = await peer(),
+    bob = await peer();
+  let a = await alice.start([bob.root]),
+    b = await bob.start([alice.root]);
+  const request = {
+    version: 1,
+    kind: "request",
+    correlationId: "late-1",
+    capability: "sum",
+    acceptBefore: Date.now() + 60_000,
+    input: { a: 8, b: 3 },
+  } as const;
+  const sent = await Promise.all([a.sdk.submit(bob.id, request), a.sdk.submit(bob.id, request)]);
+  expect(sent[0]!.transport.messageId).toBe(sent[1]!.transport.messageId);
+  await until(async () => (await a.sdk.execution(bob.id, request.correlationId)).transport.state === "delivered");
+  expect((await a.sdk.execution(bob.id, request.correlationId)).execution).toEqual({ state: "awaiting_evidence" });
+  expect((await b.sdk.agentInbox()).filter((entry) => entry.kind === "request")).toHaveLength(1);
+  await expect(a.sdk.submit(bob.id, { ...request, input: { a: 3, b: 8 } })).rejects.toMatchObject({
+    code: "correlation_conflict",
+    status: 409,
+  });
+  await expect(
+    b.sdk.respond(alice.id, {
+      version: 1,
+      kind: "result",
+      correlationId: request.correlationId,
+      status: "completed",
+      value: 11,
+    }),
+  ).rejects.toMatchObject({ code: "not_accepted" });
+  const admissions = await Promise.all([
+    b.sdk.admit(alice.id, request.correlationId),
+    b.sdk.admit(alice.id, request.correlationId),
+  ]);
+  expect(admissions.map((entry) => entry.kind).sort()).toEqual(["existing_decision", "new_admission"]);
+  await until(async () => (await a.sdk.execution(bob.id, request.correlationId)).execution.state === "accepted");
+  await a.close();
+  await b.close();
+  a = await alice.start([bob.root]);
+  b = await bob.start([alice.root]);
+  setSystemTime(request.acceptBefore + 1);
+  expect((await b.sdk.admit(alice.id, request.correlationId)).kind).toBe("existing_decision");
+  expect((await a.sdk.submit(bob.id, request)).transport.messageId).toBe(sent[0]!.transport.messageId);
+  expect((await a.sdk.execution(bob.id, request.correlationId)).execution).toEqual({
+    state: "accepted",
+    outcome: "not_reported",
+  });
+  const result = {
+    version: 1,
+    kind: "result",
+    correlationId: request.correlationId,
+    status: "completed",
+    value: { total: 11 },
+  } as const;
+  await b.sdk.respond(alice.id, result);
+  await b.sdk.respond(alice.id, result);
+  await until(async () => (await a.sdk.execution(bob.id, request.correlationId)).execution.state === "completed");
+  expect((await a.sdk.execution(bob.id, request.correlationId)).execution).toEqual({
+    state: "completed",
+    result: { total: 11 },
+  });
+  await expect(b.sdk.respond(alice.id, { ...result, value: { total: 12 } })).rejects.toMatchObject({
+    code: "conflicting_evidence",
+  });
+  setSystemTime();
+});
+
+test("admission deadline boundary rejects new work but not replayed decisions; explicit execution errors survive restart", async () => {
+  const { peer } = await setup();
+  const alice = await peer(),
+    bob = await peer();
+  const a = await alice.start([bob.root]);
+  let b = await bob.start([alice.root]);
+  const deadline = Date.now() + 30_000;
+  for (const correlationId of ["at-boundary", "before-boundary"]) {
+    await a.sdk.submit(bob.id, {
+      version: 1,
+      kind: "request",
+      correlationId,
+      capability: "sum",
+      acceptBefore: deadline,
+      input: 5,
+    });
+  }
+  await until(async () => (await b.sdk.agentInbox()).length === 2);
+  setSystemTime(deadline - 1);
+  expect((await b.sdk.admit(alice.id, "before-boundary")).kind).toBe("new_admission");
+  setSystemTime(deadline);
+  expect((await a.sdk.execution(bob.id, "at-boundary")).execution.state).toBe("awaiting_evidence");
+  const expired = await b.sdk.admit(alice.id, "at-boundary");
+  expect(expired.entry.execution).toMatchObject({
+    state: "failed",
+    error: { stage: "admission", code: "admission_expired" },
+  });
+  expect((await b.sdk.admit(alice.id, "before-boundary")).entry.execution.state).toBe("accepted");
+  await b.sdk.respond(alice.id, {
+    version: 1,
+    kind: "error",
+    correlationId: "before-boundary",
+    stage: "execution",
+    code: "executor_error",
+    message: "Explicit executor report",
+  });
+  await until(async () => (await a.sdk.execution(bob.id, "before-boundary")).execution.state === "failed");
+  await until(async () => (await a.sdk.execution(bob.id, "at-boundary")).execution.state === "failed");
+  await b.close();
+  b = await bob.start([alice.root]);
+  expect((await b.sdk.admit(alice.id, "before-boundary")).entry.execution).toMatchObject({
+    state: "failed",
+    error: { stage: "execution", code: "executor_error" },
+  });
+  await a.sdk.submit(bob.id, {
+    version: 1,
+    kind: "request",
+    correlationId: "unsupported",
+    capability: "missing",
+    acceptBefore: deadline + 1000,
+    input: null,
+  });
+  await until(async () =>
+    (await b.sdk.agentInbox()).some(
+      (entry) => entry.kind === "request" && entry.request.correlationId === "unsupported",
+    ),
+  );
+  const rejection = {
+    version: 1,
+    kind: "error",
+    correlationId: "unsupported",
+    stage: "admission",
+    code: "unsupported_capability",
+    message: "Not supported",
+  } as const;
+  await b.sdk.respond(alice.id, rejection);
+  await b.sdk.respond(alice.id, rejection);
+  await until(async () => (await a.sdk.execution(bob.id, "unsupported")).execution.state === "failed");
+  expect((await b.sdk.admit(alice.id, "unsupported")).kind).toBe("existing_decision");
+  setSystemTime();
+});
+
+test("agent API rejects malformed versions and forbidden peers before queueing", async () => {
+  const { peer } = await setup();
+  const alice = await peer(),
+    bob = await peer();
+  const a = await alice.start([]);
+  const request = {
+    version: 1,
+    kind: "request",
+    correlationId: "guard",
+    capability: "sum",
+    acceptBefore: Date.now() + 60_000,
+    input: 4,
+  } as const;
+  await expect(a.sdk.submit(bob.id, request)).rejects.toMatchObject({ code: "peer_not_allowed", status: 403 });
+  const response = await fetch(`${a.url}/v1/agent/requests`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${alice.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ peer: alice.id, envelope: { ...request, version: 2 } }),
+  });
+  expect(response.status).toBe(403);
+  await a.close();
+  const allowed = await alice.start([bob.root]);
+  const invalid = await fetch(`${allowed.url}/v1/agent/requests`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${alice.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ peer: bob.id, envelope: { ...request, version: 2 } }),
+  });
+  expect(invalid.status).toBe(400);
+  expect(await allowed.sdk.agentInbox()).toEqual([]);
 });

@@ -142,10 +142,16 @@ export class PersistentDmState implements OutboundQueueLike {
     });
   }
 
-  commitSend(sessionKey: string, state: RatchetState, item: OutboundQueueItem): void {
+  commitSend(
+    sessionKey: string,
+    state: RatchetState,
+    item: OutboundQueueItem,
+    commitMetadata?: (messageId: Uint8Array) => void,
+  ): void {
     this.store.transaction(() => {
       this.saveSession(sessionKey, state);
       this.enqueue(item);
+      commitMetadata?.(item.messageId);
     });
   }
 }

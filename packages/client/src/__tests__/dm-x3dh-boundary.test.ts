@@ -57,6 +57,7 @@ function peer(fill: number) {
     rootPublicKey: root.publicKey,
     online: true,
     outboundQueue: () => outbound,
+    async ensureDeviceCertificate() {},
     on(event: string, handler: (data: unknown) => void) {
       handlers.set(event, handler);
     },

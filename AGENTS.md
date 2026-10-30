@@ -18,7 +18,7 @@ chat. Privacy-routed stranger discovery.
 - Chain holds scarce public state only — never private chat content
 - Messages immutable: no edit / unsend protocol
 - Delivered receipts only; no read receipts / last-seen / typing in v1
-- Passkey on every interactive app open; device cert until process death (AD-6)
+- Passkey on every interactive app open; 11h device certs with renewal; explicit principal-delegated non-interactive exception in docs/identity.md (AD-6)
 - DM fanout only to online devices; history via P2P device sync (AD-7)
 - Max 1 username owned per wallet; free creation with rate limits; transfers disabled (AD-10)
 - Presence lease TTL 90s (AD-11); global presence visibility (AD-12)

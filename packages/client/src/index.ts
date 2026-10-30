@@ -1,5 +1,7 @@
 export { NexnetClient } from "./client.js";
 export type { NexnetClientConfig, EventType, EventHandler } from "./client.js";
+export { DEVICE_CERT_LIFETIME_MS } from "./device-lifecycle.js";
+export type { DeviceCertificateRenewer } from "./device-lifecycle.js";
 
 export { sendDirectMessage, onDirectMessage, deriveConversationId, DM_WIRE_X3DH } from "./dm.js";
 

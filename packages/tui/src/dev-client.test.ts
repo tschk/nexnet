@@ -5,13 +5,7 @@ import { join } from "node:path";
 import { cryptoProvider, generateKeyPair, generateSigningKeyPair, randomBytes } from "@nexnet/crypto";
 import { NexnetClient, onDirectMessage, publishLocalPrekeys, sendDirectMessage } from "@nexnet/client";
 import { cdeDecode, cdeEncode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
-import {
-  connectDev,
-  disconnectDev,
-  generateIdentity,
-  renewDeviceCertificateIfNeeded,
-  sendDevMessage,
-} from "./dev-client";
+import { connectDev, disconnectDev, generateIdentity, sendDevMessage } from "./dev-client";
 import { connProblem, connStatus, conversations, identity } from "./state";
 
 // Real relay and presence service, loaded by path so the typecheck stays local.
@@ -215,7 +209,8 @@ test("a rejected prekey republish during renewal is shown, not swallowed", async
 
   presenceFailure = 401;
   setSystemTime(new Date(Date.now() + 10 * HOUR));
-  await renewDeviceCertificateIfNeeded();
+  const sent = await sendDevMessage("cd".repeat(32), "cannot publish");
+  expect(sent.error).toContain("401");
   expect(connProblem()).toContain("prekey republish failed");
   expect(connProblem()).toContain("401");
 });

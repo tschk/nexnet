@@ -1,9 +1,10 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cryptoProvider, generateKeyPair, generateSigningKeyPair, randomBytes } from "@nexnet/crypto";
 import { cdeDecode, cdeEncode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { OutboundQueue } from "@nexnet/storage";
+import type { DeviceCertificate } from "@nexnet/types";
 import { NexnetClient } from "../client.js";
 import { onDirectMessage, sendDirectMessage } from "../dm.js";
 import { publishLocalPrekeys } from "../prekey-network.js";
@@ -16,6 +17,7 @@ mkdirSync(scratch, { recursive: true });
 const clients: NexnetClient[] = [];
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
+  setSystemTime();
   for (const client of clients.splice(0)) await client.disconnect();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
@@ -47,7 +49,7 @@ async function stack() {
   cleanups.push(() => presence.stop(true));
   const relayUrl = `http://127.0.0.1:${relay.server!.port}`;
   const presenceUrl = `http://127.0.0.1:${presence.port}`;
-  async function peer() {
+  async function peer(renew = false) {
     const root = generateSigningKeyPair();
     const device = generateSigningKeyPair();
     const identityId = identityIdFromWallet(root.publicKey);
@@ -62,7 +64,7 @@ async function stack() {
       relayUrl,
       presenceUrl,
       storagePath,
-      signingSecretKey: root.secretKey,
+      signingSecretKey: renew ? device.secretKey : root.secretKey,
       rootPublicKey: root.publicKey,
       deviceSigningSecretKey: device.secretKey,
       deviceSigningPublicKey: device.publicKey,
@@ -76,6 +78,22 @@ async function stack() {
         Date.now() + 3_600_000,
         1,
       ),
+      // Stand-in for the later identity daemon: only this callback has root authority.
+      ...(renew
+        ? {
+            renewDeviceCertificate: async (certificate: DeviceCertificate, now: number) =>
+              issueDeviceCert(
+                root.secretKey,
+                certificate.deviceSigningPublicKey,
+                certificate.deviceEncryptionPublicKey,
+                certificate.deviceId,
+                certificate.accountId,
+                now,
+                now + 11 * 3_600_000,
+                certificate.capabilities,
+              ),
+          }
+        : {}),
     };
     const client = new NexnetClient(config);
     clients.push(client);
@@ -93,6 +111,24 @@ async function until(check: () => boolean | Promise<boolean>, ms = 3000): Promis
     await Bun.sleep(10);
   }
 }
+
+test("a headless device renews before reconnect and sends DMs after the original certificate expires", async () => {
+  const { peer } = await stack();
+  const alice = await peer(true);
+  await alice.client.disconnect();
+  const originalExpiry = alice.client.deviceCertificate!.expiresAt;
+  setSystemTime(new Date(originalExpiry + 1000));
+  // No TUI adapter and no principal root secret in the client configuration.
+  await alice.client.connect();
+  expect(alice.client.online).toBe(true);
+  expect(alice.client.deviceCertificate!.expiresAt).toBeGreaterThan(originalExpiry);
+  const bob = await peer(true);
+  const received: string[] = [];
+  onDirectMessage(bob.client, (_envelope, payload) => received.push(payload.text!));
+  await sendDirectMessage(alice.client, bob.client.identityId, "headless after expiry");
+  await until(() => received.length === 1);
+  expect(received).toEqual(["headless after expiry"]);
+});
 
 test("a DM to an offline peer stays on the sender, survives reconnect, and delivers when the peer authenticates", async () => {
   const { peer, relayUrl } = await stack();

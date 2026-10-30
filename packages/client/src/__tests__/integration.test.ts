@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
@@ -165,8 +165,10 @@ describe("integration", () => {
   let storageRoot: string;
 
   beforeEach(() => {
-    storageRoot = mkdtempSync(`${import.meta.dir}/../../../../../.amp/in/dm-integration-`);
     origWs = globalThis.WebSocket;
+    const scratch = `${import.meta.dir}/../../../../.amp/in/`;
+    mkdirSync(scratch, { recursive: true });
+    storageRoot = mkdtempSync(`${scratch}dm-integration-`);
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
     MockWebSocket.instances = [];
     MockWebSocket.autoConnect = true;

@@ -4,6 +4,10 @@ export { DEVICE_CERT_LIFETIME_MS } from "./device-lifecycle.js";
 export type { DeviceCertificateRenewer } from "./device-lifecycle.js";
 export { createPersistentClient, openPersistentClient } from "./persistent-client.js";
 export type { DeviceCredentials, StoredInboxMessage, PersistentClientConfig } from "./persistent-client.js";
+export { startLocalDaemon, readOsSecret32 } from "./local-daemon.js";
+export type { LocalDaemonConfig } from "./local-daemon.js";
+export { LocalNexnet, LocalApiError } from "./local-sdk.js";
+export type { LocalStatus, LocalMessageState, LocalInboxMessage, LocalPresence } from "./local-api.js";
 
 export { sendDirectMessage, onDirectMessage, deriveConversationId, DM_WIRE_X3DH } from "./dm.js";
 

@@ -1,25 +1,34 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cryptoProvider, generateKeyPair, generateSigningKeyPair, randomBytes } from "@nexnet/crypto";
 import { NexnetClient, onDirectMessage, publishLocalPrekeys, sendDirectMessage } from "@nexnet/client";
 import { cdeDecode, cdeEncode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
-import { connectDev, disconnectDev, generateIdentity, sendDevMessage } from "./dev-client";
-import { conversations, identity } from "./state";
+import {
+  connectDev,
+  disconnectDev,
+  generateIdentity,
+  renewDeviceCertificateIfNeeded,
+  sendDevMessage,
+} from "./dev-client";
+import { connProblem, connStatus, conversations, identity } from "./state";
 
 // Real relay and presence service, loaded by path so the typecheck stays local.
 const RELAY_MODULE = "../../relay-standalone/src/index.ts";
 const PRESENCE_MODULE = "../../../workers/presence/src/index.ts";
-let relay: { server: { port: number } | null; stop(): void };
+let relay: { server: { port: number } | null; stop(closeActiveConnections?: boolean): unknown };
 let presence: ReturnType<typeof Bun.serve>;
 let relayUrl = "";
+let createRelay: (() => { listen(options: unknown): typeof relay }) | null = null;
+/** When set, presence answers every request with this status (simulates an outage or rejection). */
+let presenceFailure: number | null = null;
 let presenceUrl = "";
 
 beforeAll(async () => {
-  const { createRelay } = await import(RELAY_MODULE);
+  ({ createRelay } = await import(RELAY_MODULE));
   const { default: presenceWorker, PresenceTracker } = await import(PRESENCE_MODULE);
-  relay = createRelay().listen({ port: 0, hostname: "127.0.0.1" });
+  relay = createRelay!().listen({ port: 0, hostname: "127.0.0.1" });
   const store = new Map<string, unknown>();
   const tracker = new PresenceTracker(
     {
@@ -39,11 +48,23 @@ beforeAll(async () => {
       get: () => ({ fetch: (input: RequestInfo, init?: RequestInit) => tracker.fetch(new Request(input, init)) }),
     },
   };
-  presence = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req) => presenceWorker.fetch(req, env) });
+  presence = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: (req) =>
+      presenceFailure
+        ? new Response(JSON.stringify({ error: "missing or invalid identity proof" }), { status: presenceFailure })
+        : presenceWorker.fetch(req, env),
+  });
   relayUrl = `ws://127.0.0.1:${relay.server!.port}`;
   presenceUrl = `http://127.0.0.1:${presence.port}`;
   generateIdentity();
   await connectDev(relayUrl, presenceUrl);
+});
+
+afterEach(() => {
+  setSystemTime();
+  presenceFailure = null;
 });
 
 afterAll(() => {
@@ -52,7 +73,7 @@ afterAll(() => {
   presence.stop(true);
 });
 
-async function peer(): Promise<NexnetClient> {
+async function peer(certLifetimeMs = 60_000): Promise<NexnetClient> {
   const root = generateSigningKeyPair();
   const device = generateSigningKeyPair();
   const identityId = identityIdFromWallet(root.publicKey);
@@ -77,7 +98,7 @@ async function peer(): Promise<NexnetClient> {
       deviceId,
       identityId,
       now - 1000,
-      now + 60_000,
+      now + certLifetimeMs,
       1,
     ),
   });
@@ -146,4 +167,49 @@ test("without NEXNET_PRESENCE_URL a failed DM says so instead of a bare failure"
   const result = await sendDevMessage(peerHex, "hi");
   expect(result.error).toContain("NEXNET_PRESENCE_URL is not set");
   expect(messagesWith(peerHex)[0]?.error).toContain("NEXNET_PRESENCE_URL is not set");
+});
+
+const HOUR = 60 * 60 * 1000;
+
+test("past the device certificate's 11h expiry, DMs and reconnects still work and status is honest", async () => {
+  disconnectDev();
+  generateIdentity();
+  await connectDev(relayUrl, presenceUrl);
+  const bob = await peer(48 * HOUR);
+  onDirectMessage(bob, () => {});
+
+  setSystemTime(new Date(Date.now() + 12 * HOUR));
+
+  // Sending renews the certificate first instead of failing with an expired one.
+  const sent = await sendDevMessage(bob.identityHex, "still here");
+  expect(sent.error).toBeUndefined();
+  await until(() => messagesWith(bob.identityHex).at(-1)?.delivered === true);
+
+  // Drop the relay: status must stop claiming "connected", then recover with a valid proof.
+  const port = relay.server!.port;
+  await relay.stop(true);
+  await until(() => connStatus() !== "connected");
+  expect(connStatus()).toBe("reconnecting");
+  relay = createRelay!().listen({ port, hostname: "127.0.0.1" });
+  await until(() => connStatus() === "connected", 10_000);
+  expect(connProblem()).toBeNull();
+  await until(() => bob.online, 10_000);
+
+  const again = await sendDevMessage(bob.identityHex, "after reconnect");
+  expect(again.error).toBeUndefined();
+  await until(() => messagesWith(bob.identityHex).at(-1)?.delivered === true);
+  bob.disconnect();
+}, 20_000);
+
+test("a rejected prekey republish during renewal is shown, not swallowed", async () => {
+  disconnectDev();
+  generateIdentity();
+  await connectDev(relayUrl, presenceUrl);
+  expect(connProblem()).toBeNull();
+
+  presenceFailure = 401;
+  setSystemTime(new Date(Date.now() + 10 * HOUR));
+  await renewDeviceCertificateIfNeeded();
+  expect(connProblem()).toContain("prekey republish failed");
+  expect(connProblem()).toContain("401");
 });

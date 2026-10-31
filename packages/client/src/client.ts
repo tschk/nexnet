@@ -34,6 +34,7 @@ export type EventType =
   | "connected"
   | "disconnected"
   | "reconnecting"
+  | "auth_failed"
   | "error";
 
 export type EventHandler = (data: unknown) => void;
@@ -75,9 +76,10 @@ export class NexnetClient {
   readonly presenceUrl?: string;
   readonly storagePath: string;
   readonly signingSecretKey: Uint8Array;
-  readonly deviceSigningSecretKey?: Uint8Array;
-  readonly deviceSigningPublicKey?: Uint8Array;
-  readonly deviceCertificate?: DeviceCertificate;
+  // Replaceable via setDeviceCredentials so a long-running client can renew its certificate.
+  deviceSigningSecretKey?: Uint8Array;
+  deviceSigningPublicKey?: Uint8Array;
+  deviceCertificate?: DeviceCertificate;
   readonly deviceCertificateResolver?: DeviceCertificateResolver;
   readonly rootPublicKey?: Uint8Array;
 
@@ -150,6 +152,28 @@ export class NexnetClient {
       rootPublicKey: this.rootPublicKey ?? publicKeyFromSecret(this.signingSecretKey),
       secretKey: this.signingSecretKey,
     };
+  }
+
+  /**
+   * Replace this device's certificate and signing key, e.g. to renew before
+   * expiry. Later relay auth, DMs and prekey publishes use the new credentials.
+   */
+  setDeviceCredentials(
+    certificate: DeviceCertificate,
+    signingSecretKey: Uint8Array,
+    signingPublicKey: Uint8Array,
+  ): void {
+    if (!sameId(certificate.accountId, this.identityId) || !sameId(certificate.deviceId, this.deviceId)) {
+      throw new Error("certificate is for a different identity or device");
+    }
+    this.deviceCertificate = certificate;
+    this.deviceSigningSecretKey = signingSecretKey;
+    this.deviceSigningPublicKey = signingPublicKey;
+  }
+
+  /** True when this client signs with a device certificate that is no longer valid. */
+  deviceCertificateExpired(now = Date.now()): boolean {
+    return !!this.deviceCertificate && this.deviceCertificate.expiresAt <= now;
   }
 
   /**
@@ -301,6 +325,13 @@ export class NexnetClient {
 
   private _connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Retrying with an expired certificate can never succeed: stop and say why.
+      if (this.deviceCertificateExpired()) {
+        const error = new Error("device certificate expired; renew it before reconnecting");
+        this.emit("auth_failed", { message: error.message });
+        reject(error);
+        return;
+      }
       const wsUrl = this._buildWsUrl();
 
       let settled = false;
@@ -353,16 +384,23 @@ export class NexnetClient {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         clearTimeout(handshakeTimer);
         this._online = false;
         this._ws = null;
         this.emit("disconnected", null);
+        // 4401 during the handshake means the relay rejected our proof; the same
+        // credentials will be rejected again, so do not loop. (A 4401 after
+        // authenticating, e.g. relay hibernation, still reconnects.)
+        const rejected = !authenticated && event?.code === 4401;
+        if (rejected) this.emit("auth_failed", { message: "relay rejected this device's identity proof" });
         if (!settled) {
           settled = true;
-          reject(new Error("WebSocket closed before relay authentication"));
+          reject(
+            new Error(rejected ? "relay rejected authentication" : "WebSocket closed before relay authentication"),
+          );
         }
-        if (!this._intentionalClose) {
+        if (!this._intentionalClose && !rejected) {
           this._scheduleReconnect();
         }
       };
@@ -505,4 +543,8 @@ function bytes(value: unknown): Uint8Array | null {
     return null;
   }
   return new Uint8Array(value);
+}
+
+function sameId(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }

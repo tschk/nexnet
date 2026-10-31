@@ -515,6 +515,41 @@ test("connect rejects when the relay never sends an auth challenge", async () =>
   }
 });
 
+test("a relay that rejects the identity proof stops the reconnect loop and says why", async () => {
+  const origWebSocket = globalThis.WebSocket;
+  let sockets = 0;
+  class RejectingRelay {
+    onopen: ((e: unknown) => void) | null = null;
+    onclose: ((e: unknown) => void) | null = null;
+    onerror: ((e: unknown) => void) | null = null;
+    onmessage: ((e: unknown) => void) | null = null;
+    constructor(_url: string) {
+      sockets++;
+      queueMicrotask(() => {
+        this.onopen?.({});
+        this.onmessage?.({ data: JSON.stringify({ type: "auth_challenge", nonce: "00" }) });
+      });
+    }
+    send(): void {
+      queueMicrotask(() => this.onclose?.({ code: 4401, reason: "authentication failed" }));
+    }
+    close(): void {}
+  }
+  (globalThis as any).WebSocket = RejectingRelay;
+  try {
+    const { client } = createTestClient({ reconnectBaseMs: 5, maxReconnectAttempts: 0 });
+    const failures: unknown[] = [];
+    client.on("auth_failed", (data) => failures.push(data));
+    await expect(client.connect()).rejects.toThrow("relay rejected authentication");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sockets).toBe(1);
+    expect(failures).toHaveLength(1);
+    await client.disconnect();
+  } finally {
+    (globalThis as any).WebSocket = origWebSocket;
+  }
+});
+
 describe("NexnetClient two-instance DM flow", () => {
   let origWebSocket: typeof globalThis.WebSocket;
 

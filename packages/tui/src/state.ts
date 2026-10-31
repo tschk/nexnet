@@ -22,10 +22,14 @@ export { identity, setIdentity };
 
 // ── Connection ──────────────────────────────────────────────────────
 
-export type ConnStatus = "disconnected" | "connecting" | "connected";
+export type ConnStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 const [connStatus, setConnStatus] = createSignal<ConnStatus>("disconnected");
 export { connStatus, setConnStatus };
+
+/** Why the connection is degraded (expired certificate, rejected auth, prekey publish failure); null when healthy. */
+const [connProblem, setConnProblem] = createSignal<string | null>(null);
+export { connProblem, setConnProblem };
 
 // ── Messages ────────────────────────────────────────────────────────
 

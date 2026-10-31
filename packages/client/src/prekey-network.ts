@@ -29,7 +29,10 @@ export function verifiedRootPublicKey(identityId: IdentityId): Uint8Array | unde
 let lastIssuedAt = 0;
 /** Strictly increasing timestamp; services reject a repeated or older issuedAt. */
 function nextIssuedAt(): number {
-  lastIssuedAt = Math.max(Date.now(), lastIssuedAt + 1);
+  const now = Date.now();
+  // After the clock moves back, a far-future counter would make every request stale.
+  if (lastIssuedAt - now > 60_000) lastIssuedAt = now - 1;
+  lastIssuedAt = Math.max(now, lastIssuedAt + 1);
   return lastIssuedAt;
 }
 

@@ -13,6 +13,8 @@ import {
   deriveRoomId,
   onDirectMessage,
   publishLocalPrekeys,
+  publishBundleRemote,
+  fetchBundle,
 } from "@nexnet/client";
 import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { mkdtempSync } from "node:fs";
@@ -24,6 +26,7 @@ import {
   identity,
   setIdentity,
   setConnStatus,
+  setConnProblem,
   addMessage,
   addRoomMessage,
   updateMessage,
@@ -50,6 +53,51 @@ const awaitingReceipt = new Map<string, { peerHex: string; id: string; timer: Re
 const RECEIPT_TIMEOUT_MS = 30_000;
 
 const DEVICE_CERT_LIFETIME_MS = 11 * 60 * 60 * 1000;
+/** Renew once less than this much validity remains (i.e. at 80% of the lifetime). */
+const RENEW_BEFORE_EXPIRY_MS = DEVICE_CERT_LIFETIME_MS / 5;
+const RENEW_CHECK_INTERVAL_MS = 60_000;
+
+/** This process's device signing key; its certificate is re-issued by the root key on renewal. */
+let deviceKey: { secretKey: Uint8Array; publicKey: Uint8Array } | null = null;
+let renewTimer: ReturnType<typeof setInterval> | null = null;
+
+function issueCertificate(active: NexnetClient, now = Date.now()) {
+  const id = identity()!;
+  return issueDeviceCert(
+    id.secretKey,
+    deviceKey!.publicKey,
+    generateKeyPair().publicKey,
+    active.deviceId,
+    active.identityId,
+    now,
+    now + DEVICE_CERT_LIFETIME_MS,
+    1,
+  );
+}
+
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).replace(/^prekey publish failed: /, "");
+}
+
+/**
+ * Re-issue the device certificate when it is near expiry, then republish the
+ * prekey bundle under the new certificate (a bundle's proof expires with the
+ * certificate that signed it). Failures are shown, never swallowed.
+ */
+export async function renewDeviceCertificateIfNeeded(now = Date.now()): Promise<void> {
+  const active = client;
+  const cert = active?.deviceCertificate;
+  if (!active || !cert || !deviceKey || cert.expiresAt - now > RENEW_BEFORE_EXPIRY_MS) return;
+  active.setDeviceCredentials(issueCertificate(active, now), deviceKey.secretKey, deviceKey.publicKey);
+  if (!active.presenceUrl) return;
+  const bundle = fetchBundle(active.identityId);
+  if (!bundle) return;
+  try {
+    await publishBundleRemote(active.presenceUrl, active.identityId, bundle, active.identitySigner());
+  } catch (error) {
+    if (client === active) setConnProblem(`prekey republish failed (${errorText(error)})`);
+  }
+}
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -83,13 +131,13 @@ export async function connectDev(
   setConnStatus("connecting");
 
   const identityId = identityIdFromWallet(id.publicKey);
-  // This process holds the root key, so it certifies its own device key.
-  const device = generateSigningKeyPair();
+  // This process holds the root key, so it certifies (and later renews) its own device key.
+  deviceKey = generateSigningKeyPair();
   const deviceId = randomBytes(32);
   const now = Date.now();
   const deviceCertificate = issueDeviceCert(
     id.secretKey,
-    device.publicKey,
+    deviceKey.publicKey,
     generateKeyPair().publicKey,
     deviceId,
     identityId,
@@ -109,9 +157,38 @@ export async function connectDev(
     storagePath: mkdtempSync(join(tmpdir(), "nexnet-tui-")),
     signingSecretKey: id.secretKey,
     rootPublicKey: id.publicKey,
-    deviceSigningSecretKey: device.secretKey,
-    deviceSigningPublicKey: device.publicKey,
+    deviceSigningSecretKey: deviceKey.secretKey,
+    deviceSigningPublicKey: deviceKey.publicKey,
     deviceCertificate,
+  });
+  const active = client;
+  setConnProblem(null);
+
+  // Status follows the real connection, not the last successful connect.
+  active.on("connected", () => {
+    if (client !== active) return;
+    setConnStatus("connected");
+    setConnProblem(null);
+  });
+  active.on("disconnected", () => {
+    if (client === active) setConnStatus("reconnecting");
+  });
+  active.on("reconnecting", () => {
+    if (client !== active) return;
+    setConnStatus("reconnecting");
+    // Reconnecting signs a fresh relay proof; make sure the certificate is valid for it.
+    void renewDeviceCertificateIfNeeded();
+  });
+  active.on("auth_failed", (data) => {
+    if (client !== active) return;
+    setConnStatus("disconnected");
+    setConnProblem((data as { message?: string }).message ?? "relay rejected authentication");
+  });
+  active.on("error", (data) => {
+    const event = data as { type?: string; message?: string };
+    if (client === active && event.type === "prekey_publish_failed") {
+      setConnProblem(`prekey republish failed (${errorText(new Error(event.message))})`);
+    }
   });
 
   // Listen before connecting and publishing prekeys, so an early DM or receipt is not dropped.
@@ -150,11 +227,17 @@ export async function connectDev(
     return;
   }
 
-  // Rooms only need the relay; a presence failure must not drop the session.
-  // Peers then cannot open new DM sessions to us until a later publish succeeds.
-  if (presenceUrl) await publishLocalPrekeys(client).catch(() => {});
+  // Rooms only need the relay; a presence failure must not drop the session,
+  // but peers cannot open new DM sessions to us until a publish succeeds.
+  if (presenceUrl) {
+    await publishLocalPrekeys(active).catch((error: unknown) =>
+      setConnProblem(`prekey publish failed (${errorText(error)}); peers cannot start DMs with you`),
+    );
+  }
 
   setConnStatus("connected");
+  renewTimer = setInterval(() => void renewDeviceCertificateIfNeeded(), RENEW_CHECK_INTERVAL_MS);
+  renewTimer.unref?.();
 
   // Subscribe to default rooms
   const defaultRooms = ["general", "dev"];
@@ -225,32 +308,34 @@ export function sendDevMessage(
   addMessage(recipientHex, msg);
 
   // Delivered only when the recipient's receipt arrives; failures stay visible.
-  return sendDirectMessage(active, hexDecode(recipientHex), text).then(
-    (messageId) => {
-      // The relay accepting the DM is not delivery: an offline or failing peer sends no receipt.
-      const key = hexEncode(messageId);
-      const timer = setTimeout(() => {
-        if (!awaitingReceipt.has(key)) return;
-        updateMessage(recipientHex, msg.id, {
-          error: "no delivery receipt; the recipient may be offline or could not decrypt it",
-        });
-      }, receiptTimeoutMs);
-      awaitingReceipt.set(key, { peerHex: recipientHex, id: msg.id, timer });
-      return msg;
-    },
-    (error: unknown) => {
-      const reason = error instanceof Error ? error.message : "send failed";
-      // Without a presence service, peers in other processes are unreachable; say so.
-      const failed = {
-        ...msg,
-        error: active.presenceUrl
-          ? reason
-          : `NEXNET_PRESENCE_URL is not set, so this peer's prekeys cannot be fetched (${reason})`,
-      };
-      updateMessage(recipientHex, msg.id, { error: failed.error });
-      return failed;
-    },
-  );
+  return renewDeviceCertificateIfNeeded()
+    .then(() => sendDirectMessage(active, hexDecode(recipientHex), text))
+    .then(
+      (messageId) => {
+        // The relay accepting the DM is not delivery: an offline or failing peer sends no receipt.
+        const key = hexEncode(messageId);
+        const timer = setTimeout(() => {
+          if (!awaitingReceipt.has(key)) return;
+          updateMessage(recipientHex, msg.id, {
+            error: "no delivery receipt; the recipient may be offline or could not decrypt it",
+          });
+        }, receiptTimeoutMs);
+        awaitingReceipt.set(key, { peerHex: recipientHex, id: msg.id, timer });
+        return msg;
+      },
+      (error: unknown) => {
+        const reason = error instanceof Error ? error.message : "send failed";
+        // Without a presence service, peers in other processes are unreachable; say so.
+        const failed = {
+          ...msg,
+          error: active.presenceUrl
+            ? reason
+            : `NEXNET_PRESENCE_URL is not set, so this peer's prekeys cannot be fetched (${reason})`,
+        };
+        updateMessage(recipientHex, msg.id, { error: failed.error });
+        return failed;
+      },
+    );
 }
 
 export function sendDevRoomMessage(roomId: string, text: string): Promise<ChatMessage> {
@@ -285,8 +370,11 @@ export function sendDevRoomMessage(roomId: string, text: string): Promise<ChatMe
 
 export function disconnectDev(): void {
   // Pending receipts are kept: one may still arrive after reconnecting.
-  client?.disconnect();
+  const active = client;
   client = null;
+  if (renewTimer) clearInterval(renewTimer);
+  renewTimer = null;
+  active?.disconnect();
   setConnStatus("disconnected");
   setOnlinePeers(new Set<string>());
 }

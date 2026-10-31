@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { cryptoProvider } from "@nexnet/crypto";
-import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
 import { sendDirectMessage, onDirectMessage, deriveConversationId } from "../dm.js";
 import { setupLocalPrekeys, clearPrekeyDirectory } from "../prekeys.js";
@@ -188,9 +188,9 @@ describe("integration", () => {
     const kpB = cryptoProvider.generateSigningKeyPair();
     const rootA = cryptoProvider.generateSigningKeyPair();
     const rootB = cryptoProvider.generateSigningKeyPair();
-    const aliceIdentityId = new Uint8Array(32).fill(0xa1);
+    const aliceIdentityId = identityIdFromWallet(rootA.publicKey);
     const aliceDeviceId = new Uint8Array(32).fill(0x01);
-    const bobIdentityId = new Uint8Array(32).fill(0xb2);
+    const bobIdentityId = identityIdFromWallet(rootB.publicKey);
     const bobDeviceId = new Uint8Array(32).fill(0x02);
 
     const alice = new NexnetClient({
@@ -232,7 +232,7 @@ describe("integration", () => {
 
     const got: MessagePayload[] = [];
     const receipts: Array<{ messageId?: Uint8Array }> = [];
-    alice.on("delivery_receipt", (receipt) => {
+    alice.on("verified_delivery_receipt", (receipt) => {
       receipts.push(receipt as { messageId?: Uint8Array });
     });
     onDirectMessage(
@@ -259,7 +259,7 @@ describe("integration", () => {
     bobSocket.simulateMessage(duplicate);
     await new Promise((r) => setTimeout(r, 30));
     expect(got).toHaveLength(1);
-    expect(receipts).toHaveLength(2); // retries recover lost acknowledgements without redisplaying
+    expect(receipts).toHaveLength(1); // duplicate ACKs cannot discharge the same obligation twice
 
     // reply
     const gotA: MessagePayload[] = [];

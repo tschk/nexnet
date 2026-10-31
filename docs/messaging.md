@@ -93,18 +93,38 @@ stored the message locally.**
 Per AD-7, senders fan out only to devices with live presence; offline own
 devices catch up via history sync, not sender fanout.
 
-Does **not** mean opened or read.
+Does **not** mean opened, read, accepted for execution or completed. It is a
+certified device's signed storage assertion, not independent proof of its disk.
 
 ```text
 delivery_receipt {
-  message_id
-  recipient_device_id
-  stored_at
-  signature
+  version: 2
+  senderIdentityId
+  recipientIdentityId
+  messageId
+  recipientDeviceId
+  storedAt
+  auth: { rootPublicKey, certificate, signature }
 }
 ```
 
-UI may hide recipient device ID.
+The existing identity-auth domain `dm.delivery_receipt` covers all fields.
+The recipient identity must derive from the proof's root key; that root must
+certify the signing device and its matching device ID. The intended sender
+must be this sender, and the message and recipient must match a pending X3DH
+queue item. Only then does the client emit `verified_delivery_receipt` and
+discharge the queue obligation. `delivery_receipt` is an untrusted raw event.
+
+Certificate validity is checked on arrival; `storedAt` must lie within its
+validity window and cannot exceed the existing five-minute clock tolerance.
+An expired or invalid receipt leaves the message pending. Retrying a duplicate
+lets the recipient acknowledge it with its renewed certificate without
+displaying it twice. Duplicate valid receipts do not emit delivery twice.
+
+This replaces unversioned root-signed receipts without a legacy fallback.
+Closed-pilot clients must upgrade together; old receipts cannot clear the
+new sender queue. No root private key or remote prekey lookup is needed to
+acknowledge or verify delivery. UI may hide recipient device ID.
 
 ## Envelopes
 

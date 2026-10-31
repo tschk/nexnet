@@ -2,6 +2,7 @@
  * @nexnet/protocol — protocol operations
  */
 export { cdeEncode, cdeDecode } from "./cde.js";
+export { signDeliveryReceipt, verifyDeliveryReceipt } from "./delivery-receipt.js";
 export { signEvent, verifyEvent, verifyEventId, validateEventLimits } from "./event.js";
 export {
   authorizePasskeyCredential,

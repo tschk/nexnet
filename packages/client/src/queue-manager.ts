@@ -8,7 +8,8 @@
  */
 
 import { PRESENCE_POLL_INTERVAL_MS, DM_X3DH_QUEUE_FORMAT } from "@nexnet/types";
-import type { IdentityId, OutboundQueueLike, OutboundQueueItem, PublicKey } from "@nexnet/types";
+import type { OutboundQueueLike, OutboundQueueItem } from "@nexnet/types";
+import { verifyDeliveryReceipt } from "@nexnet/protocol";
 import type { NexnetClient } from "./client.js";
 
 export class QueueManager {
@@ -18,12 +19,7 @@ export class QueueManager {
   private presenceHandler: ((data: unknown) => void) | null = null;
   private receiptHandler: ((data: unknown) => void) | null = null;
 
-  constructor(
-    queue: OutboundQueueLike,
-    private readonly getReceiptPublicKey?: (
-      identityId: IdentityId,
-    ) => PublicKey | undefined | Promise<PublicKey | undefined>,
-  ) {
+  constructor(queue: OutboundQueueLike) {
     this.queue = queue;
   }
 
@@ -41,51 +37,19 @@ export class QueueManager {
         this.processQueue(client, msg.identityId);
       }
     };
-    this.receiptHandler = async (data) => {
-      const msg = data as {
-        from?: string;
-        messageId?: Uint8Array | number[];
-        recipientDeviceId?: Uint8Array | number[];
-        storedAt?: number;
-        signature?: Uint8Array | number[];
-      };
-      const messageId = toBytes(msg.messageId, 32);
-      const recipientDeviceId = toBytes(msg.recipientDeviceId, 32);
-      const signature = toBytes(msg.signature, 64);
-      if (
-        !messageId ||
-        !recipientDeviceId ||
-        !signature ||
-        typeof msg.storedAt !== "number" ||
-        typeof msg.from !== "string" ||
-        !/^[0-9a-f]{64}$/i.test(msg.from)
-      )
-        return;
-      const identityId = new Uint8Array(Buffer.from(msg.from, "hex"));
+    this.receiptHandler = (data) => {
+      if (typeof data !== "object" || data === null || !("receipt" in data)) return;
+      const receipt = verifyDeliveryReceipt(data.receipt, client.identityId);
+      if (!receipt) return;
       const item = this.queue
-        .pendingForRecipient(identityId)
-        .find((pending) => Buffer.from(pending.messageId).equals(Buffer.from(messageId)));
-      if (!item) return;
-      let publicKey: PublicKey | undefined;
-      try {
-        const lookup = this.getReceiptPublicKey?.(identityId);
-        publicKey = lookup instanceof Promise ? await lookup : lookup;
-      } catch {
-        return; // unavailable proof cannot discharge the sender's retry obligation
-      }
-      if (
-        this.client !== client ||
-        item.encryptionFormat !== DM_X3DH_QUEUE_FORMAT ||
-        !publicKey ||
-        !this.client?.crypto.verify(
-          publicKey,
-          this.client.codec.encode({ messageId, recipientDeviceId, storedAt: msg.storedAt }),
-          signature,
-        )
-      )
-        return;
-      this.queue.markDelivered(messageId);
-      client.emit("verified_delivery_receipt", data);
+        .pendingForRecipient(receipt.recipientIdentityId)
+        .find((pending) => Buffer.from(pending.messageId).equals(Buffer.from(receipt.messageId)));
+      if (this.client !== client || item?.encryptionFormat !== DM_X3DH_QUEUE_FORMAT) return;
+      this.queue.markDelivered(receipt.messageId);
+      client.emit("verified_delivery_receipt", {
+        ...receipt,
+        from: Buffer.from(receipt.recipientIdentityId).toString("hex"),
+      });
     };
     client.on("presence", this.presenceHandler);
     client.on("delivery_receipt", this.receiptHandler);
@@ -131,14 +95,4 @@ export class QueueManager {
   get pendingCount(): number {
     return this.queue.pending().filter((item) => item.encryptionFormat === DM_X3DH_QUEUE_FORMAT).length;
   }
-}
-
-function toBytes(value: Uint8Array | number[] | undefined, length: number): Uint8Array | null {
-  const bytes =
-    value instanceof Uint8Array
-      ? value
-      : Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-        ? new Uint8Array(value)
-        : null;
-  return bytes?.length === length ? bytes : null;
 }

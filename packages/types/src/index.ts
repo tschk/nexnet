@@ -215,12 +215,14 @@ export interface MessagePayload {
   clientMetadata?: Record<string, unknown>;
 }
 
-/** Delivered receipt */
+/** Device-authenticated stored-message acknowledgement; signed proof is carried by the wire protocol. */
 export interface DeliveryReceipt {
+  version: 2;
+  senderIdentityId: IdentityId;
+  recipientIdentityId: IdentityId;
   messageId: MessageId;
   recipientDeviceId: DeviceId;
   storedAt: number;
-  signature: Signature;
 }
 
 // ── Attachments (AD-20: direct only) ─────────────────────────────────

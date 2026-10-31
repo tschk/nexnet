@@ -141,15 +141,21 @@ test("an own DM is marked delivered only after the recipient's receipt", async (
   bob.disconnect();
 });
 
-test("a DM accepted by the relay but never receipted is shown as undelivered", async () => {
+test("an offline DM is shown as queued until the returning recipient acknowledges it", async () => {
   const dave = await peer();
   const daveHex = dave.identityHex;
   await dave.disconnect(); // bundle stays published; dave is offline
-  const result = await sendDevMessage(daveHex, "you there?", 200);
+  const result = await sendDevMessage(daveHex, "you there?");
   expect(result.error).toBeUndefined();
-  await until(() => messagesWith(daveHex)[0]?.error !== undefined);
-  expect(messagesWith(daveHex)[0]).toMatchObject({ delivered: false });
-  expect(messagesWith(daveHex)[0]!.error).toContain("no delivery receipt");
+  expect(messagesWith(daveHex)[0]).toMatchObject({ delivered: false, queued: true });
+  expect(messagesWith(daveHex)[0]!.error).toBeUndefined();
+  const received: string[] = [];
+  onDirectMessage(dave, (_envelope, payload) => received.push(payload.text!));
+  await dave.connect();
+  await until(() => messagesWith(daveHex)[0]?.delivered === true);
+  expect(messagesWith(daveHex)[0]).toMatchObject({ delivered: true, queued: false });
+  expect(received).toEqual(["you there?"]);
+  await dave.disconnect();
 });
 
 test("an inbound DM from a peer the TUI has never seen is shown", async () => {

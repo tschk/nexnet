@@ -4,7 +4,7 @@
  * Durable Object: DiscoveryIndex
  * - Stores discovery profiles (interests, languages, bio)
  * - Search by interest / language
- * - Random match with reputation gating (AD-18)
+ * - Random match with hard gates and partial reputation ranking (AD-18)
  * - Group discovery
  *
  * AD-24: profile = username + bio, no avatar.
@@ -18,7 +18,7 @@
  */
 
 import { isFreshIssuedAt, verifyIdentityAuthJson } from "@nexnet/protocol";
-import { DEFAULT_REPUTATION_THRESHOLD, DEFAULT_REPUTATION_WEIGHTS } from "@nexnet/types";
+import { DEFAULT_REPUTATION_WEIGHTS, REPUTATION_AGE_CAP_MS } from "@nexnet/types";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -30,9 +30,7 @@ interface StoredProfile {
   bio?: string;
   interests: string[];
   languages: string[];
-  reputationScore: number;
-  online: boolean;
-  createdAt: number;
+  firstSeenAt: number;
 }
 
 interface StoredGroup {
@@ -54,8 +52,31 @@ type AuthorizedBody = Record<string, unknown> & { identityId: string; issuedAt: 
 const MATCH_RATE_LIMIT = 5;
 const MATCH_RATE_WINDOW_MS = 60_000;
 
+function isShortString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 32;
+}
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 16 && value.every(isShortString);
+}
+
+function validProfileFields(body: Record<string, unknown>): body is Record<string, unknown> & {
+  username: string;
+  bio?: string;
+  interests?: string[];
+  languages?: string[];
+} {
+  return (
+    isShortString(body.username) &&
+    (body.bio === undefined || typeof body.bio === "string") &&
+    (body.interests === undefined || isStringList(body.interests)) &&
+    (body.languages === undefined || isStringList(body.languages))
+  );
+}
+
 interface Env {
   DISCOVERY: DurableObjectNamespace;
+  RELAY_SERVICE?: Fetcher;
 }
 
 // ── Durable Object: DiscoveryIndex ───────────────────────────────────
@@ -69,7 +90,10 @@ export class DiscoveryIndex {
   private lastIssuedAt = new Map<string, number>();
   private loaded = false;
 
-  constructor(state: DurableObjectState, _env: Env) {
+  constructor(
+    state: DurableObjectState,
+    private env: Env,
+  ) {
     this.state = state;
   }
 
@@ -107,8 +131,34 @@ export class DiscoveryIndex {
     const allKeys = await this.state.storage.list();
     for (const [key, value] of allKeys) {
       if (key.startsWith("profile:")) {
-        const p = value as StoredProfile;
-        this.profiles.set(p.identityId, p);
+        if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+        const p = value as Record<string, unknown>;
+        if (
+          typeof p.identityId !== "string" ||
+          !IDENTITY_HEX.test(p.identityId) ||
+          key !== `profile:${p.identityId}` ||
+          !validProfileFields(p)
+        )
+          continue;
+        // Legacy createdAt/online/reputationScore were client assertions, not evidence.
+        const firstSeenAt =
+          typeof p.firstSeenAt === "number" &&
+          Number.isFinite(p.firstSeenAt) &&
+          p.firstSeenAt >= 0 &&
+          p.firstSeenAt <= Date.now()
+            ? p.firstSeenAt
+            : Date.now();
+        const profile: StoredProfile = {
+          identityId: p.identityId,
+          username: p.username,
+          bio: p.bio?.slice(0, 160),
+          interests: p.interests ?? [],
+          languages: p.languages ?? [],
+          firstSeenAt,
+        };
+        // Persist the migration so legacy profiles do not reset their age on reload.
+        await this.state.storage.put(key, profile);
+        this.profiles.set(profile.identityId, profile);
       } else if (key.startsWith("group:")) {
         const g = value as StoredGroup;
         this.groups.set(g.groupId, g);
@@ -172,9 +222,10 @@ export class DiscoveryIndex {
   private async handleProfileUpsert(request: Request): Promise<Response> {
     const authorized = await this.authorize(request, OP_PROFILE_UPSERT);
     if (authorized instanceof Response) return authorized;
-    const body = authorized as unknown as StoredProfile;
-    if (!body.username) {
-      return jsonResponse({ error: "username required" }, 400);
+    const body = authorized;
+    const allowed = new Set(["identityId", "issuedAt", "auth", "username", "bio", "interests", "languages"]);
+    if (Object.keys(body).some((key) => !allowed.has(key)) || !validProfileFields(body)) {
+      return jsonResponse({ error: "invalid profile fields" }, 400);
     }
 
     const profile: StoredProfile = {
@@ -183,18 +234,43 @@ export class DiscoveryIndex {
       bio: body.bio?.slice(0, 160), // AD-24: max 160 graphemes
       interests: body.interests ?? [],
       languages: body.languages ?? [],
-      reputationScore: body.reputationScore ?? 0,
-      online: body.online ?? false,
-      createdAt: body.createdAt ?? Date.now(),
+      // Server-observed verified publication is an age lower bound, not chain root age.
+      // Deleting and recreating a profile may reset its age.
+      firstSeenAt: this.profiles.get(body.identityId)?.firstSeenAt ?? Date.now(),
     };
 
-    this.profiles.set(profile.identityId, profile);
     await this.state.storage.put(`profile:${profile.identityId}`, profile);
+    this.profiles.set(profile.identityId, profile);
 
-    return jsonResponse({ ok: true, profile });
+    return jsonResponse({ ok: true, profile: await this.publicProfile(profile) });
   }
 
-  private handleProfileGet(url: URL): Response {
+  private async relayOnline(identityId: string): Promise<boolean | null> {
+    if (!this.env.RELAY_SERVICE) return null;
+    try {
+      const response = await this.env.RELAY_SERVICE.fetch(new Request(`https://relay/online/${identityId}`));
+      if (response.status !== 200) return null;
+      const body: unknown = await response.json();
+      if (typeof body !== "object" || body === null || !("identityId" in body) || !("online" in body)) return null;
+      return body.identityId === identityId && typeof body.online === "boolean" ? body.online : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async publicProfile(profile: StoredProfile) {
+    return {
+      identityId: profile.identityId,
+      username: profile.username,
+      bio: profile.bio,
+      interests: profile.interests,
+      languages: profile.languages,
+      online: await this.relayOnline(profile.identityId),
+      reputationEvidence: "insufficient",
+    };
+  }
+
+  private async handleProfileGet(url: URL): Promise<Response> {
     const identityId = url.searchParams.get("identityId");
     if (!identityId) {
       return jsonResponse({ error: "identityId param required" }, 400);
@@ -205,7 +281,7 @@ export class DiscoveryIndex {
       return jsonResponse({ error: "profile not found" }, 404);
     }
 
-    return jsonResponse(profile);
+    return jsonResponse(await this.publicProfile(profile));
   }
 
   private async handleProfileDelete(request: Request): Promise<Response> {
@@ -224,14 +300,14 @@ export class DiscoveryIndex {
   // ── Search ─────────────────────────────────────────────────────────
 
   private async handleSearchInterest(request: Request): Promise<Response> {
-    let body: { tag?: string };
+    let body: { tag?: unknown } | null;
     try {
-      body = (await request.json()) as { tag?: string };
+      body = (await request.json()) as { tag?: unknown } | null;
     } catch {
       return jsonResponse({ error: "invalid JSON" }, 400);
     }
 
-    if (!body.tag) {
+    if (!body || typeof body.tag !== "string" || !body.tag) {
       return jsonResponse({ error: "tag required" }, 400);
     }
 
@@ -244,18 +320,22 @@ export class DiscoveryIndex {
       }
     }
 
-    return jsonResponse({ tag, count: results.length, profiles: results });
+    return jsonResponse({
+      tag,
+      count: results.length,
+      profiles: await Promise.all(results.map((p) => this.publicProfile(p))),
+    });
   }
 
   private async handleSearchLanguage(request: Request): Promise<Response> {
-    let body: { language?: string };
+    let body: { language?: unknown } | null;
     try {
-      body = (await request.json()) as { language?: string };
+      body = (await request.json()) as { language?: unknown } | null;
     } catch {
       return jsonResponse({ error: "invalid JSON" }, 400);
     }
 
-    if (!body.language) {
+    if (!body || typeof body.language !== "string" || !body.language) {
       return jsonResponse({ error: "language required" }, 400);
     }
 
@@ -268,7 +348,11 @@ export class DiscoveryIndex {
       }
     }
 
-    return jsonResponse({ language: body.language, count: results.length, profiles: results });
+    return jsonResponse({
+      language: body.language,
+      count: results.length,
+      profiles: await Promise.all(results.map((p) => this.publicProfile(p))),
+    });
   }
 
   // ── Random match (AD-18) ───────────────────────────────────────────
@@ -304,7 +388,12 @@ export class DiscoveryIndex {
       exclude?: string[];
     };
 
-    if (!Array.isArray(body.interests) || !Array.isArray(body.languages)) {
+    if (
+      !isStringList(body.interests) ||
+      !isStringList(body.languages) ||
+      (body.exclude !== undefined &&
+        (!Array.isArray(body.exclude) || !body.exclude.every((id) => typeof id === "string")))
+    ) {
       return jsonResponse({ error: "interests, languages required" }, 400);
     }
 
@@ -328,12 +417,11 @@ export class DiscoveryIndex {
     const requesterInterests = new Set(body.interests.map((i) => i.toLowerCase()));
     const requesterLangs = new Set(body.languages.map((l) => l.toLowerCase()));
 
-    // Filter candidates: online + reputation + not excluded + overlap
+    // Eligibility uses hard gates only while reputation evidence is incomplete (AD-18).
     const candidates: { profile: StoredProfile; score: number }[] = [];
 
     for (const profile of this.profiles.values()) {
-      if (!profile.online) continue;
-      if (profile.reputationScore < DEFAULT_REPUTATION_THRESHOLD) continue;
+      if ((await this.relayOnline(profile.identityId)) !== true) continue;
       if (excludeSet.has(profile.identityId)) continue;
       if (this.blocks.get(body.identityId)?.has(profile.identityId)) continue;
       if (this.blocks.get(profile.identityId)?.has(body.identityId)) continue;
@@ -343,15 +431,16 @@ export class DiscoveryIndex {
       const langOverlap = profile.languages.some((l) => requesterLangs.has(l.toLowerCase()));
       if (!interestOverlap && !langOverlap) continue;
 
-      // Score: age(0.35) + completed(0.35) + continuity(0.15) + blockInverse(0.15)
-      // ponytail: age/continuity/completed proxied by reputation for now;
-      // blockInverse = 1.0 (no block list integration yet)
+      let blocksReceived = 0;
+      for (const blocked of this.blocks.values()) {
+        if (blocked.has(profile.identityId)) blocksReceived++;
+      }
+      const age = Math.min(1, Math.max(0, now - profile.firstSeenAt) / REPUTATION_AGE_CAP_MS);
       const w = DEFAULT_REPUTATION_WEIGHTS;
-      const score =
-        w.age * profile.reputationScore +
-        w.completed * profile.reputationScore +
-        w.continuity * profile.reputationScore +
-        w.blockInverse * 1.0;
+      // Missing session history and absence of reports earn no credit. Centering
+      // the inverse-block term at zero preserves ordering, but only observed
+      // signed blocks lower rank. This partial score is never an eligibility gate.
+      const score = w.age * age - w.blockInverse * (1 - 1 / (1 + blocksReceived));
 
       candidates.push({ profile, score });
     }
@@ -360,23 +449,14 @@ export class DiscoveryIndex {
       return jsonResponse({ match: null, reason: "no candidates" });
     }
 
-    // Weighted random selection from top candidates
+    // Published weights determine rank, not eligibility. Include ties at the
+    // cutoff so every equally new profile can be found, even when all rank zero.
     candidates.sort((a, b) => b.score - a.score);
 
-    // Simple weighted pick from top half
     const topN = Math.max(1, Math.ceil(candidates.length / 2));
-    const top = candidates.slice(0, topN);
-    const totalScore = top.reduce((sum, c) => sum + c.score, 0);
-    let roll = Math.random() * totalScore;
-    let chosen = top[0];
-
-    for (const c of top) {
-      roll -= c.score;
-      if (roll <= 0) {
-        chosen = c;
-        break;
-      }
-    }
+    const cutoff = candidates[topN - 1].score;
+    const top = candidates.filter((candidate) => candidate.score >= cutoff);
+    const chosen = top[Math.floor(Math.random() * top.length)];
 
     return jsonResponse({
       match: {
@@ -385,6 +465,7 @@ export class DiscoveryIndex {
         bio: chosen.profile.bio,
         interests: chosen.profile.interests,
         languages: chosen.profile.languages,
+        reputationEvidence: "insufficient",
       },
       candidatesConsidered: candidates.length,
     });

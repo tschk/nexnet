@@ -38,6 +38,13 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-20e | SSH keys as wallet-authorised sign-in | A wallet may register an ssh-ed25519 key with a wallet-signed commitment; the key signs a single-use gateway challenge (`SSHSIG`, namespace `nexnet-auth`) to authorise one device certificate. Supersedes OD-20d for registered keys only; unregistered keys still need passkey approval (not implemented) |
 | OD-20f | Identity without a username           | Identities are created from a wallet proof; posting needs an identity, not a username                                                                                                                                                                                                                       |
 
+**AD-18 amended 2026-10-29:** published weights rank random-match candidates,
+but incomplete reputation evidence is not an eligibility cutoff. Missing
+evidence earns no credit and causes no exclusion. Authenticated presence,
+overlap, mutual blocks and rate limits remain hard gates. See the dated
+[decision and rationale](reputation.md#first-release-ad-18); this supersedes
+the earlier 0.25 gate while session-history evidence is unavailable.
+
 ## Still open (non-blocking for Phase 1)
 
 | ID    | Topic                                 | Notes                                                            |

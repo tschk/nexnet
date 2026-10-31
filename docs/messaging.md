@@ -30,6 +30,17 @@ Encrypted outbound may remain in local history after delivery.
 
 **Sender device must be online** for undelivered messages to deliver.
 
+The TypeScript client persists every non-direct-only DM in
+`<storagePath>/outbound.db` before attempting transmission, including when the
+relay socket is online. Reuse that storage path and identity after restart.
+Retries resume on authentication, authenticated relay presence events, and the
+30-minute poll; there is no silent retry-count cutoff. A socket write does not
+remove the obligation: only a signature-verified recipient receipt does.
+Signed duplicate envelopes receive another receipt without another visible DM.
+The TUI labels unacknowledged messages **queued on this device**, not delivered
+or failed merely because the peer is offline. First contact still requires a
+previously published, identity-proven recipient prekey bundle.
+
 ```mermaid
 stateDiagram-v2
   [*] --> Created

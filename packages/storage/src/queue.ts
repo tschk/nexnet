@@ -54,8 +54,7 @@ export class OutboundQueue implements OutboundQueueLike {
       `UPDATE outbound
        SET attempt_count = attempt_count + 1,
            last_attempt_at = ?,
-           next_attempt_at = ?,
-           delivery_state = CASE WHEN attempt_count + 1 >= 10 THEN 'failed' ELSE 'pending' END
+           next_attempt_at = ?
        WHERE message_id = ? AND encryption_format = '${DM_X3DH_QUEUE_FORMAT}'`,
     );
     this.getByIdStmt = this.db.prepare("SELECT * FROM outbound WHERE message_id = ?");

@@ -32,6 +32,7 @@ import {
   updateMessage,
   updateRoomMessage,
   setOnlinePeers,
+  onlinePeers,
   setRooms,
   nextMsgId,
   type LocalIdentity,
@@ -47,10 +48,7 @@ const codec: CborCdeCodec = { encode: cdeEncode, decode: cdeDecode };
 let client: NexnetClient | null = null;
 
 /** Own DMs awaiting a delivery receipt: message id hex → where it is shown. */
-const awaitingReceipt = new Map<string, { peerHex: string; id: string; timer: ReturnType<typeof setTimeout> }>();
-
-/** A DM with no receipt after this long is shown as undelivered. */
-const RECEIPT_TIMEOUT_MS = 30_000;
+const awaitingReceipt = new Map<string, { peerHex: string; id: string }>();
 
 const DEVICE_CERT_LIFETIME_MS = 11 * 60 * 60 * 1000;
 /** Renew once less than this much validity remains (i.e. at 80% of the lifetime). */
@@ -171,7 +169,9 @@ export async function connectDev(
     setConnProblem(null);
   });
   active.on("disconnected", () => {
-    if (client === active) setConnStatus("reconnecting");
+    if (client !== active) return;
+    setOnlinePeers(new Set<string>());
+    setConnStatus("reconnecting");
   });
   active.on("reconnecting", () => {
     if (client !== active) return;
@@ -192,16 +192,15 @@ export async function connectDev(
   });
 
   // Listen before connecting and publishing prekeys, so an early DM or receipt is not dropped.
-  client.on("delivery_receipt", (data) => {
+  client.on("verified_delivery_receipt", (data) => {
     const receipt = data as { from?: unknown; messageId?: Uint8Array | null };
     if (!receipt.messageId) return;
     const key = hexEncode(receipt.messageId);
     const pending = awaitingReceipt.get(key);
-    // Only the recipient (authenticated by the relay as `from`) can confirm delivery.
+    // The queue verifies the recipient's signature before confirming delivery.
     if (!pending || receipt.from !== pending.peerHex) return;
-    clearTimeout(pending.timer);
     awaitingReceipt.delete(key);
-    updateMessage(pending.peerHex, pending.id, { delivered: true, error: undefined });
+    updateMessage(pending.peerHex, pending.id, { delivered: true, queued: false, error: undefined });
   });
 
   onDirectMessage(client, (envelope, payload) => {
@@ -216,6 +215,17 @@ export async function connectDev(
       own: false,
     };
     addMessage(authorHex, msg);
+  });
+
+  // Subscribe before connect: the initial authenticated snapshot can arrive immediately.
+  setOnlinePeers(new Set<string>());
+  client.on("presence", (data) => {
+    const p = data as { identityId?: string; status?: string };
+    if (!p.identityId) return;
+    const peers = new Set(onlinePeers());
+    if (p.status === "online") peers.add(p.identityId);
+    else if (p.status === "offline") peers.delete(p.identityId);
+    setOnlinePeers(peers);
   });
 
   try {
@@ -278,19 +288,9 @@ export async function connectDev(
       addRoomMessage(roomIdHex, msg);
     });
   }
-
-  // Handle presence
-  client.on("presence", (data) => {
-    const p = data as { peers?: string[] };
-    if (p.peers) setOnlinePeers(new Set<string>(p.peers));
-  });
 }
 
-export function sendDevMessage(
-  recipientHex: string,
-  text: string,
-  receiptTimeoutMs = RECEIPT_TIMEOUT_MS,
-): Promise<ChatMessage> {
+export function sendDevMessage(recipientHex: string, text: string): Promise<ChatMessage> {
   const id = identity();
   const active = client;
   if (!id || !active) throw new Error("not connected");
@@ -312,16 +312,12 @@ export function sendDevMessage(
     .then(() => sendDirectMessage(active, hexDecode(recipientHex), text))
     .then(
       (messageId) => {
-        // The relay accepting the DM is not delivery: an offline or failing peer sends no receipt.
+        // The sender's durable queue retains the encrypted message while a peer
+        // is offline. Lack of a receipt means queued, not lost or delivered.
         const key = hexEncode(messageId);
-        const timer = setTimeout(() => {
-          if (!awaitingReceipt.has(key)) return;
-          updateMessage(recipientHex, msg.id, {
-            error: "no delivery receipt; the recipient may be offline or could not decrypt it",
-          });
-        }, receiptTimeoutMs);
-        awaitingReceipt.set(key, { peerHex: recipientHex, id: msg.id, timer });
-        return msg;
+        awaitingReceipt.set(key, { peerHex: recipientHex, id: msg.id });
+        updateMessage(recipientHex, msg.id, { queued: true });
+        return { ...msg, queued: true };
       },
       (error: unknown) => {
         const reason = error instanceof Error ? error.message : "send failed";

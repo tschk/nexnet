@@ -164,6 +164,16 @@ function handleAuth(state: RelayState, ws: RelaySocket, pending: PendingAuth, ra
   state.clients.set(client.identityId, client);
   log(`Connected: ${client.identityId.slice(0, 12)} (${state.clients.size} total)`);
   send(ws, { type: "authenticated", identity: client.identityId, relay_time: Date.now() });
+  send(ws, {
+    type: "presence_snapshot",
+    leases: Object.fromEntries([...state.clients.keys()].map((id) => [id, { status: "online" }])),
+  });
+  notifyPresence(state, client.identityId, "online");
+}
+
+/** Only authenticated sockets determine relay-observed presence (AD-12). */
+function notifyPresence(state: RelayState, identityId: string, status: "online" | "offline"): void {
+  for (const client of state.clients.values()) send(client.ws, { type: "presence_update", identityId, status });
 }
 
 function handleSignalling(state: RelayState, sender: ClientInfo, msg: RelayMessage): void {
@@ -276,7 +286,10 @@ function removeClient(state: RelayState, client: ClientInfo): void {
     if (subscribers?.size === 0) state.roomSubscriptions.delete(roomId);
   }
   // Remove client
-  if (state.clients.get(client.identityId) === client) state.clients.delete(client.identityId);
+  if (state.clients.get(client.identityId) === client) {
+    state.clients.delete(client.identityId);
+    notifyPresence(state, client.identityId, "offline");
+  }
 }
 
 // ── Logging ──────────────────────────────────────────────────────────
@@ -299,6 +312,10 @@ export function createRelay() {
   /** Room subscriptions: roomId -> Set of identity hexes */
   return (
     new Elysia()
+      .get("/online/:identityId", ({ params, status }) => {
+        if (!IDENTITY_HEX.test(params.identityId)) return status(400, { error: "invalid identityId" });
+        return { identityId: params.identityId, online: state.clients.has(params.identityId) };
+      })
       // Health check
       .get("/health", () => ({
         status: "ok",

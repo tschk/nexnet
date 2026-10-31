@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { cryptoProvider } from "@nexnet/crypto";
 import { cdeEncode, cdeDecode, issueDeviceCert } from "@nexnet/protocol";
 import { NexnetClient } from "../client.js";
@@ -161,8 +162,10 @@ function deviceCertificate(
 
 describe("integration", () => {
   let origWs: typeof globalThis.WebSocket;
+  let storageRoot: string;
 
   beforeEach(() => {
+    storageRoot = mkdtempSync(`${import.meta.dir}/../../../../../.amp/in/dm-integration-`);
     origWs = globalThis.WebSocket;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = MockWebSocket;
     MockWebSocket.instances = [];
@@ -177,6 +180,7 @@ describe("integration", () => {
   afterEach(() => {
     clearPrekeyDirectory();
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = origWs;
+    rmSync(storageRoot, { recursive: true, force: true });
   });
 
   test("two clients exchange encrypted DMs through relay", async () => {
@@ -195,7 +199,7 @@ describe("integration", () => {
       crypto: cryptoProvider,
       codec,
       relayUrl: "https://relay.example.com",
-      storagePath: "/tmp/nexnet-int-a",
+      storagePath: `${storageRoot}/alice`,
       signingSecretKey: kpA.secretKey,
       deviceSigningSecretKey: kpA.secretKey,
       deviceSigningPublicKey: kpA.publicKey,
@@ -208,7 +212,7 @@ describe("integration", () => {
       crypto: cryptoProvider,
       codec,
       relayUrl: "https://relay.example.com",
-      storagePath: "/tmp/nexnet-int-b",
+      storagePath: `${storageRoot}/bob`,
       signingSecretKey: kpB.secretKey,
       deviceSigningSecretKey: kpB.secretKey,
       deviceSigningPublicKey: kpB.publicKey,
@@ -255,7 +259,7 @@ describe("integration", () => {
     bobSocket.simulateMessage(duplicate);
     await new Promise((r) => setTimeout(r, 30));
     expect(got).toHaveLength(1);
-    expect(receipts).toHaveLength(1);
+    expect(receipts).toHaveLength(2); // retries recover lost acknowledgements without redisplaying
 
     // reply
     const gotA: MessagePayload[] = [];

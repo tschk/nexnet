@@ -5,6 +5,7 @@ import { DM_X3DH_QUEUE_FORMAT, PROTOCOL_VERSION } from "@nexnet/types";
 import type { MessageEnvelope, OutboundQueueItem, OutboundQueueLike } from "@nexnet/types";
 import type { NexnetClient } from "../client.js";
 import type { PeerManager } from "../webrtc.js";
+import { OutboundQueue } from "@nexnet/storage";
 import { deriveConversationId, onDirectMessage, sendDirectMessage } from "../dm.js";
 import {
   clearSessions,
@@ -44,6 +45,7 @@ function peer(fill: number) {
   const persisted: Uint8Array[] = [];
   const receipts: Uint8Array[] = [];
   const delivered: string[] = [];
+  const outbound = OutboundQueue.open(":memory:");
   const client = {
     identityId,
     deviceId,
@@ -54,6 +56,7 @@ function peer(fill: number) {
     deviceSigningPublicKey: keys.publicKey,
     rootPublicKey: root.publicKey,
     online: true,
+    outboundQueue: () => outbound,
     on(event: string, handler: (data: unknown) => void) {
       handlers.set(event, handler);
     },

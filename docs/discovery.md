@@ -3,6 +3,26 @@
 Multiple discovery systems. Private contact graphs must not be uploaded in
 plaintext.
 
+Profile upserts accept only identity proof fields, username (1–32 characters),
+optional bio (truncated to 160), and optional interests/languages (up to 16
+non-empty strings of at most 32 characters each). Unknown fields, including
+client-supplied online state, reputation and creation dates, are rejected;
+malformed legacy profiles are skipped on load.
+
+Public profiles expose identityId, username, bio, interests, languages, online,
+and `reputationEvidence: "insufficient"`. The evidence label is not an adverse
+rating; signed negative signals affect private ranking independently, without
+disclosing scores or block history. Online state comes from the relay's authenticated connection table via
+the optional `RELAY_SERVICE` binding (`GET /online/:identityId`), never from a
+profile publication or signed freshness claim. Missing/unavailable/invalid
+relay evidence yields `online: null` (unknown), not an asserted offline state;
+random matching requires an explicit `online: true`. No last-seen is exposed.
+
+**AD-18 amended 2026-10-29:** while evidence is incomplete, the composite score
+ranks eligible candidates but never excludes them. New profiles can random-match
+on day one. Presence, overlap, mutual blocks and rate limits remain hard gates;
+see [the decision and rationale](reputation.md#first-release-ad-18).
+
 ## Interest discovery
 
 Users select interests from freeform tags, canonical tag IDs, public room
@@ -79,7 +99,7 @@ Combines:
 - interests
 - language
 - optional location
-- reputation threshold
+- partial reputation ranking, not an eligibility threshold while evidence is incomplete
 - exclusion lists
 - recent-match avoidance
 
@@ -87,9 +107,9 @@ Random sessions use **private routed mode** by default.
 
 ```mermaid
 flowchart TD
-  Req[request_random_match] --> Gate{age · rate · reputation}
+  Req[request_random_match] --> Gate{presence · overlap · blocks · rate}
   Gate -->|fail| Reject[throttle / deny]
-  Gate -->|pass| Pool[online candidates]
+  Gate -->|pass| Pool[eligible candidates ranked by observed evidence]
   Pool --> Filter[interest ∩ language ∩ exclusions]
   Filter --> Pair[pair]
   Pair --> Route[private routed session]

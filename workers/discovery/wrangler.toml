@@ -12,6 +12,10 @@ custom_domain = true
 name = "DISCOVERY"
 class_name = "DiscoveryIndex"
 
+[[services]]
+binding = "RELAY_SERVICE"
+service = "nexnet-relay"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DiscoveryIndex"]

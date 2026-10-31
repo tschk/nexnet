@@ -12,7 +12,7 @@ export function MessageBubble(props: { message: ChatMessage }) {
           {`${m().senderName} ${formatTime(m().createdAt)}`}
         </text>
         <text fg={m().error ? theme.error : m().delivered ? theme.success : theme.textDim}>
-          {m().error ? "✗ not sent" : m().delivered ? "✓" : "◌"}
+          {m().error ? "✗ not sent" : m().delivered ? "✓" : m().queued ? "◌ queued on this device" : "◌"}
         </text>
       </box>
       <text fg={m().own ? theme.textBright : theme.text}>{m().text}</text>

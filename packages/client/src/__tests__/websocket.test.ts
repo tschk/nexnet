@@ -438,6 +438,37 @@ describe("NexnetClient WebSocket", () => {
     expect(MockWebSocket.instances.length).toBe(1);
   });
 
+  test("a delayed close from a replaced socket cannot disconnect the new session", async () => {
+    const { client } = createTestClient();
+    await client.connect();
+    const previous = MockWebSocket.instances[0];
+    // Real WebSocket.close() returns before its close callback reaches the client.
+    previous.close = () => {
+      previous.readyState = 2;
+    };
+    await client.disconnect();
+    await client.connect();
+    const replacement = MockWebSocket.instances[1];
+    const disconnected = mock();
+    const reconnecting = mock();
+    const incoming = mock();
+    client.on("disconnected", disconnected);
+    client.on("reconnecting", reconnecting);
+    client.on("dm", incoming);
+    try {
+      previous.simulateClose();
+      previous.simulateMessage(JSON.stringify({ type: "dm", envelope: [1] }));
+      expect(client.online).toBe(true);
+      expect(client.sendDm("bb".repeat(32), [7])).toBe(true);
+      expect(JSON.parse(replacement.sent.at(-1)!)).toMatchObject({ type: "dm", envelope: [7] });
+      expect(disconnected).not.toHaveBeenCalled();
+      expect(reconnecting).not.toHaveBeenCalled();
+      expect(incoming).not.toHaveBeenCalled();
+    } finally {
+      await client.disconnect();
+    }
+  });
+
   test("reconnect gives up after maxReconnectAttempts", async () => {
     const { client } = createTestClient({ maxReconnectAttempts: 2 });
     const events: string[] = [];

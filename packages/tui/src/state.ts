@@ -41,6 +41,8 @@ export interface ChatMessage {
   createdAt: number;
   /** Own DMs: the recipient's delivery receipt arrived. Own room posts: the relay accepted it. */
   delivered: boolean;
+  /** An encrypted retry copy remains on this sender until a receipt arrives. */
+  queued?: boolean;
   /** Why an own message could not be sent; it was never delivered. */
   error?: string;
   own: boolean;
@@ -147,7 +149,10 @@ export interface DiscoveredUser {
   username: string;
   bio: string;
   interests: string[];
-  online: boolean;
+  /** null: no relay observation available; do not present a claimed status as fact. */
+  online: boolean | null;
+  /** Missing evidence is not an adverse rating; never publish scores or block history. */
+  reputationEvidence?: "insufficient";
 }
 
 const [discoveredUsers, setDiscoveredUsers] = createSignal<DiscoveredUser[]>([]);

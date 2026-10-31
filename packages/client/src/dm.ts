@@ -103,6 +103,7 @@ function handleAuthorizedDirectMessage(
   try {
     const cert = envelope.senderCertificate;
     if (!cert || !client.crypto.verify(cert.deviceSigningPublicKey, preimage, envelope.signature)) return;
+    client.persistentState?.retain();
     if (client.hasIncomingMessage(envelope.messageId)) {
       // A receipt can be lost. Acknowledge a signed retry without decrypting or
       // displaying it again, so the sender can discharge its retry obligation.

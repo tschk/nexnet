@@ -1,11 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 import { identityIdFromWallet, fromHex, toHex } from "@nexnet/protocol";
 import type { OutboundQueueItem } from "@nexnet/types";
+import { DeviceCapacityError } from "@nexnet/storage";
 import {
   createPersistentClient,
   openPersistentClient,
   type DeviceCredentials,
   type PersistentClientConfig,
+  DEFAULT_DEVICE_LIMITS,
+  type DeviceResourceLimits,
 } from "./persistent-client.js";
 import { onDirectMessage, sendDirectMessage } from "./dm.js";
 import type { LocalInboxMessage, LocalMessageState, LocalPresence, LocalStatus } from "./local-api.js";
@@ -24,6 +27,8 @@ export interface LocalDaemonConfig {
   /** Independent, host-provided random 32-byte token encoded as lowercase hex. */
   loadControlToken(): Promise<string>;
   trustedPeerRoots: readonly Uint8Array[];
+  limits?: Partial<DeviceResourceLimits>;
+  maxConcurrentRequests?: number;
   port?: number;
 }
 
@@ -41,6 +46,14 @@ export async function readOsSecret32(reference: { service: string; name: string 
 
 /** Privileged local transport control, NOT a delegated execution service. */
 export async function startLocalDaemon(options: LocalDaemonConfig) {
+  const limits = { ...DEFAULT_DEVICE_LIMITS, ...options.limits };
+  const maxConcurrent = options.maxConcurrentRequests ?? 8;
+  if (
+    !Number.isSafeInteger(maxConcurrent) ||
+    maxConcurrent < 1 ||
+    Object.values(limits).some((value) => !Number.isSafeInteger(value) || value < 1)
+  )
+    throw new Error("Invalid daemon resource limits");
   const token = await options.loadControlToken();
   if (!idPattern.test(token)) throw new Error("Control token must be 32 random bytes encoded as lowercase hex");
   const expected = Buffer.from(`Bearer ${token}`);
@@ -64,7 +77,10 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
     transportError = true;
   });
   let server: ReturnType<typeof Bun.serve> | undefined;
+  let activeRequests = 0;
   try {
+    state.configureLimits(limits);
+    state.retain();
     if (toHex(source.config.unlockKey) === token) throw new Error("Control token must not reuse the device unlock key");
     // Old obligations must not bypass a newly narrowed trusted-peer policy.
     // pending() excludes backoff-delayed messages, so inspect all stored obligations too.
@@ -94,8 +110,11 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
         if (provided.length !== expected.length || !timingSafeEqual(provided, expected))
           return failure("unauthorized", 401);
         if (stopping) return failure("stopping", 503);
+        if (activeRequests >= maxConcurrent) return failure("busy", 429);
+        activeRequests++;
         const url = new URL(request.url);
         try {
+          state.retain();
           if (request.method === "GET" && url.pathname === "/v1/status") {
             const status: LocalStatus = {
               identityId: toHex(client.identityId),
@@ -103,6 +122,7 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
               online: client.online,
               certificateExpiresAt: client.deviceCertificate!.expiresAt,
               transportError,
+              resources: { ...state.store.usage(), limits, activeRequests, maxConcurrentRequests: maxConcurrent },
             };
             return reply(status);
           }
@@ -110,11 +130,12 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
             const inbox: LocalInboxMessage[] = client
               .inbox()
               .filter((message) => allowed.has(toHex(message.envelope.senderIdentityId)))
-              .map(({ envelope, payload }) => ({
+              .map(({ envelope, payload, contentExpired }) => ({
                 messageId: toHex(envelope.messageId),
                 peer: toHex(envelope.senderIdentityId),
                 text: payload.text ?? "",
                 createdAt: envelope.createdAt,
+                ...(contentExpired ? { contentExpired: true as const } : {}),
               }));
             return reply(inbox);
           }
@@ -239,6 +260,7 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
           }
           return failure("not_found", 404);
         } catch (error) {
+          if (error instanceof DeviceCapacityError) return failure("capacity_exhausted", 429);
           if (error instanceof SyntaxError) return failure("invalid_json", 400);
           if (error instanceof AgentProtocolError)
             return failure(
@@ -254,6 +276,8 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
           transportError = true;
           // Never return cryptographic state, host paths or provider errors to control clients.
           return failure("transport_failed", 503);
+        } finally {
+          activeRequests--;
         }
       },
     });

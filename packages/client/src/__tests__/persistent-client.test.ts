@@ -9,7 +9,7 @@ import {
   signDeliveryReceipt,
   signIdentityAuthJson,
 } from "@nexnet/protocol";
-import { createPersistentClient, openPersistentClient } from "../persistent-client.js";
+import { createPersistentClient, openPersistentClient, DEFAULT_DEVICE_LIMITS } from "../persistent-client.js";
 import { sendDirectMessage, onDirectMessage } from "../dm.js";
 import { clearPrekeyDirectory } from "../prekeys.js";
 import { clearSessions } from "../double-ratchet.js";
@@ -597,4 +597,101 @@ test("capability publication counter and immutable outbox roll back together", a
   expect(store.keys("ratchet:")).toHaveLength(0);
   store.put = put;
   expect((await index.publish(bId, [{ name: "sum", description: "Claim" }], 1000)).revision).toBe(1);
+});
+
+test("receive quotas roll back keys, retention frees text capacity but keeps replay tombstones and pending work", async () => {
+  setSystemTime(Date.now());
+  const alice = peer(),
+    bob = peer(),
+    charlie = peer();
+  const state = bob.client.persistentState!;
+  state.configureLimits({ ...DEFAULT_DEVICE_LIMITS, inboxPerPeer: 1, retentionMs: 1000 });
+  const roots = new Map([
+    [Buffer.from(alice.client.identityId).toString("hex"), alice.root.publicKey],
+    [Buffer.from(charlie.client.identityId).toString("hex"), charlie.root.publicKey],
+  ]);
+  onDirectMessage(
+    bob.client,
+    () => {},
+    (id) => roots.get(Buffer.from(id).toString("hex")),
+  );
+  const first = await sendDirectMessage(alice.client, bob.client.identityId, "old text");
+  const second = await sendDirectMessage(alice.client, bob.client.identityId, "blocked until capacity");
+  const pending = alice.client.outboundQueue().pending();
+  const item = (id: Uint8Array) => pending.find((entry) => Buffer.from(entry.messageId).equals(Buffer.from(id)))!;
+  bob.client.emit("dm", { envelope: Array.from(item(first).encryptedEnvelope) });
+  const before = state.store.keys("ratchet:").map((name) => state.store.get(name));
+  bob.client.emit("dm", { envelope: Array.from(item(second).encryptedEnvelope) });
+  expect(bob.client.inbox()).toHaveLength(1);
+  expect(state.store.keys("ratchet:").map((name) => state.store.get(name))).toEqual(before);
+  const other = await sendDirectMessage(charlie.client, bob.client.identityId, "independent peer");
+  bob.client.emit("dm", { envelope: Array.from(charlie.client.outboundQueue().pending()[0]!.encryptedEnvelope) });
+  expect(state.hasIncoming(other)).toBe(true);
+  const now = Date.now();
+  state.retain(now + 999);
+  expect(bob.client.inbox()[0]!.contentExpired).toBeUndefined();
+  state.retain(now + 1001);
+  expect(bob.client.inbox().every((entry) => entry.contentExpired)).toBe(true);
+  expect(state.hasIncoming(first)).toBe(true);
+  bob.client.emit("dm", { envelope: Array.from(item(first).encryptedEnvelope) });
+  expect(bob.client.inbox()).toHaveLength(2);
+  bob.client.emit("dm", { envelope: Array.from(item(second).encryptedEnvelope) });
+  expect(bob.client.inbox()).toHaveLength(3);
+  expect(
+    bob.client.inbox().find((entry) => Buffer.from(entry.envelope.messageId).equals(Buffer.from(second)))!.payload.text,
+  ).toBe("blocked until capacity");
+  const aState = alice.client.persistentState!;
+  aState.configureLimits({ ...DEFAULT_DEVICE_LIMITS, retentionMs: 1000 });
+  const proof = signDeliveryReceipt(bob.client.identitySigner(), {
+    version: 2,
+    senderIdentityId: alice.client.identityId,
+    recipientIdentityId: bob.client.identityId,
+    recipientDeviceId: bob.client.deviceId,
+    messageId: first,
+    storedAt: Date.now(),
+  });
+  aState.markDelivered(first, proof);
+  aState.retain(Date.now() + 1001);
+  expect(
+    aState.read<{ encryptedEnvelope: Uint8Array }>(`queue:${Buffer.from(first).toString("hex")}`).encryptedEnvelope,
+  ).toHaveLength(0);
+  expect(
+    aState.pending().find((entry) => Buffer.from(entry.messageId).equals(Buffer.from(second)))!.encryptedEnvelope
+      .length,
+  ).toBeGreaterThan(0);
+  await bob.client.close();
+  expect(reopen(bob.config).persistentState!.hasIncoming(first)).toBe(true);
+});
+
+test("retention never erases accepted agent work or its request idempotency", async () => {
+  const alice = peer(),
+    bob = peer();
+  const hex = (value: Uint8Array) => Buffer.from(value).toString("hex");
+  const aId = hex(alice.client.identityId),
+    bId = hex(bob.client.identityId);
+  const a = new AgentMailbox(alice.client, new Set([bId]));
+  const b = new AgentMailbox(bob.client, new Set([aId]));
+  const request: AgentRequest = {
+    version: 1,
+    kind: "request",
+    correlationId: "retain-work",
+    capability: "sum",
+    acceptBefore: Date.now() + 60_000,
+    input: [8, 2],
+  };
+  const sent = await a.submit(bId, request);
+  onDirectMessage(
+    bob.client,
+    () => {},
+    () => alice.root.publicKey,
+  );
+  bob.client.emit("dm", { envelope: Array.from(alice.client.outboundQueue().pending()[0]!.encryptedEnvelope) });
+  await b.admit(aId, request.correlationId);
+  for (const client of [alice.client, bob.client]) {
+    client.persistentState!.configureLimits({ ...DEFAULT_DEVICE_LIMITS, retentionMs: 1 });
+    client.persistentState!.retain(Date.now() + 120_000);
+  }
+  expect((await b.admit(aId, request.correlationId)).entry.execution.state).toBe("accepted");
+  expect((await a.submit(bId, request)).transport.messageId).toBe(sent.transport.messageId);
+  expect(bob.client.inbox()[0]!.payload.text).toContain("retain-work");
 });

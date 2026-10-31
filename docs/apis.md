@@ -128,8 +128,8 @@ not imply delivery. `delivered` means verified durable recipient storage, not
 accepted or completed execution. SDK timeouts and lost responses can leave an
 ambiguous send result. The SDK does not retry automatically: durable request
 idempotency is available through the agent-envelope routes below, not the raw
-text-send route. The inbox currently returns the complete allowed-peer snapshot;
-pagination, quotas, backpressure and retention remain later work.
+text-send route. The inbox returns the complete allowed-peer snapshot;
+pagination remains later work. Resource limits and retention are described below.
 
 ### Host ownership and trusted peers
 
@@ -277,9 +277,9 @@ after that commit but before execution can therefore strand accepted work with
 unknown outcome. Recovery must reconcile it, not execute it again. No atomicity
 with external side effects or exactly-once execution is claimed.
 
-Idempotency records and inbox/outbox currently have no automatic expiry or
-pruning. Retention and quotas are later pieces; never delete deduplication records
-while their IDs could be replayed. AD-25's compromised-host and old-snapshot
+Idempotency records have no automatic expiry. Transport body compaction below
+preserves replay evidence; never delete deduplication records while their IDs
+could be replayed. AD-25's compromised-host and old-snapshot
 limitations still apply. Native Keychain round-trip remains untested as described
 above. The stack is #9 renewal/reception, #10 verified root-free receipts, #11
 crash-safe recovery/single-writer ownership, #12 privileged local daemon/SDK,
@@ -332,3 +332,75 @@ The sender cannot distinguish those admissions, so duplicate admission can cause
 double execution. The pilot requires one admitting device per principal endpoint;
 single-writer locking protects one store, not independent stores. This limitation
 also appears in PR #13, not just deployment instructions.
+
+## Resource limits reject work without deleting obligations
+
+The daemon applies these host-configured defaults on every start:
+
+| Limit                                                    | Default                   |
+| -------------------------------------------------------- | ------------------------- |
+| Logical encrypted row bytes, including names/nonces/tags | 64 MiB                    |
+| Stored records, including replay evidence                | 20,000                    |
+| Pending outgoing messages                                | 256 total, 64 per peer    |
+| Incoming messages with retained bodies                   | 1,024 total, 256 per peer |
+| Simultaneous authenticated HTTP requests                 | 8                         |
+| Disposable transport body retention                      | 24 hours                  |
+
+`LocalDaemonConfig.limits` overrides the storage/queue/inbox/retention defaults;
+`maxConcurrentRequests` overrides concurrency. All limits are positive safe
+integers. They are host policy, not remote grant budgets. Bare persistent-client
+callers must explicitly call `configureLimits`; daemon defaults do not silently
+change every library caller. Status exposes logical usage and configured limits.
+
+HTTP requests over the concurrency limit return 429 `busy` immediately instead
+of joining an unbounded application queue. New writes exceeding capacity return
+429 `capacity_exhausted`. SDK errors carry those codes and do not auto-retry.
+Neither response reports failed execution. Pending counts include backoff-delayed
+messages. Incoming capacity checks occur in the same transaction as inbox/key
+state: refusal neither advances ratchets nor consumes prekeys, and sends no
+delivery receipt. The sender keeps its immutable envelope for a later retry.
+Per-peer limits prevent one peer from consuming every message slot, but the
+global byte/record budget remains shared and does not guarantee fairness.
+
+Retention runs on startup and traffic. After the local retention age, delivered
+outbox ciphertext is compacted only when a persisted verified receipt exists.
+Raw text inbox bodies and already-indexed capability transport bodies are
+compacted using local `receivedAt`, never an untrusted sender timestamp.
+`LocalInboxMessage.contentExpired: true` distinguishes removed content from an
+originally empty body. Identity/message metadata and receipt proofs remain so
+duplicates still acknowledge without being displayed or executed again.
+Legacy inbox entries without local receipt time are retained, not guessed old.
+
+Pending deliveries, all agent request/result/error bodies, accepted work,
+idempotency records and capability revision watermarks are **never aged out**.
+The total record/byte budget bounds their growth instead. Reaching that budget
+can also prevent new acknowledgements or completion reports from committing;
+the operation rolls back and requires host intervention. There is no automatic
+eviction, reset or silent success. A closed pilot is finite-capacity, not an
+indefinitely running archive. The host can increase limits after inspecting
+usage; safe deletion of execution history requires a future replay-horizon and
+compaction protocol. Do not delete old IDs to make space.
+
+These budgets measure logical encrypted rows, not SQLite file size, free disk,
+ratchet CPU time or OS resource reservation. SQLite journal/free pages and host
+snapshots can retain old ciphertext. Compaction is not secure erasure and does
+not promise physical disk reclamation. Hard disk/CPU isolation belongs to the
+host. No new grant, execution, cancellation or revocation guarantee is added.
+
+### Pilot in plain language
+
+A trusted controller can keep a device identity alive without handing jobs the
+principal root key, exchange encrypted messages with allowlisted peers, recover
+its keys/inbox/outbox after restart, and verify delivery using certified devices.
+It can exchange correlated requests, record admission and explicit outcomes, and
+look up signed capability claims. Replays, conflicts, deadlines and capacity
+refusals have explicit outcomes. One process owns each device store.
+
+It cannot safely hand its all-powerful control token to untrusted jobs. It does
+not enforce delegated grants or execute jobs, verify competence, guarantee
+completion/cancellation/exactly-once side effects, or coordinate admission across
+independent receiving devices. Delivery is storage, not execution. Revocation is
+still #4; a compromised host can read its secrets, and old-snapshot rollback is
+not detected. Real OS Keychain integration remains untested. The network/chain
+is still the development foundation described by this repository, not a shipped
+open-network agent service.

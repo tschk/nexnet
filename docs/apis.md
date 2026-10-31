@@ -286,3 +286,49 @@ crash-safe recovery/single-writer ownership, #12 privileged local daemon/SDK,
 and these envelopes. It is still not a usable delegated-agent execution service:
 receiver-verifiable grant enforcement is missing, revocation remains #4, and
 delivery is not execution.
+
+## Capability advertisements are signed claims
+
+`LocalNexnet.advertise(peer, capabilities, ttlMs?)` publishes a device-signed
+self-description through encrypted DMs to a pinned trusted peer. The authenticated
+local route is `POST /v1/agent/capabilities` with `{peer, capabilities, ttlMs}`.
+Each capability has a `name` and `description`. `capabilities(name?)` queries
+`GET /v1/agent/capabilities?capability=NAME` locally, without fetching remote URLs.
+
+Results carry `evidence: "signed_self_description"`. A signature proves who made
+the claim, **not competence, authority or permission to execute**. There is no
+reputation eligibility gate, global/open-network index, automatic job routing,
+grant enforcement, or A2A binding. Empty search results mean no current claim,
+not evidence that a peer lacks a capability. An empty signed capability list
+withdraws previous descriptions; it does not revoke credentials or grants.
+
+Advertisements use version 1 and the existing domain-separated identity proof
+with operation `agent.capabilities.v1`. A valid device certificate is required;
+root-only proofs are rejected. The verifier pins the principal root, checks the
+claimed identity against both proof and authenticated DM sender, and bounds
+advertisement validity by certificate validity. Claims expire after at most one
+hour, with the default also one hour. Expired claims and certificates disappear
+from results without becoming negative reputation evidence.
+
+There are at most 16 unique capability names per advertisement. Names use the
+request-envelope capability syntax; descriptions are at most 160 UTF-8 bytes.
+The signed JSON body is limited to 8192 UTF-8 bytes. Unknown fields, versions,
+malformed certificates, future timestamps and invalid signatures are rejected.
+Each inbox/cached record is parsed and verified independently; one hostile or
+malformed record cannot abort lookup or replace a valid peer's advertisement.
+
+The index retains one current claim and a monotonically increasing revision
+watermark per pinned principal. Older or equal revisions cannot replace it,
+including after expiry or restart. Publication revisions commit atomically with
+ratchet and outbox state. Revision continuity requires recovering the same device
+store; replacing it needs an explicit future revision-reset protocol. AD-25's
+old-snapshot limits remain. The index exposes claims only to the privileged
+controller; relays do not retain private capability bodies. Trusted peers learn
+the advertised names/descriptions, signer device, revision and validity window.
+
+**Multiple receiving devices can duplicate execution.** Two independent device
+stores for the same principal can each admit the same sender/correlation ID.
+The sender cannot distinguish those admissions, so duplicate admission can cause
+double execution. The pilot requires one admitting device per principal endpoint;
+single-writer locking protects one store, not independent stores. This limitation
+also appears in PR #13, not just deployment instructions.

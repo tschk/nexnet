@@ -109,6 +109,34 @@ export class LocalNexnet {
       online: result.online,
       certificateExpiresAt: result.certificateExpiresAt,
       transportError: result.transportError,
+      ...(object(result.resources) &&
+      typeof result.resources.bytes === "number" &&
+      typeof result.resources.records === "number"
+        ? { resources: this.resources(result.resources) }
+        : {}),
+    };
+  }
+
+  private resources(value: Record<string, unknown>): NonNullable<LocalStatus["resources"]> {
+    if (!object(value.limits)) throw invalid();
+    const integer = (v: unknown): number => {
+      if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw invalid();
+      return v;
+    };
+    return {
+      bytes: integer(value.bytes),
+      records: integer(value.records),
+      activeRequests: integer(value.activeRequests),
+      maxConcurrentRequests: integer(value.maxConcurrentRequests),
+      limits: {
+        bytes: integer(value.limits.bytes),
+        records: integer(value.limits.records),
+        pending: integer(value.limits.pending),
+        pendingPerPeer: integer(value.limits.pendingPerPeer),
+        inbox: integer(value.limits.inbox),
+        inboxPerPeer: integer(value.limits.inboxPerPeer),
+        retentionMs: integer(value.limits.retentionMs),
+      },
     };
   }
 
@@ -143,7 +171,14 @@ export class LocalNexnet {
         !Number.isSafeInteger(entry.createdAt)
       )
         throw invalid();
-      return { messageId: entry.messageId, peer: entry.peer, text: entry.text, createdAt: entry.createdAt };
+      if (entry.contentExpired !== undefined && entry.contentExpired !== true) throw invalid();
+      return {
+        messageId: entry.messageId,
+        peer: entry.peer,
+        text: entry.text,
+        createdAt: entry.createdAt,
+        ...(entry.contentExpired === true ? { contentExpired: true as const } : {}),
+      };
     });
   }
 

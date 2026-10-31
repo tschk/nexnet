@@ -10,7 +10,7 @@ import {
   toHex,
 } from "@nexnet/protocol";
 import { createPersistentClient, openPersistentClient } from "../persistent-client.js";
-import { readOsSecret32, startLocalDaemon } from "../local-daemon.js";
+import { readOsSecret32, startLocalDaemon, type LocalDaemonConfig } from "../local-daemon.js";
 import { LocalNexnet } from "../local-sdk.js";
 import { clearPrekeyDirectory, fetchBundle, unpublishBundle } from "../prekeys.js";
 import { bundleToNetwork, fetchBundleRemote } from "../prekey-network.js";
@@ -81,8 +81,12 @@ async function setup() {
       id: toHex(identityId),
       root: root.publicKey,
       token,
-      async start(roots: Uint8Array[]) {
+      async start(
+        roots: Uint8Array[],
+        resourceOptions: Pick<LocalDaemonConfig, "limits" | "maxConcurrentRequests"> = {},
+      ) {
         const options = {
+          ...resourceOptions,
           loadDevice: async () => ({ mode: "open" as const, config }),
           loadControlToken: async () => token,
           trustedPeerRoots: roots,
@@ -541,4 +545,33 @@ test("signed capabilities cross real relay, remain claims, recover revisions and
   expect(withdrawal.revision).toBe(sent.revision + 1);
   await until(async () => (await b.sdk.capabilities("sum")).length === 0);
   expect((await b.sdk.capabilities())[0]!.advertisement.capabilities).toEqual([]);
+});
+
+test("daemon backpressure rejects excess inflight work and queue capacity without implying execution failure", async () => {
+  const { peer } = await setup();
+  const alice = await peer(),
+    bob = await peer();
+  const a = await alice.start([bob.root], { limits: { pendingPerPeer: 1 }, maxConcurrentRequests: 1 });
+  const first = await a.sdk.send(bob.id, "first pending");
+  await expect(a.sdk.send(bob.id, "second blocked")).rejects.toMatchObject({ code: "capacity_exhausted", status: 429 });
+  expect(await a.sdk.delivery(first.messageId)).toEqual(first);
+  expect((await a.sdk.status()).resources).toMatchObject({ limits: { pendingPerPeer: 1 }, maxConcurrentRequests: 1 });
+  // Hold a real request body open: the second request must be rejected rather than queued in memory.
+  let finish: (() => void) | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"peer":'));
+      finish = () => controller.close();
+    },
+  });
+  const pending = fetch(`${a.url}/v1/messages`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${alice.token}`, "content-type": "application/json" },
+    body,
+  });
+  await Bun.sleep(30);
+  await expect(a.sdk.status()).rejects.toMatchObject({ code: "busy", status: 429 });
+  finish!();
+  expect((await pending).status).toBe(400);
+  expect((await a.sdk.status()).online).toBe(true);
 });

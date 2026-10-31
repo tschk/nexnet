@@ -4,9 +4,15 @@ import { join } from "node:path";
 import type { CryptoProvider } from "@nexnet/types";
 
 const CHECK = new TextEncoder().encode("nexnet encrypted device store v1");
+export class DeviceCapacityError extends Error {
+  constructor() {
+    super("Device capacity exhausted; existing obligations retained");
+  }
+}
 
 /** One process owns this device directory until close or process death. */
 export class DeviceStore {
+  private limits: { bytes: number; records: number } | undefined;
   private constructor(
     private readonly db: Database,
     private readonly lock: Database,
@@ -71,9 +77,43 @@ export class DeviceStore {
   }
 
   put(name: string, value: Uint8Array): void {
+    if (this.limits) {
+      const previous = this.db
+        .query(
+          "SELECT length(CAST(name AS BLOB)) + length(nonce) + length(ciphertext) AS bytes FROM device_state WHERE name = ?",
+        )
+        .get(name) as { bytes: number } | null;
+      const usage = this.usage();
+      const next = new TextEncoder().encode(name).length + 24 + value.length + 16;
+      if (
+        (!previous && usage.records >= this.limits.records) ||
+        (next > (previous?.bytes ?? 0) && usage.bytes - (previous?.bytes ?? 0) + next > this.limits.bytes)
+      )
+        throw new DeviceCapacityError();
+    }
     const nonce = this.crypto.randomBytes(24);
     const ciphertext = this.crypto.encrypt(this.key, nonce, new TextEncoder().encode(name), value);
     this.db.query("INSERT OR REPLACE INTO device_state VALUES (?, ?, ?)").run(name, nonce, ciphertext);
+  }
+
+  /** Logical encrypted-data budget, not an OS disk reservation or SQLite file-size promise. */
+  setLimits(limits: { bytes: number; records: number }): void {
+    if (
+      !Number.isSafeInteger(limits.bytes) ||
+      limits.bytes < 1 ||
+      !Number.isSafeInteger(limits.records) ||
+      limits.records < 1
+    )
+      throw new Error("Invalid device capacity limits");
+    this.limits = { ...limits };
+  }
+
+  usage(): { bytes: number; records: number } {
+    return this.db
+      .query(
+        "SELECT coalesce(sum(length(CAST(name AS BLOB)) + length(nonce) + length(ciphertext)), 0) AS bytes, count(*) AS records FROM device_state",
+      )
+      .get() as { bytes: number; records: number };
   }
 
   keys(prefix: string): string[] {

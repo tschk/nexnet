@@ -5,6 +5,13 @@ export interface LocalStatus {
   online: boolean;
   certificateExpiresAt: number;
   transportError: boolean;
+  resources?: {
+    bytes: number;
+    records: number;
+    limits: import("./persistent-client.js").DeviceResourceLimits;
+    activeRequests: number;
+    maxConcurrentRequests: number;
+  };
 }
 
 export interface LocalMessageState {
@@ -17,6 +24,7 @@ export interface LocalInboxMessage {
   peer: string;
   text: string;
   createdAt: number;
+  contentExpired?: true;
 }
 
 export interface LocalPresence {

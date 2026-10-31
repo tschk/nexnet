@@ -50,6 +50,31 @@ test("one damaged encrypted row prevents exposing any recovered state", () => {
   }
 });
 
+test("logical capacity rejects growth atomically but allows shrinking existing records", () => {
+  const dir = mkdtempSync(`${scratch}device-capacity-`);
+  const store = DeviceStore.open(dir, key, cryptoProvider, true);
+  try {
+    store.put("value", new Uint8Array(10));
+    const usage = store.usage();
+    store.setLimits(usage);
+    expect(() => store.put("new", new Uint8Array())).toThrow("capacity exhausted");
+    expect(() =>
+      store.transaction(() => {
+        store.put("value", new Uint8Array(5));
+        store.put("new", new Uint8Array());
+      }),
+    ).toThrow("capacity exhausted");
+    expect(store.get("value")).toHaveLength(10);
+    store.put("value", new Uint8Array(5));
+    expect(store.usage().bytes).toBe(usage.bytes - 5);
+    expect(() => store.put("value", new Uint8Array(11))).toThrow("capacity exhausted");
+    expect(store.get("value")).toHaveLength(5);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test.each(["owner", "transaction"])("OS ownership survives contention and releases after killed %s", async (mode) => {
   const dir = mkdtempSync(`${scratch}device-store-`);
   const store = DeviceStore.open(dir, key, cryptoProvider, true);

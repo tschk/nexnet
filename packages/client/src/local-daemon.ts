@@ -9,6 +9,8 @@ import {
 } from "./persistent-client.js";
 import { onDirectMessage, sendDirectMessage } from "./dm.js";
 import type { LocalInboxMessage, LocalMessageState, LocalPresence, LocalStatus } from "./local-api.js";
+import { AgentMailbox } from "./agent-mailbox.js";
+import { AgentProtocolError, isAgentPeer, isCorrelationId, parseAgentEnvelope } from "./agent-envelope.js";
 
 type DeviceSource =
   | { mode: "create"; config: PersistentClientConfig; credentials: DeviceCredentials }
@@ -52,6 +54,7 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
       ? createPersistentClient(source.config, source.credentials)
       : openPersistentClient(source.config);
   const state = client.persistentState!;
+  const agents = new AgentMailbox(client, allowed);
   let stopping = false;
   let transportError = false;
   client.on("error", () => {
@@ -111,6 +114,38 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
                 createdAt: envelope.createdAt,
               }));
             return reply(inbox);
+          }
+          if (request.method === "GET" && url.pathname === "/v1/agent/inbox") return reply(agents.inbox());
+          const agentPath = url.pathname.match(/^\/v1\/agent\/requests\/([0-9a-f]{64})\/([A-Za-z0-9_-]{1,128})$/);
+          if (request.method === "GET" && agentPath) return reply(agents.outgoing(agentPath[1]!, agentPath[2]!));
+          if (
+            request.method === "POST" &&
+            ["/v1/agent/requests", "/v1/agent/admit", "/v1/agent/respond"].includes(url.pathname)
+          ) {
+            if (request.headers.get("content-type") !== "application/json") return failure("invalid_json", 415);
+            const body: unknown = await request.json();
+            if (
+              !body ||
+              typeof body !== "object" ||
+              !("peer" in body) ||
+              !isAgentPeer(body.peer) ||
+              Object.keys(body).length !== 2
+            )
+              return failure("invalid_envelope", 400);
+            if (!allowed.has(body.peer)) return failure("peer_not_allowed", 403);
+            if (url.pathname === "/v1/agent/admit") {
+              if (!("correlationId" in body) || !isCorrelationId(body.correlationId))
+                return failure("invalid_envelope", 400);
+              return reply(await agents.admit(body.peer, body.correlationId));
+            }
+            if (!("envelope" in body)) return failure("invalid_envelope", 400);
+            const envelope = parseAgentEnvelope(body.envelope);
+            if (url.pathname === "/v1/agent/requests") {
+              if (envelope.kind !== "request") return failure("invalid_envelope", 400);
+              return reply(await agents.submit(body.peer, envelope), 202);
+            }
+            if (envelope.kind === "request") return failure("invalid_envelope", 400);
+            return reply(await agents.respond(body.peer, envelope));
           }
           if (request.method === "POST" && url.pathname === "/v1/messages") {
             if (request.headers.get("content-type") !== "application/json") return failure("invalid_json", 415);
@@ -177,6 +212,17 @@ export async function startLocalDaemon(options: LocalDaemonConfig) {
           return failure("not_found", 404);
         } catch (error) {
           if (error instanceof SyntaxError) return failure("invalid_json", 400);
+          if (error instanceof AgentProtocolError)
+            return failure(
+              error.code,
+              error.code === "not_found"
+                ? 404
+                : error.code === "peer_not_allowed"
+                  ? 403
+                  : error.code === "invalid_envelope"
+                    ? 400
+                    : 409,
+            );
           transportError = true;
           // Never return cryptographic state, host paths or provider errors to control clients.
           return failure("transport_failed", 503);

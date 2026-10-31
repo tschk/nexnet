@@ -8,6 +8,17 @@ export { startLocalDaemon, readOsSecret32 } from "./local-daemon.js";
 export type { LocalDaemonConfig } from "./local-daemon.js";
 export { LocalNexnet, LocalApiError } from "./local-sdk.js";
 export type { LocalStatus, LocalMessageState, LocalInboxMessage, LocalPresence } from "./local-api.js";
+export type {
+  AgentValue,
+  AgentRequest,
+  AgentResult,
+  AgentError,
+  AgentEnvelope,
+  AgentExecution,
+  AgentOutgoing,
+  AgentInboxEntry,
+  AgentAdmissionDecision,
+} from "./agent-envelope.js";
 
 export { sendDirectMessage, onDirectMessage, deriveConversationId, DM_WIRE_X3DH } from "./dm.js";
 

@@ -8,6 +8,8 @@ import { clearPrekeyDirectory } from "../prekeys.js";
 import { clearSessions } from "../double-ratchet.js";
 import { exportBundle } from "../x3dh.js";
 import { NexnetClient } from "../client.js";
+import { AgentMailbox } from "../agent-mailbox.js";
+import type { AgentRequest, AgentEvidence } from "../agent-envelope.js";
 
 const scratch = `${import.meta.dir}/../../../../.amp/in/`;
 mkdirSync(scratch, { recursive: true });
@@ -269,4 +271,186 @@ test("separate processes recover both sides of an established ratchet and their 
   expect(received.messages.sort()).toEqual(["after both restarted", "first"]);
   const duplicate = await run("receive", bob.config.storagePath, { ...infoA, envelope: first.envelope });
   expect(duplicate.messages.sort()).toEqual(["after both restarted", "first"]);
+});
+
+test("agent metadata failure rolls back ratchet/outbox and admission together across recovery", async () => {
+  const alice = peer(),
+    bob = peer();
+  const aliceId = Buffer.from(alice.client.identityId).toString("hex"),
+    bobId = Buffer.from(bob.client.identityId).toString("hex");
+  const a = new AgentMailbox(alice.client, new Set([bobId]));
+  const request: AgentRequest = {
+    version: 1,
+    kind: "request",
+    correlationId: "crash",
+    capability: "sum",
+    acceptBefore: Date.now() + 60_000,
+    input: [9, 2],
+  };
+  const store = alice.client.persistentState!.store;
+  const put = store.put.bind(store);
+  store.put = (name, value) => {
+    if (name.startsWith("agent:v1:out:")) throw new Error("injected request write failure");
+    put(name, value);
+  };
+  await expect(a.submit(bobId, request)).rejects.toThrow("injected request write failure");
+  expect(store.keys("ratchet:")).toHaveLength(0);
+  expect(store.keys("queue:")).toHaveLength(0);
+  store.put = put;
+  const sent = await a.submit(bobId, request);
+  const item = alice.client.outboundQueue().pending()[0]!;
+  onDirectMessage(
+    bob.client,
+    () => {},
+    () => alice.root.publicKey,
+  );
+  bob.client.emit("dm", { envelope: Array.from(item.encryptedEnvelope) });
+  let b = new AgentMailbox(bob.client, new Set([aliceId]));
+  const receiverStore = bob.client.persistentState!.store;
+  const write = receiverStore.put.bind(receiverStore);
+  receiverStore.put = (name, value) => {
+    if (name.startsWith("agent:v1:seen:")) throw new Error("injected observation write failure");
+    write(name, value);
+  };
+  expect(() => b.inbox()).toThrow("injected observation write failure");
+  expect(receiverStore.keys("agent:v1:in:")).toHaveLength(0);
+  expect(bob.client.inbox()).toHaveLength(1);
+  receiverStore.put = write;
+  expect(b.inbox()[0]).toMatchObject({ execution: { state: "awaiting_admission" } });
+  const snapshot = () => receiverStore.keys("").map((name) => [name, receiverStore.get(name)]);
+  const before = snapshot();
+  receiverStore.put = (name, value) => {
+    if (name.startsWith("agent:v1:in:")) throw new Error("injected admission write failure");
+    write(name, value);
+  };
+  await expect(b.admit(aliceId, request.correlationId)).rejects.toThrow("injected admission write failure");
+  expect(snapshot()).toEqual(before);
+  receiverStore.put = write;
+  await bob.client.close();
+  const receiver = reopen(bob.config);
+  b = new AgentMailbox(receiver, new Set([aliceId]));
+  expect((await b.admit(aliceId, request.correlationId)).kind).toBe("new_admission");
+  await receiver.close();
+  const again = reopen(bob.config);
+  expect((await new AgentMailbox(again, new Set([aliceId])).admit(aliceId, request.correlationId)).kind).toBe(
+    "existing_decision",
+  );
+  expect(a.outgoing(bobId, request.correlationId).transport.messageId).toBe(sent.transport.messageId);
+});
+
+test("authenticated sender scopes correlation; conflicting requests/evidence are visible and never overwrite decisions", async () => {
+  const alice = peer(),
+    bob = peer(),
+    charlie = peer();
+  const hex = (value: Uint8Array) => Buffer.from(value).toString("hex");
+  const aId = hex(alice.client.identityId),
+    bId = hex(bob.client.identityId),
+    cId = hex(charlie.client.identityId);
+  const roots = new Map([
+    [aId, alice.root.publicKey],
+    [bId, bob.root.publicKey],
+    [cId, charlie.root.publicKey],
+  ]);
+  onDirectMessage(
+    bob.client,
+    () => {},
+    (id) => roots.get(hex(id)),
+  );
+  onDirectMessage(
+    alice.client,
+    () => {},
+    (id) => roots.get(hex(id)),
+  );
+  const a = new AgentMailbox(alice.client, new Set([bId, cId]));
+  const b = new AgentMailbox(bob.client, new Set([aId, cId]));
+  const request: AgentRequest = {
+    version: 1,
+    kind: "request",
+    correlationId: "same-id",
+    capability: "sum",
+    acceptBefore: Date.now() + 60_000,
+    input: { x: 8, y: 1 },
+  };
+  await a.submit(bId, request);
+  bob.client.emit("dm", { envelope: Array.from(alice.client.outboundQueue().pending()[0]!.encryptedEnvelope) });
+  expect(b.inbox()).toHaveLength(1);
+  async function deliver(sender: NexnetClient, receiver: NexnetClient, message: unknown) {
+    const id = await sendDirectMessage(sender, receiver.identityId, {
+      contentType: "agent",
+      text: JSON.stringify(message),
+    });
+    const item = sender
+      .outboundQueue()
+      .pending()
+      .find((entry) => hex(entry.messageId) === hex(id))!;
+    receiver.emit("dm", { envelope: Array.from(item.encryptedEnvelope) });
+  }
+  await deliver(alice.client, bob.client, { ...request, input: { y: 1, x: 8 } });
+  expect(b.inbox()).toHaveLength(1);
+  await deliver(alice.client, bob.client, { ...request, input: { x: 1, y: 8 } });
+  expect(b.inbox()).toContainEqual(
+    expect.objectContaining({ kind: "rejected", peer: aId, code: "correlation_conflict" }),
+  );
+  await deliver(charlie.client, bob.client, request);
+  expect(b.inbox().filter((entry) => entry.kind === "request")).toHaveLength(2);
+  const result: AgentEvidence = {
+    version: 1,
+    kind: "result",
+    correlationId: request.correlationId,
+    status: "completed",
+    value: 9,
+  };
+  await deliver(charlie.client, alice.client, result);
+  expect(a.outgoing(bId, request.correlationId).execution.state).toBe("awaiting_evidence");
+  expect(a.inbox()).toContainEqual(
+    expect.objectContaining({ kind: "rejected", peer: cId, code: "unknown_correlation" }),
+  );
+  // Terminal evidence can precede the admission acknowledgement on the transport.
+  await deliver(bob.client, alice.client, result);
+  await deliver(bob.client, alice.client, {
+    version: 1,
+    kind: "result",
+    correlationId: request.correlationId,
+    status: "accepted",
+  });
+  expect(a.outgoing(bId, request.correlationId).execution).toEqual({ state: "completed", result: 9 });
+  await deliver(bob.client, alice.client, { ...result, value: 10 });
+  expect(a.outgoing(bId, request.correlationId).execution).toEqual({ state: "completed", result: 9 });
+  expect(a.inbox()).toContainEqual(
+    expect.objectContaining({ kind: "rejected", peer: bId, code: "conflicting_evidence" }),
+  );
+});
+
+test("slow preparation crossing admission deadline rolls back acceptance and sends only expiry evidence", async () => {
+  const alice = peer(),
+    bob = peer();
+  const hex = (value: Uint8Array) => Buffer.from(value).toString("hex");
+  const aId = hex(alice.client.identityId),
+    bId = hex(bob.client.identityId);
+  const request: AgentRequest = {
+    version: 1,
+    kind: "request",
+    correlationId: "slow",
+    capability: "sum",
+    acceptBefore: Date.now() + 1000,
+    input: 3,
+  };
+  await new AgentMailbox(alice.client, new Set([bId])).submit(bId, request);
+  onDirectMessage(
+    bob.client,
+    () => {},
+    () => alice.root.publicKey,
+  );
+  bob.client.emit("dm", { envelope: Array.from(alice.client.outboundQueue().pending()[0]!.encryptedEnvelope) });
+  const ensure = bob.client.ensureDeviceCertificate.bind(bob.client);
+  bob.client.ensureDeviceCertificate = async () => {
+    await ensure();
+    setSystemTime(request.acceptBefore);
+  };
+  const decision = await new AgentMailbox(bob.client, new Set([aId])).admit(aId, request.correlationId);
+  expect(decision).toMatchObject({
+    kind: "existing_decision",
+    entry: { execution: { state: "failed", error: { stage: "admission", code: "admission_expired" } } },
+  });
+  expect(bob.client.outboundQueue().pending()).toHaveLength(1);
 });

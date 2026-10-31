@@ -12,6 +12,7 @@
     "@nexnet/types": "workspace:*"
   },
   "devDependencies": {
+    "@nexnet/crypto": "workspace:*",
     "bun-types": "^1.4.2"
   }
 }

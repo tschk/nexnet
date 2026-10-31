@@ -30,9 +30,10 @@ import {
   seal as ratchetSeal,
   x3dhSessionStoreKey,
   setSession,
+  type RatchetState,
 } from "./double-ratchet.js";
-import { fetchBundle, getLocalPrekeys, refreshPublishedBundle } from "./prekeys.js";
-import { x3dhInitiate, x3dhRespond } from "./x3dh.js";
+import { fetchBundle, getLocalPrekeys, publishBundle, refreshPublishedBundle } from "./prekeys.js";
+import { exportBundle, x3dhInitiate, x3dhRespond } from "./x3dh.js";
 import { trySendDirect } from "./transport.js";
 import { fetchBundleRemote, publishBundleRemote, verifiedRootPublicKey } from "./prekey-network.js";
 
@@ -117,7 +118,7 @@ function handleAuthorizedDirectMessage(
     const sessionKey = x3dhSessionStoreKey(envelope.conversationId, envelope.senderIdentityId);
 
     let ratchetBlob = envelope.ciphertext;
-    const stored = getSession(sessionKey);
+    const stored = client.persistentState ? client.persistentState.session(sessionKey) : getSession(sessionKey);
     // Stage ratchet/OTP changes: a signed but unauthenticatable first message
     // must neither install a session nor consume the recipient's one-time key.
     let existing = stored ? deserializeState(serializeState(stored)) : undefined;
@@ -125,7 +126,7 @@ function handleAuthorizedDirectMessage(
 
     if (!existing) {
       const x3dh = decodeX3dhPrefix(envelope.ciphertext);
-      const local = getLocalPrekeys(client.identityId);
+      const local = client.persistentState ? client.persistentState.prekeys() : getLocalPrekeys(client.identityId);
       if (!x3dh || !local) return;
       const resp = x3dhRespond(
         client.crypto,
@@ -146,14 +147,27 @@ function handleAuthorizedDirectMessage(
 
     const plaintext = ratchetOpen(client.crypto, existing, ratchetBlob, aad);
     const payload = client.codec.decode<MessagePayload>(plaintext);
-    saveSession(sessionKey, existing);
+    if (client.persistentState) {
+      if (consumedOtp) consumedOtp.material.oneTime.delete(consumedOtp.id);
+      if (!client.persistentState.commitReceive(sessionKey, existing, consumedOtp?.material, { envelope, payload }))
+        return;
+    } else {
+      saveSession(sessionKey, existing);
+    }
     if (consumedOtp) {
       consumedOtp.material.oneTime.delete(consumedOtp.id);
       const selfBundle = fetchBundle(client.identityId);
       if (selfBundle) {
-        refreshPublishedBundle(client.identityId, selfBundle.identitySignPublic);
+        if (client.persistentState)
+          publishBundle(
+            client.identityId,
+            exportBundle(client.persistentState.prekeys(), client.deviceSigningPublicKey!),
+          );
+        else refreshPublishedBundle(client.identityId, selfBundle.identitySignPublic);
         // Stop advertising the consumed one-time key to other processes.
-        const refreshed = fetchBundle(client.identityId);
+        const refreshed = client.persistentState
+          ? exportBundle(client.persistentState.prekeys(), client.deviceSigningPublicKey!)
+          : fetchBundle(client.identityId);
         if (client.presenceUrl && refreshed) {
           void publishBundleRemote(client.presenceUrl, client.identityId, refreshed, client.identitySigner()).catch(
             (error: unknown) =>
@@ -165,10 +179,22 @@ function handleAuthorizedDirectMessage(
         }
       }
     }
-    if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
-    callback(envelope, payload);
+    if (!client.persistentState && !client.persistIncomingMessage(envelope.messageId, bytes)) return;
     client.sendDeliveryReceipt(Buffer.from(envelope.senderIdentityId).toString("hex"), envelope.messageId);
-  } catch {}
+    try {
+      callback(envelope, payload);
+    } catch (error) {
+      client.emit("error", {
+        type: "dm_handler_failed",
+        message: error instanceof Error ? error.message : "DM handler failed",
+      });
+    }
+  } catch (error) {
+    client.emit("error", {
+      type: "dm_receive_failed",
+      message: error instanceof Error ? error.message : "DM receive failed",
+    });
+  }
 }
 
 export function deriveConversationId(crypto: NexnetClient["crypto"], a: IdentityId, b: IdentityId): ConversationId {
@@ -213,6 +239,9 @@ export async function sendDirectMessage(
   queue?: OutboundQueueLike,
   options: SendDirectMessageOptions = {},
 ): Promise<MessageId> {
+  if (client.persistentState && (queue || options.directOnly)) {
+    throw new Error("Persistent DMs require the device's transactional outbox");
+  }
   await client.ensureDeviceCertificate();
   const certificate = await senderCertificate(client);
   const conversationId = deriveConversationId(client.crypto, client.identityId, recipientId);
@@ -241,7 +270,10 @@ export async function sendDirectMessage(
 
   // A new session uses the peer's current published bundle (it may have rotated);
   // fall back to a cached bundle only if presence cannot be reached.
-  if (!getSession(sessionKey) && client.presenceUrl) {
+  if (
+    !(client.persistentState ? client.persistentState.session(sessionKey) : getSession(sessionKey)) &&
+    client.presenceUrl
+  ) {
     try {
       await fetchBundleRemote(client.presenceUrl, recipientId);
     } catch (error) {
@@ -250,13 +282,15 @@ export async function sendDirectMessage(
   }
 
   let ciphertext: Uint8Array;
-  const existing = getSession(sessionKey);
+  let advanced: RatchetState;
+  const existing = client.persistentState ? client.persistentState.session(sessionKey) : getSession(sessionKey);
 
   if (existing) {
     ciphertext = ratchetSeal(client.crypto, existing, payloadCde, aad);
-    saveSession(sessionKey, existing);
+    advanced = existing;
+    if (!client.persistentState) saveSession(sessionKey, existing);
   } else {
-    const local = getLocalPrekeys(client.identityId);
+    const local = client.persistentState ? client.persistentState.prekeys() : getLocalPrekeys(client.identityId);
     const remote = fetchBundle(recipientId);
     if (!local || !remote) {
       throw new Error("X3DH prekeys are required for a new DM session");
@@ -264,7 +298,8 @@ export async function sendDirectMessage(
     const init = x3dhInitiate(client.crypto, local.identityDh.secretKey, remote);
     const ratchet = initInitiator(init.sk, client.crypto);
     const sealed = ratchetSeal(client.crypto, ratchet, payloadCde, aad);
-    setSession(sessionKey, ratchet);
+    advanced = ratchet;
+    if (!client.persistentState) setSession(sessionKey, ratchet);
     const prefix = encodeX3dhPrefix(local.identityDh.publicKey, init.ekPublic, init.usedOneTimePrekeyId);
     ciphertext = new Uint8Array(prefix.length + sealed.length);
     ciphertext.set(prefix, 0);
@@ -308,15 +343,21 @@ export async function sendDirectMessage(
   // encrypted envelope until a verified recipient receipt arrives. Relays
   // never hold the offline queue or private message bodies.
   if (!options.directOnly) {
-    (queue ?? client.outboundQueue()).enqueue({
+    const item = {
       messageId,
       recipientIdentityId: recipientId,
       encryptedEnvelope: encoded,
       encryptionFormat: DM_X3DH_QUEUE_FORMAT,
       createdAt: now,
       attemptCount: 0,
-      deliveryState: "pending",
-    });
+      deliveryState: "pending" as const,
+    };
+    if (client.persistentState) {
+      client.persistentState.commitSend(sessionKey, advanced, item);
+      client.outboundQueue();
+    } else {
+      (queue ?? client.outboundQueue()).enqueue(item);
+    }
   }
 
   // Prefer open WebRTC data channel (AD-20 style direct)

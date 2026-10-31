@@ -45,7 +45,15 @@ export class QueueManager {
         .pendingForRecipient(receipt.recipientIdentityId)
         .find((pending) => Buffer.from(pending.messageId).equals(Buffer.from(receipt.messageId)));
       if (this.client !== client || item?.encryptionFormat !== DM_X3DH_QUEUE_FORMAT) return;
-      this.queue.markDelivered(receipt.messageId);
+      try {
+        this.queue.markDelivered(receipt.messageId, data.receipt);
+      } catch (error) {
+        client.emit("error", {
+          type: "delivery_receipt_store_failed",
+          message: error instanceof Error ? error.message : "Receipt storage failed",
+        });
+        return;
+      }
       client.emit("verified_delivery_receipt", {
         ...receipt,
         from: Buffer.from(receipt.recipientIdentityId).toString("hex"),

@@ -13,6 +13,7 @@ import type {
   CborCdeCodec,
   DeviceCertificate,
   DeviceCertificateResolver,
+  OutboundQueueLike,
 } from "@nexnet/types";
 import { EventLog, OutboundQueue } from "@nexnet/storage";
 import { publicKeyFromSecret } from "@nexnet/crypto";
@@ -22,6 +23,8 @@ import { join } from "node:path";
 import { consumePresenceMessage } from "./presence.js";
 import { QueueManager } from "./queue-manager.js";
 import { DeviceCertificateLifecycle, type DeviceCertificateRenewer } from "./device-lifecycle.js";
+import type { PersistentDmState, StoredInboxMessage } from "./persistent-client.js";
+import { publishLocalPrekeys } from "./prekey-network.js";
 
 export type EventType =
   | "dm"
@@ -68,9 +71,9 @@ export interface NexnetClientConfig {
   reconnectMaxMs?: number;
   /** Close the socket if the relay has not authenticated it within this many ms. Default: 15000 */
   handshakeTimeoutMs?: number;
+  /** Created by createPersistentClient/openPersistentClient, not by a second backend. */
+  persistentState?: PersistentDmState;
 }
-
-// ponytail: single-class client, no abstraction layers. Upgrade if state grows.
 
 export class NexnetClient {
   readonly identityId: IdentityId;
@@ -87,6 +90,8 @@ export class NexnetClient {
   deviceCertificate?: DeviceCertificate;
   readonly deviceCertificateResolver?: DeviceCertificateResolver;
   readonly rootPublicKey?: Uint8Array;
+  readonly persistentState?: PersistentDmState;
+  private _closed = false;
 
   private _online = false;
   private _ws: WebSocket | null = null;
@@ -108,6 +113,9 @@ export class NexnetClient {
   private readonly _deviceHex: string;
 
   constructor(config: NexnetClientConfig) {
+    if (!config.persistentState && config.storagePath && existsSync(join(config.storagePath, "device.db"))) {
+      throw new Error("Encrypted device state requires openPersistentClient and its unlock key");
+    }
     this.identityId = config.identityId;
     this.deviceId = config.deviceId;
     this.crypto = config.crypto;
@@ -121,6 +129,7 @@ export class NexnetClient {
     this.deviceCertificate = config.deviceCertificate;
     this.deviceCertificateResolver = config.deviceCertificateResolver;
     this.rootPublicKey = config.rootPublicKey;
+    this.persistentState = config.persistentState;
     this._maxReconnectAttempts = config.maxReconnectAttempts ?? 0;
     this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;
     this._reconnectMaxMs = config.reconnectMaxMs ?? 30_000;
@@ -178,6 +187,22 @@ export class NexnetClient {
     if (!sameId(certificate.accountId, this.identityId) || !sameId(certificate.deviceId, this.deviceId)) {
       throw new Error("certificate is for a different identity or device");
     }
+    if (this.persistentState) {
+      if (
+        !this.deviceSigningSecretKey ||
+        !this.deviceSigningPublicKey ||
+        !sameId(signingSecretKey, this.deviceSigningSecretKey) ||
+        !sameId(signingPublicKey, this.deviceSigningPublicKey)
+      ) {
+        throw new Error("Persistent device key rotation requires explicit provisioning of a new device");
+      }
+      this.persistentState.write("credentials:v1", {
+        ...this.persistentState.credentials(),
+        deviceCertificate: certificate,
+        deviceSigningSecretKey: signingSecretKey,
+        deviceSigningPublicKey: signingPublicKey,
+      });
+    }
     this.deviceCertificate = certificate;
     this.deviceSigningSecretKey = signingSecretKey;
     this.deviceSigningPublicKey = signingPublicKey;
@@ -190,6 +215,7 @@ export class NexnetClient {
 
   /** Renew if due and retry any failed prekey publication. Errors are emitted and rethrown. */
   async ensureDeviceCertificate(now = Date.now()): Promise<void> {
+    if (this._closed) throw new Error("Client is closed");
     await this._deviceLifecycle?.ensure(now);
   }
 
@@ -200,6 +226,7 @@ export class NexnetClient {
    * host, the nonce and its device id. Resolves once the relay confirms.
    */
   async connect(): Promise<void> {
+    if (this._closed) throw new Error("Client is closed");
     if (this._online) return;
     this._intentionalClose = false;
 
@@ -223,8 +250,29 @@ export class NexnetClient {
     this._reconnectAttempts = 0;
   }
 
+  /** Disconnect keeps ownership for reconnect. close permanently releases device state. */
+  async close(): Promise<void> {
+    if (this._closed) return;
+    this._closed = true;
+    await this.disconnect();
+    this._eventLog?.close();
+    this.persistentState?.store.close();
+  }
+
+  /** Durable transport inbox, not accepted/completed execution. Re-read after restart. */
+  inbox(): StoredInboxMessage[] {
+    if (!this.persistentState) throw new Error("A persistent client is required for inbox recovery");
+    return this.persistentState.inbox();
+  }
   /** Sender-held encrypted envelopes, retained until a verified receipt arrives. */
-  outboundQueue(): OutboundQueue {
+  outboundQueue(): OutboundQueueLike {
+    if (this.persistentState) {
+      if (!this._queueManager) {
+        this._queueManager = new QueueManager(this.persistentState);
+        this._queueManager.start(this);
+      }
+      return this.persistentState;
+    }
     if (!this.storagePath) throw new Error("storagePath is required for the sender's offline DM queue");
     if (!this._outboundQueue) {
       mkdirSync(this.storagePath, { recursive: true });
@@ -294,6 +342,7 @@ export class NexnetClient {
   }
 
   persistIncomingMessage(messageId: Uint8Array, envelope: Uint8Array): boolean {
+    if (this.persistentState) throw new Error("Persistent inbox writes must commit with ratchet and prekey state");
     const log = this._incomingEventLog();
     if (log.contains(messageId)) return false;
     log.append(messageId, envelope);
@@ -301,6 +350,7 @@ export class NexnetClient {
   }
 
   hasIncomingMessage(messageId: Uint8Array): boolean {
+    if (this.persistentState) return this.persistentState.hasIncoming(messageId);
     return this._incomingEventLog().contains(messageId);
   }
 
@@ -358,6 +408,7 @@ export class NexnetClient {
 
   private async _connect(): Promise<void> {
     const generation = ++this._connectionGeneration;
+    if (this._closed) throw new Error("Client is closed");
     if (this._deviceLifecycle) {
       try {
         await this.ensureDeviceCertificate();
@@ -373,6 +424,10 @@ export class NexnetClient {
         throw error;
       }
       if (generation !== this._connectionGeneration) throw new Error("connection superseded during renewal");
+    }
+    if (this.persistentState && this.presenceUrl) {
+      await publishLocalPrekeys(this);
+      if (generation !== this._connectionGeneration) throw new Error("connection superseded during prekey publication");
     }
     return new Promise((resolve, reject) => {
       // Retrying with an expired certificate can never succeed: stop and say why.
@@ -427,7 +482,8 @@ export class NexnetClient {
           this._reconnectAttempts = 0;
           this._deviceLifecycle?.start();
           // Resume persisted retry obligations, including after restarting the sender.
-          if (this.storagePath && existsSync(join(this.storagePath, "outbound.db"))) this.outboundQueue();
+          if (this.persistentState || (this.storagePath && existsSync(join(this.storagePath, "outbound.db"))))
+            this.outboundQueue();
           this._queueManager?.start(this);
           this._queueManager?.processQueue(this);
           this.emit("connected", null);

@@ -11,7 +11,8 @@ username squatting prevention: account age ≥ 7 days before first username; ina
 account authority: wallet
 login: passkey
 passkey policy: every interactive app open (AD-6)
-device certificate: valid until process death (AD-6)
+device certificate: 11h with renewal; interactive cold starts require passkeys (AD-6)
+delegated agents: explicit principal-controlled signer; no root keys in jobs (AD-6 exception)
 dm fanout: online recipient devices only (AD-7)
 device history: P2P sync between own devices
 recovery: wallet root ultimate; passkey re-auths devices (AD-16)

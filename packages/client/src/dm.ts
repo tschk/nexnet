@@ -213,6 +213,7 @@ export async function sendDirectMessage(
   queue?: OutboundQueueLike,
   options: SendDirectMessageOptions = {},
 ): Promise<MessageId> {
+  await client.ensureDeviceCertificate();
   const certificate = await senderCertificate(client);
   const conversationId = deriveConversationId(client.crypto, client.identityId, recipientId);
 

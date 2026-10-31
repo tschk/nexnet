@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { consumePresenceMessage } from "./presence.js";
 import { QueueManager } from "./queue-manager.js";
 import { fetchBundleRemote, verifiedRootPublicKey } from "./prekey-network.js";
+import { DeviceCertificateLifecycle, type DeviceCertificateRenewer } from "./device-lifecycle.js";
 
 export type EventType =
   | "dm"
@@ -51,13 +52,15 @@ export interface NexnetClientConfig {
   /** Presence service base URL; used to publish and fetch X3DH prekey bundles. */
   presenceUrl?: string;
   storagePath: string;
-  /** Root identity secret key (identityId = identityIdFromWallet(its public key)). */
+  /** Legacy receipt/local-storage signing key; certified auth and DMs use deviceSigningSecretKey. */
   signingSecretKey: Uint8Array;
   deviceSigningSecretKey?: Uint8Array;
   deviceSigningPublicKey?: Uint8Array;
   deviceCertificate?: DeviceCertificate;
   deviceCertificateResolver?: DeviceCertificateResolver;
   rootPublicKey?: Uint8Array;
+  /** Obtain a root-signed renewal from the principal's signer; never return root key material. */
+  renewDeviceCertificate?: DeviceCertificateRenewer;
   /** Max reconnect attempts before giving up. 0 = infinite. Default: 0 */
   maxReconnectAttempts?: number;
   /** Base backoff delay in ms. Default: 1000 */
@@ -92,6 +95,7 @@ export class NexnetClient {
   private _reconnectAttempts = 0;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _intentionalClose = false;
+  private _connectionGeneration = 0;
   private _eventLog: EventLog | null = null;
   private _outboundQueue: OutboundQueue | null = null;
   private _queueManager: QueueManager | null = null;
@@ -99,6 +103,7 @@ export class NexnetClient {
   private _reconnectBaseMs: number;
   private _reconnectMaxMs: number;
   private _handshakeTimeoutMs: number;
+  private readonly _deviceLifecycle: DeviceCertificateLifecycle | null;
 
   private readonly _identityHex: string;
   private readonly _deviceHex: string;
@@ -121,6 +126,9 @@ export class NexnetClient {
     this._reconnectBaseMs = config.reconnectBaseMs ?? 1_000;
     this._reconnectMaxMs = config.reconnectMaxMs ?? 30_000;
     this._handshakeTimeoutMs = config.handshakeTimeoutMs ?? 15_000;
+    this._deviceLifecycle = config.renewDeviceCertificate
+      ? new DeviceCertificateLifecycle(this, config.renewDeviceCertificate)
+      : null;
 
     this._identityHex = Buffer.from(config.identityId).toString("hex");
     this._deviceHex = Buffer.from(config.deviceId).toString("hex");
@@ -181,6 +189,11 @@ export class NexnetClient {
     return !!this.deviceCertificate && this.deviceCertificate.expiresAt <= now;
   }
 
+  /** Renew if due and retry any failed prekey publication. Errors are emitted and rethrown. */
+  async ensureDeviceCertificate(now = Date.now()): Promise<void> {
+    await this._deviceLifecycle?.ensure(now);
+  }
+
   /**
    * Connect to relay via WebSocket and authenticate.
    * URL: ws[s]://relayUrl/ws?identity=<hex>&device=<hex>
@@ -196,6 +209,8 @@ export class NexnetClient {
 
   async disconnect(): Promise<void> {
     this._intentionalClose = true;
+    this._connectionGeneration++;
+    this._deviceLifecycle?.stop();
     this._clearReconnectTimer();
     this._queueManager?.stop();
     this._queueManager = null;
@@ -349,7 +364,24 @@ export class NexnetClient {
 
   // ── Private ────────────────────────────────────────────────────────
 
-  private _connect(): Promise<void> {
+  private async _connect(): Promise<void> {
+    const generation = ++this._connectionGeneration;
+    if (this._deviceLifecycle) {
+      try {
+        await this.ensureDeviceCertificate();
+      } catch (error) {
+        // No socket was opened, so onclose cannot report or stop this attempt.
+        // Expired credentials already disconnected and emitted auth_failed.
+        if (generation === this._connectionGeneration && !this.deviceCertificateExpired()) {
+          void this.disconnect();
+          this.emit("auth_failed", {
+            message: error instanceof Error ? error.message : "device credentials unavailable",
+          });
+        }
+        throw error;
+      }
+      if (generation !== this._connectionGeneration) throw new Error("connection superseded during renewal");
+    }
     return new Promise((resolve, reject) => {
       // Retrying with an expired certificate can never succeed: stop and say why.
       if (this.deviceCertificateExpired()) {
@@ -401,6 +433,7 @@ export class NexnetClient {
           authenticated = true;
           this._online = true;
           this._reconnectAttempts = 0;
+          this._deviceLifecycle?.start();
           // Resume persisted retry obligations, including after restarting the sender.
           if (this.storagePath && existsSync(join(this.storagePath, "outbound.db"))) this.outboundQueue();
           this._queueManager?.start(this);

@@ -132,34 +132,64 @@ Product direction: no complex user-facing device revocation UI in v1.
 
 ### Session policy (AD-6)
 
-**Locked:**
+**Amended 2026-10-30: interactive sessions and delegated agents.**
 
 1. **Every interactive app open** → fresh **passkey** assertion before
    messaging keys are usable. No stay-logged-in across cold starts.
-2. **While process stays alive** (including background) → device certificate
-   remains valid until **process death**. No wall-clock TTL for the first
-   design.
-3. **Process exit / kill / crash** → next open requires passkey again.
+2. Certificates last at most **11 hours**, renewed when 20% of that lifetime
+   remains. A live process does not make an expired credential valid.
+3. **Interactive process exit / kill / crash** → next open requires passkey
+   again. Automatic renewal is not permission to bypass that check.
+4. **Non-interactive delegated-agent exception:** a principal explicitly
+   authorises a persistent identity daemon to issue and renew root-signed
+   device certificates for allowlisted agent jobs. Jobs do not require a human
+   passkey assertion on every start. Root keys remain in the principal's
+   signer, never in jobs, container images or model context. Restarting a job
+   does not grant or widen authority; the daemon must check its delegation
+   before issuing or renewing a certificate.
 
-Flow:
+This exception lets short-lived jobs use a stable principal-controlled identity
+without handing each job root authority. The 11-hour bound remains a mitigation
+while [device revocation (#4)](https://github.com/tschk/nexnet/issues/4) is
+unfinished; renewal is not revocation and cannot invalidate a stolen certificate.
 
-```text
-app open (foreground)
-  -> passkey assertion
-    -> issue device certificate (valid for process lifetime)
-      -> messaging session keys
+**Identity is not execution authority.** The closed agent pilot additionally
+requires explicit, receiver-verifiable, attenuated grants naming permitted peers,
+capabilities, a budget and a validity window. No redelegation. Missing or expired
+grants deny execution even when the device certificate is valid. Grant TTLs
+bound exposure until revocation is available; the certificate's capability bits
+are not a substitute for these grants. Human-approval-bound operations are out
+of scope for the pilot and must not be silently authorised by renewal.
 
-process still running (background OK)
-  -> certificate remains usable
+The pilot uses a trusted-peer allowlist. Capability advertisements are signed
+self-descriptions, not verified competence. Incomplete reputation evidence
+neither earns credit nor excludes new agents (AD-18).
 
-process dies
-  -> certificate dead; next open needs passkey
-```
+#### Client lifecycle implementation
 
-A stolen unlocked device with a live process can use the cert until the
-process dies; cold start still needs passkey. Protocol still supports
-root-level invalidation of compromised credentials even if the first client
-hides that complexity.
+`@nexnet/client` accepts a `renewDeviceCertificate(certificate, now)` callback.
+The callback supplies only a root-signed certificate, not root key material.
+The client checks the signature, unchanged identity/device/keys/capabilities,
+validity and 11-hour lifetime before installing it. It checks renewal before
+relay authentication and DM sends, and once per minute while running after a
+successful connection. Disconnect stops that timer and invalidates pending
+renewal responses.
+
+Renewal republishes the existing prekey bundle with the new certificate. Failed
+publication remains pending for retry even if the new certificate is valid.
+Renewal/publication errors emit `error` and reject the initiating operation;
+expiry without successful renewal disconnects and emits `auth_failed`, rather
+than entering an authentication retry loop.
+
+This first implementation extracts lifecycle management from the development
+TUI. It does **not** yet provide the identity daemon, durable key recovery or
+delegated-grant enforcement, and is not an exposed agent execution service.
+The development TUI's existing in-process root signer is not the pilot's
+production key-custody design. Legacy delivery receipts still verify against
+root keys; certificate-aware receipts are required before exposing a root-free
+receiving client. This extraction proves renewal and transport reception, not
+that remaining receipt migration. Transport states remain queued and delivered;
+accepted, completed and failed execution belong to the later agent layer.
 
 ### SSH sessions
 

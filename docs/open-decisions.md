@@ -15,7 +15,7 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-04  | Automatic relay incentives            | **AD-15** grants only v1 — no bandwidth mining                                                                                                                                                                                                                                                              |
 | OD-05  | Username anti-spam                    | **AD-10** max 1 owned per wallet; free creation with rate limits; transfers disabled                                                                                                                                                                                                                        |
 | OD-06  | Passkey ↔ wallet recovery             | **AD-16** wallet root ultimate; registered passkey may re-auth devices                                                                                                                                                                                                                                      |
-| OD-07  | Device session policy                 | **AD-6** passkey every interactive open; cert until process death                                                                                                                                                                                                                                           |
+| OD-07  | Device session policy                 | **AD-6** passkey every interactive open; 11h certificates with renewal; explicitly delegated non-interactive jobs use a principal-controlled signer                                                                                                                                                         |
 | OD-08  | Multi-device DM fanout                | **AD-7** online devices only; history via P2P sync                                                                                                                                                                                                                                                          |
 | OD-09  | Public room retention                 | **AD-17** default **24h inactivity** drop; each relay may override and must advertise                                                                                                                                                                                                                       |
 | OD-10  | Random reputation formula             | **AD-18** numeric score with **published weights** (v1 formula in reputation.md)                                                                                                                                                                                                                            |
@@ -37,6 +37,15 @@ Track design locks. Prefer linking AD notes in defaults / topic docs.
 | OD-20d | SSH session authorisation             | SSH public key identifies a device; a live passkey-authenticated OpenTUI client approves each SSH session; SSH session expires on disconnect                                                                                                                                                                |
 | OD-20e | SSH keys as wallet-authorised sign-in | A wallet may register an ssh-ed25519 key with a wallet-signed commitment; the key signs a single-use gateway challenge (`SSHSIG`, namespace `nexnet-auth`) to authorise one device certificate. Supersedes OD-20d for registered keys only; unregistered keys still need passkey approval (not implemented) |
 | OD-20f | Identity without a username           | Identities are created from a wallet proof; posting needs an identity, not a username                                                                                                                                                                                                                       |
+
+**AD-6 amended 2026-10-30:** non-interactive, principal-delegated agent jobs may
+obtain 11-hour device certificates and renewals from a persistent identity
+daemon without a passkey assertion on every job start. Root authority stays in
+the signer. Receiver-verifiable scoped grants, a trusted-peer allowlist and no
+redelegation remain required; a certificate proves identity, not execution
+authority. Short TTLs mitigate the missing revocation path tracked in #4.
+Interactive cold starts still require passkeys. See the
+[policy and implementation boundary](identity.md#session-policy-ad-6).
 
 **AD-18 amended 2026-10-29:** published weights rank random-match candidates,
 but incomplete reputation evidence is not an eligibility cutoff. Missing

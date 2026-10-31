@@ -116,7 +116,7 @@ export interface NexnetEventIdPreimage {
 
 // ── Device certificate ───────────────────────────────────────────────
 
-/** Device certificate (AD-6: valid until process death) */
+/** Time-bounded device identity proof (AD-6); delegated execution requires a separate grant. */
 export interface DeviceCertificate {
   accountId: IdentityId;
   deviceId: DeviceId;

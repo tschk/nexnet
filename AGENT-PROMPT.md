@@ -128,7 +128,7 @@ Claim: https://dash.cloudflare.com/claim-preview?claimToken=E4WzmJCcRoseIJwiqo1s
 | relay     | https://nexnet-relay.lead-zinc.workers.dev     |
 | discovery | https://nexnet-discovery.lead-zinc.workers.dev |
 
-`ALLOW_UNSIGNED_LEASES=1` on presence for preview. Production needs signed leases + real CF account token.
+Presence leases and prekey bundles must carry an identity proof (`auth`, see `packages/protocol/src/identity-auth.ts`); there is no unsigned-lease bypass. Production needs a real CF account token.
 
 ## Key files
 

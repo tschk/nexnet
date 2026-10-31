@@ -11,6 +11,11 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { toHex, verifyIdentityAuthJson } from "@nexnet/protocol";
+
+/** Unauthenticated sockets are closed after this long. */
+const AUTH_TIMEOUT_MS = 10_000;
+const ID_HEX = /^[0-9a-f]{64}$/;
 
 // ── Message types ────────────────────────────────────────────────────
 
@@ -63,6 +68,11 @@ interface DeliveryReceiptMessage {
   receipt: Record<string, unknown>;
 }
 
+interface AuthMessage {
+  type: "auth";
+  auth: unknown;
+}
+
 interface ErrorMessage {
   type: "error";
   message: string;
@@ -93,12 +103,25 @@ interface ConnectionEntry {
   rooms: Set<string>;
 }
 
+/** Challenge issued to a socket that has not proven its identity yet. */
+interface PendingAuth {
+  identity: string;
+  device: string;
+  audience: string;
+  nonce: string;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export class RelaySession {
   private state: DurableObjectState;
   // identity -> connection
   private connections = new Map<string, ConnectionEntry>();
   // room_id -> set of identities
   private roomSubscriptions = new Map<string, Set<string>>();
+  // sockets awaiting their auth reply
+  private pending = new Map<WebSocket, PendingAuth>();
+  // authenticated socket -> identity
+  private socketIdentity = new Map<WebSocket, string>();
 
   constructor(state: DurableObjectState, _env: Env) {
     this.state = state;
@@ -126,8 +149,8 @@ export class RelaySession {
     const identity = url.searchParams.get("identity");
     const device = url.searchParams.get("device");
 
-    if (!identity || !device) {
-      return jsonResponse({ error: "identity and device required" }, 400);
+    if (!identity || !device || !ID_HEX.test(identity) || !ID_HEX.test(device)) {
+      return jsonResponse({ error: "identity and device required as 32-byte hex" }, 400);
     }
 
     const pair = new WebSocketPair();
@@ -135,16 +158,16 @@ export class RelaySession {
 
     this.state.acceptWebSocket(server);
 
-    // Store connection
-    this.connections.set(identity, {
-      ws: server,
+    // The identity is only a claim until the socket signs this challenge.
+    const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    this.pending.set(server, {
       identity,
       device,
-      rooms: new Set(),
+      audience: url.host,
+      nonce,
+      timer: setTimeout(() => this.rejectAuth(server, "authentication timeout"), AUTH_TIMEOUT_MS),
     });
-
-    // Attach metadata for lifecycle handlers
-    (server as any)._identity = identity;
+    this.sendWs(server, { type: "auth_challenge", nonce });
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -152,25 +175,39 @@ export class RelaySession {
   async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer) {
     if (typeof data !== "string") return;
 
-    let msg: RelayMessage;
+    let msg: RelayMessage | AuthMessage;
     try {
-      msg = JSON.parse(data) as RelayMessage;
+      msg = JSON.parse(data) as RelayMessage | AuthMessage;
     } catch {
-      this.sendWs(ws, { type: "error", message: "invalid JSON" });
+      msg = { type: "invalid" } as unknown as RelayMessage;
+    }
+    if (typeof msg !== "object" || msg === null) msg = { type: "invalid" } as unknown as RelayMessage;
+
+    const pending = this.pending.get(ws);
+    if (pending) {
+      this.handleAuth(ws, pending, msg);
       return;
     }
 
-    const senderIdentity = (ws as any)._identity as string | undefined;
-    if (!senderIdentity) return;
+    const senderIdentity = this.socketIdentity.get(ws);
+    // Unknown socket (e.g. after hibernation lost in-memory auth state): fail closed.
+    if (!senderIdentity || this.connections.get(senderIdentity)?.ws !== ws) {
+      this.rejectAuth(ws, "not authenticated");
+      return;
+    }
+    if (msg.type === ("invalid" as string)) {
+      this.sendWs(ws, { type: "error", message: "invalid JSON" });
+      return;
+    }
 
     switch (msg.type) {
       case "session_offer":
       case "session_answer":
       case "candidate":
-        this.forwardSignaling(msg);
+        this.forwardSignaling(senderIdentity, msg);
         break;
       case "dm":
-        this.forwardDm(msg);
+        this.forwardDm(senderIdentity, msg);
         break;
       case "delivery_receipt":
         this.forwardReceipt(senderIdentity, msg);
@@ -188,25 +225,82 @@ export class RelaySession {
   }
 
   async webSocketClose(ws: WebSocket) {
-    const identity = (ws as any)._identity as string | undefined;
-    if (identity) {
-      this.removeConnection(identity);
-    }
+    this.dropSocket(ws);
   }
 
   async webSocketError(ws: WebSocket) {
-    const identity = (ws as any)._identity as string | undefined;
-    if (identity) {
-      this.removeConnection(identity);
+    this.dropSocket(ws);
+  }
+
+  // ── Authentication ────────────────────────────────────────────────
+
+  private handleAuth(ws: WebSocket, pending: PendingAuth, msg: RelayMessage | AuthMessage): void {
+    const verified =
+      msg.type === "auth" && typeof (msg as AuthMessage).auth === "object" && (msg as AuthMessage).auth !== null
+        ? verifyIdentityAuthJson(
+            {
+              audience: pending.audience,
+              nonce: pending.nonce,
+              deviceId: pending.device,
+              auth: (msg as AuthMessage).auth,
+            },
+            "relay.connect",
+            pending.identity,
+          )
+        : null;
+    if (!verified || (verified.deviceId && toHex(verified.deviceId) !== pending.device)) {
+      this.rejectAuth(ws, "authentication failed");
+      return;
     }
+    clearTimeout(pending.timer);
+    this.pending.delete(ws);
+
+    const existing = this.connections.get(pending.identity);
+    if (existing) {
+      this.sendWs(existing.ws, { type: "error", message: "Replaced by new connection" });
+      this.removeConnection(pending.identity);
+      this.socketIdentity.delete(existing.ws);
+      try {
+        existing.ws.close(4000, "replaced");
+      } catch {}
+    }
+    this.connections.set(pending.identity, {
+      ws,
+      identity: pending.identity,
+      device: pending.device,
+      rooms: new Set(),
+    });
+    this.socketIdentity.set(ws, pending.identity);
+    this.sendWs(ws, { type: "authenticated", identity: pending.identity });
+  }
+
+  private rejectAuth(ws: WebSocket, message: string): void {
+    const pending = this.pending.get(ws);
+    if (pending) clearTimeout(pending.timer);
+    this.pending.delete(ws);
+    this.sendWs(ws, { type: "error", message });
+    try {
+      ws.close(4401, message);
+    } catch {}
+  }
+
+  private dropSocket(ws: WebSocket): void {
+    const pending = this.pending.get(ws);
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pending.delete(ws);
+    }
+    const identity = this.socketIdentity.get(ws);
+    this.socketIdentity.delete(ws);
+    if (identity && this.connections.get(identity)?.ws === ws) this.removeConnection(identity);
   }
 
   // ── DM forwarding ─────────────────────────────────────────────────
 
-  private forwardDm(msg: DmMessage): void {
+  private forwardDm(senderIdentity: string, msg: DmMessage): void {
     const target = this.connections.get(msg.to);
     if (!target) return;
-    this.sendWs(target.ws, msg);
+    this.sendWs(target.ws, { type: "dm", from: senderIdentity, envelope: msg.envelope });
   }
 
   private forwardReceipt(senderIdentity: string, msg: DeliveryReceiptMessage): void {
@@ -221,13 +315,17 @@ export class RelaySession {
 
   // ── Signaling ──────────────────────────────────────────────────────
 
-  private forwardSignaling(msg: SessionOfferMessage | SessionAnswerMessage | CandidateMessage): void {
+  private forwardSignaling(
+    senderIdentity: string,
+    msg: SessionOfferMessage | SessionAnswerMessage | CandidateMessage,
+  ): void {
     const target = this.connections.get(msg.to);
     if (!target) {
       // Target offline — silently drop. Sender can retry.
       return;
     }
-    this.sendWs(target.ws, msg);
+    // `from` is always the authenticated sender; never trust a client-supplied one.
+    this.sendWs(target.ws, { ...msg, from: senderIdentity });
   }
 
   // ── Room gossip ────────────────────────────────────────────────────
@@ -329,8 +427,8 @@ async function handleWebSocket(request: Request, env: Env): Promise<Response> {
   const identity = url.searchParams.get("identity");
   const device = url.searchParams.get("device");
 
-  if (!identity || !device) {
-    return jsonResponse({ error: "identity and device query params required" }, 400);
+  if (!identity || !device || !ID_HEX.test(identity) || !ID_HEX.test(device)) {
+    return jsonResponse({ error: "identity and device query params required as 32-byte hex" }, 400);
   }
 
   // All connections go to a single DO instance (the relay)

@@ -82,12 +82,19 @@ class MockWebSocket {
         } else {
           this.readyState = 1; // OPEN
           this.onopen?.({});
+          // Relay auth handshake: challenge, then confirm any `auth` reply.
+          this.onmessage?.({ data: JSON.stringify({ type: "auth_challenge", nonce: "00" }) });
         }
       });
     }
   }
 
   send(data: string): void {
+    if (data.includes('"type":"auth"')) {
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "authenticated" }) }));
+
+      return;
+    }
     this.sent.push(data);
   }
 
@@ -124,7 +131,7 @@ function createTestClient(overrides?: Partial<ConstructorParameters<typeof Nexne
     codec: createMockCodec(),
     relayUrl: "https://relay.example.com",
     storagePath: "/tmp/nexnet-test",
-    signingSecretKey: new Uint8Array(64).fill(0xcc),
+    signingSecretKey: new Uint8Array(32).fill(0xcc),
     maxReconnectAttempts: 3,
     reconnectBaseMs: 10,
     reconnectMaxMs: 50,
@@ -483,6 +490,31 @@ describe("NexnetClient WebSocket", () => {
   });
 });
 
+test("connect rejects when the relay never sends an auth challenge", async () => {
+  const origWebSocket = globalThis.WebSocket;
+  class SilentRelay {
+    onopen: ((e: unknown) => void) | null = null;
+    onclose: ((e: unknown) => void) | null = null;
+    onerror: ((e: unknown) => void) | null = null;
+    onmessage: ((e: unknown) => void) | null = null;
+    constructor(_url: string) {
+      queueMicrotask(() => this.onopen?.({}));
+    }
+    send(): void {}
+    close(): void {
+      this.onclose?.({ code: 1000 });
+    }
+  }
+  (globalThis as any).WebSocket = SilentRelay;
+  try {
+    const { client } = createTestClient({ handshakeTimeoutMs: 20, maxReconnectAttempts: 1, reconnectBaseMs: 10_000 });
+    await expect(client.connect()).rejects.toThrow("relay authentication");
+    await client.disconnect();
+  } finally {
+    (globalThis as any).WebSocket = origWebSocket;
+  }
+});
+
 describe("NexnetClient two-instance DM flow", () => {
   let origWebSocket: typeof globalThis.WebSocket;
 
@@ -533,7 +565,7 @@ describe("NexnetClient two-instance DM flow", () => {
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-a",
-      signingSecretKey: new Uint8Array(64).fill(0xcc),
+      signingSecretKey: new Uint8Array(32).fill(0xcc),
     });
 
     const clientB = new NexnetClient({
@@ -543,7 +575,7 @@ describe("NexnetClient two-instance DM flow", () => {
       codec: createMockCodec(),
       relayUrl: "https://relay.example.com",
       storagePath: "/tmp/nexnet-b",
-      signingSecretKey: new Uint8Array(64).fill(0xdd),
+      signingSecretKey: new Uint8Array(32).fill(0xdd),
     });
 
     await clientA.connect();

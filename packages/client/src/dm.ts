@@ -34,6 +34,7 @@ import {
 import { fetchBundle, getLocalPrekeys, refreshPublishedBundle } from "./prekeys.js";
 import { x3dhInitiate, x3dhRespond } from "./x3dh.js";
 import { trySendDirect } from "./transport.js";
+import { fetchBundleRemote, publishBundleRemote, verifiedRootPublicKey } from "./prekey-network.js";
 
 const DOMAIN_CONVERSATION_ID = "nexnet conversation id v1";
 
@@ -142,7 +143,16 @@ function handleAuthorizedDirectMessage(
     if (consumedOtp) {
       consumedOtp.material.oneTime.delete(consumedOtp.id);
       const selfBundle = fetchBundle(client.identityId);
-      if (selfBundle) refreshPublishedBundle(client.identityId, selfBundle.identitySignPublic);
+      if (selfBundle) {
+        refreshPublishedBundle(client.identityId, selfBundle.identitySignPublic);
+        // Stop advertising the consumed one-time key to other processes.
+        const refreshed = fetchBundle(client.identityId);
+        if (client.presenceUrl && refreshed) {
+          void publishBundleRemote(client.presenceUrl, client.identityId, refreshed, client.identitySigner()).catch(
+            () => {},
+          );
+        }
+      }
     }
     if (!client.persistIncomingMessage(envelope.messageId, bytes)) return;
     callback(envelope, payload);
@@ -216,6 +226,16 @@ export async function sendDirectMessage(
     recipientIdentityId: recipientId,
   });
   const sessionKey = x3dhSessionStoreKey(conversationId, recipientId);
+
+  // A new session uses the peer's current published bundle (it may have rotated);
+  // fall back to a cached bundle only if presence cannot be reached.
+  if (!getSession(sessionKey) && client.presenceUrl) {
+    try {
+      await fetchBundleRemote(client.presenceUrl, recipientId);
+    } catch (error) {
+      if (!fetchBundle(recipientId)) throw error;
+    }
+  }
 
   let ciphertext: Uint8Array;
   const existing = getSession(sessionKey);
@@ -335,7 +355,8 @@ export function onDirectMessage(
         ciphertext: envelope.ciphertext,
       });
 
-      const rootPk = getSenderRootPublicKey?.(envelope.senderIdentityId);
+      const rootPk =
+        getSenderRootPublicKey?.(envelope.senderIdentityId) ?? verifiedRootPublicKey(envelope.senderIdentityId);
       const cert = envelope.senderCertificate;
       if (
         !cert ||
@@ -350,9 +371,17 @@ export function onDirectMessage(
         handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
         return;
       }
-      if (!resolveDeviceCertificate) return;
       void (async () => {
         try {
+          // Unknown sender: learn its root key from its signed prekey bundle.
+          if (!rootPk && client.presenceUrl) {
+            const fetchedRoot = await senderRootFromPresence(client.presenceUrl, envelope.senderIdentityId);
+            if (fetchedRoot && verifyDeviceCert(cert, fetchedRoot)) {
+              handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
+              return;
+            }
+          }
+          if (!resolveDeviceCertificate) return;
           const registered = await resolveDeviceCertificate(envelope.senderIdentityId, envelope.senderDeviceId);
           if (registered && sameCertificate(cert, registered)) {
             handleAuthorizedDirectMessage(client, callback, envelope, bytes, preimage);
@@ -363,6 +392,22 @@ export function onDirectMessage(
       // malformed / decrypt fail — drop
     }
   });
+}
+
+const rootLookups = new Map<string, Promise<Uint8Array | undefined>>();
+
+/** One in-flight presence lookup per sender, so a burst of first messages fetches once. */
+function senderRootFromPresence(presenceUrl: string, senderId: IdentityId): Promise<Uint8Array | undefined> {
+  const key = `${presenceUrl} ${Buffer.from(senderId).toString("hex")}`;
+  let lookup = rootLookups.get(key);
+  if (!lookup) {
+    lookup = fetchBundleRemote(presenceUrl, senderId)
+      .then(() => verifiedRootPublicKey(senderId))
+      .catch(() => undefined)
+      .finally(() => rootLookups.delete(key));
+    rootLookups.set(key, lookup);
+  }
+  return lookup;
 }
 
 function compareBytes(a: Uint8Array, b: Uint8Array): number {

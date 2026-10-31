@@ -35,7 +35,10 @@ export interface ChatMessage {
   senderName: string;
   text: string;
   createdAt: number;
+  /** Own DMs: the recipient's delivery receipt arrived. Own room posts: the relay accepted it. */
   delivered: boolean;
+  /** Why an own message could not be sent; it was never delivered. */
+  error?: string;
   own: boolean;
 }
 
@@ -75,6 +78,14 @@ export function addMessage(peerHex: string, msg: ChatMessage) {
   });
 }
 
+export function updateMessage(peerHex: string, id: string, patch: Partial<ChatMessage>) {
+  setConversations((prev) =>
+    prev.map((c) =>
+      c.peerHex !== peerHex ? c : { ...c, messages: c.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) },
+    ),
+  );
+}
+
 // ── Active conversation ─────────────────────────────────────────────
 
 const [activePeer, setActivePeer] = createSignal<string | null>(null);
@@ -107,6 +118,14 @@ export function addRoomMessage(roomId: string, msg: ChatMessage) {
     }
     return prev;
   });
+}
+
+export function updateRoomMessage(roomId: string, id: string, patch: Partial<ChatMessage>) {
+  setRooms((prev) =>
+    prev.map((r) =>
+      r.id !== roomId ? r : { ...r, messages: r.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) },
+    ),
+  );
 }
 
 const [activeRoom, setActiveRoom] = createSignal<string | null>(null);

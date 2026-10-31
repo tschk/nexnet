@@ -3,7 +3,7 @@
  * Ed25519 keypairs, XChaCha20-Poly1305 encryption, WebSocket relay.
  */
 
-import { generateSigningKeyPair, deriveId, cryptoProvider } from "@nexnet/crypto";
+import { generateKeyPair, generateSigningKeyPair, cryptoProvider, randomBytes } from "@nexnet/crypto";
 import {
   NexnetClient,
   sendDirectMessage,
@@ -12,8 +12,12 @@ import {
   onRoomMessage,
   deriveRoomId,
   onDirectMessage,
+  publishLocalPrekeys,
 } from "@nexnet/client";
-import { cdeEncode, cdeDecode } from "@nexnet/protocol";
+import { cdeEncode, cdeDecode, identityIdFromWallet, issueDeviceCert } from "@nexnet/protocol";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CborCdeCodec } from "@nexnet/types";
 
 import {
@@ -22,6 +26,8 @@ import {
   setConnStatus,
   addMessage,
   addRoomMessage,
+  updateMessage,
+  updateRoomMessage,
   setOnlinePeers,
   setRooms,
   nextMsgId,
@@ -37,11 +43,20 @@ const codec: CborCdeCodec = { encode: cdeEncode, decode: cdeDecode };
 
 let client: NexnetClient | null = null;
 
+/** Own DMs awaiting a delivery receipt: message id hex → where it is shown. */
+const awaitingReceipt = new Map<string, { peerHex: string; id: string; timer: ReturnType<typeof setTimeout> }>();
+
+/** A DM with no receipt after this long is shown as undelivered. */
+const RECEIPT_TIMEOUT_MS = 30_000;
+
+const DEVICE_CERT_LIFETIME_MS = 11 * 60 * 60 * 1000;
+
 // ── Public API ──────────────────────────────────────────────────────
 
 export function generateIdentity(): LocalIdentity {
   const kp = generateSigningKeyPair();
-  const identityId = deriveId("nexnet identity v1", kp.publicKey);
+  // Relays and services only accept an identity id derived from the root key.
+  const identityId = identityIdFromWallet(kp.publicKey);
   const identityIdHex = hexEncode(identityId);
 
   const id: LocalIdentity = {
@@ -54,15 +69,34 @@ export function generateIdentity(): LocalIdentity {
   return id;
 }
 
-export async function connectDev(relayUrl: string): Promise<void> {
+/**
+ * Connect to a relay. `presenceUrl` hosts X3DH prekey bundles; without it DMs
+ * cannot open sessions with peers in other processes.
+ */
+export async function connectDev(
+  relayUrl: string,
+  presenceUrl: string | undefined = process.env.NEXNET_PRESENCE_URL,
+): Promise<void> {
   const id = identity();
   if (!id) throw new Error("generate identity first");
 
   setConnStatus("connecting");
 
-  const identityId = deriveId("nexnet identity v1", id.publicKey);
-  // ponytail: reuse publicKey as deviceId for single-device v1
-  const deviceId = id.publicKey.slice(0, 32);
+  const identityId = identityIdFromWallet(id.publicKey);
+  // This process holds the root key, so it certifies its own device key.
+  const device = generateSigningKeyPair();
+  const deviceId = randomBytes(32);
+  const now = Date.now();
+  const deviceCertificate = issueDeviceCert(
+    id.secretKey,
+    device.publicKey,
+    generateKeyPair().publicKey,
+    deviceId,
+    identityId,
+    now,
+    now + DEVICE_CERT_LIFETIME_MS,
+    1,
+  );
 
   client = new NexnetClient({
     identityId,
@@ -70,16 +104,55 @@ export async function connectDev(relayUrl: string): Promise<void> {
     crypto: cryptoProvider,
     codec,
     relayUrl,
-    storagePath: "", // ponytail: no persistence until local-first history
+    presenceUrl,
+    // ponytail: throwaway dedupe log until local-first history
+    storagePath: mkdtempSync(join(tmpdir(), "nexnet-tui-")),
     signingSecretKey: id.secretKey,
+    rootPublicKey: id.publicKey,
+    deviceSigningSecretKey: device.secretKey,
+    deviceSigningPublicKey: device.publicKey,
+    deviceCertificate,
+  });
+
+  // Listen before connecting and publishing prekeys, so an early DM or receipt is not dropped.
+  client.on("delivery_receipt", (data) => {
+    const receipt = data as { from?: unknown; messageId?: Uint8Array | null };
+    if (!receipt.messageId) return;
+    const key = hexEncode(receipt.messageId);
+    const pending = awaitingReceipt.get(key);
+    // Only the recipient (authenticated by the relay as `from`) can confirm delivery.
+    if (!pending || receipt.from !== pending.peerHex) return;
+    clearTimeout(pending.timer);
+    awaitingReceipt.delete(key);
+    updateMessage(pending.peerHex, pending.id, { delivered: true, error: undefined });
+  });
+
+  onDirectMessage(client, (envelope, payload) => {
+    const authorHex = hexEncode(envelope.senderIdentityId);
+    const msg: ChatMessage = {
+      id: nextMsgId(),
+      senderHex: authorHex,
+      senderName: authorHex.slice(0, 12),
+      text: payload.text ?? "[non-text message]",
+      createdAt: envelope.createdAt,
+      delivered: true,
+      own: false,
+    };
+    addMessage(authorHex, msg);
   });
 
   try {
     await client.connect();
   } catch {
+    client.disconnect();
+    client = null;
     setConnStatus("disconnected");
     return;
   }
+
+  // Rooms only need the relay; a presence failure must not drop the session.
+  // Peers then cannot open new DM sessions to us until a later publish succeeds.
+  if (presenceUrl) await publishLocalPrekeys(client).catch(() => {});
 
   setConnStatus("connected");
 
@@ -123,21 +196,6 @@ export async function connectDev(relayUrl: string): Promise<void> {
     });
   }
 
-  // Handle inbound DMs (real decryption via @nexnet/client)
-  onDirectMessage(client, (envelope, payload) => {
-    const authorHex = hexEncode(envelope.senderIdentityId);
-    const msg: ChatMessage = {
-      id: nextMsgId(),
-      senderHex: authorHex,
-      senderName: authorHex.slice(0, 12),
-      text: payload.text ?? "[non-text message]",
-      createdAt: envelope.createdAt,
-      delivered: true,
-      own: false,
-    };
-    addMessage(authorHex, msg);
-  });
-
   // Handle presence
   client.on("presence", (data) => {
     const p = data as { peers?: string[] };
@@ -145,9 +203,14 @@ export async function connectDev(relayUrl: string): Promise<void> {
   });
 }
 
-export function sendDevMessage(recipientHex: string, text: string): ChatMessage {
+export function sendDevMessage(
+  recipientHex: string,
+  text: string,
+  receiptTimeoutMs = RECEIPT_TIMEOUT_MS,
+): Promise<ChatMessage> {
   const id = identity();
-  if (!id || !client) throw new Error("not connected");
+  const active = client;
+  if (!id || !active) throw new Error("not connected");
 
   const msg: ChatMessage = {
     id: nextMsgId(),
@@ -155,24 +218,45 @@ export function sendDevMessage(recipientHex: string, text: string): ChatMessage 
     senderName: id.username,
     text,
     createdAt: Date.now(),
-    delivered: true,
+    delivered: false,
     own: true,
   };
 
   addMessage(recipientHex, msg);
 
-  // Fire-and-forget async send — real encryption via sendDirectMessage
-  const recipientId = hexDecode(recipientHex);
-  sendDirectMessage(client, recipientId, text).catch(() => {
-    // ponytail: mark undelivered later
-  });
-
-  return msg;
+  // Delivered only when the recipient's receipt arrives; failures stay visible.
+  return sendDirectMessage(active, hexDecode(recipientHex), text).then(
+    (messageId) => {
+      // The relay accepting the DM is not delivery: an offline or failing peer sends no receipt.
+      const key = hexEncode(messageId);
+      const timer = setTimeout(() => {
+        if (!awaitingReceipt.has(key)) return;
+        updateMessage(recipientHex, msg.id, {
+          error: "no delivery receipt; the recipient may be offline or could not decrypt it",
+        });
+      }, receiptTimeoutMs);
+      awaitingReceipt.set(key, { peerHex: recipientHex, id: msg.id, timer });
+      return msg;
+    },
+    (error: unknown) => {
+      const reason = error instanceof Error ? error.message : "send failed";
+      // Without a presence service, peers in other processes are unreachable; say so.
+      const failed = {
+        ...msg,
+        error: active.presenceUrl
+          ? reason
+          : `NEXNET_PRESENCE_URL is not set, so this peer's prekeys cannot be fetched (${reason})`,
+      };
+      updateMessage(recipientHex, msg.id, { error: failed.error });
+      return failed;
+    },
+  );
 }
 
-export function sendDevRoomMessage(roomId: string, text: string): ChatMessage {
+export function sendDevRoomMessage(roomId: string, text: string): Promise<ChatMessage> {
   const id = identity();
-  if (!id || !client) throw new Error("not connected");
+  const active = client;
+  if (!id || !active) throw new Error("not connected");
 
   const msg: ChatMessage = {
     id: nextMsgId(),
@@ -180,19 +264,27 @@ export function sendDevRoomMessage(roomId: string, text: string): ChatMessage {
     senderName: id.username,
     text,
     createdAt: Date.now(),
-    delivered: true,
+    delivered: false,
     own: true,
   };
 
   addRoomMessage(roomId, msg);
 
-  const roomIdBytes = hexDecode(roomId);
-  sendRoomMessage(client, roomIdBytes, text).catch(() => {});
-
-  return msg;
+  return sendRoomMessage(active, hexDecode(roomId), text).then(
+    () => {
+      updateRoomMessage(roomId, msg.id, { delivered: true });
+      return { ...msg, delivered: true };
+    },
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : "send failed";
+      updateRoomMessage(roomId, msg.id, { error: message });
+      return { ...msg, error: message };
+    },
+  );
 }
 
 export function disconnectDev(): void {
+  // Pending receipts are kept: one may still arrive after reconnecting.
   client?.disconnect();
   client = null;
   setConnStatus("disconnected");

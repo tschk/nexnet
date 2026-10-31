@@ -10,11 +10,13 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@nexnet/protocol": "workspace:*",
     "@nexnet/types": "workspace:*",
     "@noble/curves": "^1.8.0",
     "hono": "^4.12.30"
   },
   "devDependencies": {
+    "@nexnet/crypto": "workspace:*",
     "@cloudflare/workers-types": "^5.20260717.1",
     "wrangler": "^3"
   }

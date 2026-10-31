@@ -11,7 +11,11 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@nexnet/protocol": "workspace:*",
     "@nexnet/types": "workspace:*",
     "elysia": "^1.4.29"
+  },
+  "devDependencies": {
+    "@nexnet/crypto": "workspace:*"
   }
 }

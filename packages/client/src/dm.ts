@@ -377,16 +377,13 @@ export async function sendDirectMessage(
   return messageId; // safely queued on the sender, even if either peer is offline
 }
 
-/**
- * @param getSenderPublicKey - identityId → Ed25519 public; verifies envelope.
- * @param getSenderSignPublic - same, used to re-publish bundle after OTP use
- *   (optional; only for refresh after x3dh respond).
- */
+/** Authenticate sender certificates before decrypting; an optional allowlist also gates storage and receipts. */
 export function onDirectMessage(
   client: NexnetClient,
   callback: (envelope: MessageEnvelope, payload: MessagePayload) => void,
   getSenderRootPublicKey?: (identityId: IdentityId) => Uint8Array | undefined,
   resolveDeviceCertificate: DeviceCertificateResolver | undefined = client.deviceCertificateResolver,
+  allowedSenderIds?: ReadonlySet<string>,
 ): void {
   client.on("dm", (data) => {
     const msg = data as { envelope: number[] };
@@ -395,6 +392,7 @@ export function onDirectMessage(
 
       const bytes = new Uint8Array(msg.envelope);
       const envelope = client.codec.decode<MessageEnvelope>(bytes);
+      if (allowedSenderIds && !allowedSenderIds.has(Buffer.from(envelope.senderIdentityId).toString("hex"))) return;
 
       const preimage = client.codec.encode({
         protocolVersion: envelope.protocolVersion,

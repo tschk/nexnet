@@ -198,6 +198,14 @@ but does not revoke a compromised certificate immediately.
 Transport states remain queued and delivered;
 accepted, completed and failed execution belong to the later agent layer.
 
+The subsequent recovery piece (#11) supplies encrypted restart-safe device,
+prekey, ratchet, inbox and queue state with single-writer ownership. The
+[local daemon control API](apis.md#local-daemon-control-api-v1) adds privileged
+loopback transport control and a key-free SDK caller. It still does not enforce
+delegated grants or provide a usable delegated-agent daemon. A valid control
+token is not receiver-verifiable execution authority. Root signing stays in the
+host's signer callback, and revocation remains #4.
+
 ### SSH sessions
 
 An SSH public key identifies an SSH device but does not itself authenticate an

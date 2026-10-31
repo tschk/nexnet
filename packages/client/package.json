@@ -25,6 +25,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./local-sdk": "./src/local-sdk.ts",
     "./chain-stub": "./src/chain-stub.ts"
   }
 }
